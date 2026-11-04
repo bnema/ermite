@@ -57,7 +57,7 @@ A batch of Actions updates only gets one commit and a ready merge request.
 
 ### Adopted branches
 
-A push by anyone but Bernard to a batch branch with an open merge request adopts it. Bernard also adopts a branch it finds moved when it writes. Bernard never rewrites an adopted branch: Open is refused with `the branch was changed by hand`, a run that ends only refreshes the merge request description, and no automatic merge request is queued. `deps list` marks the batch `adopted`. The adoption ends with its merge request (merged or closed).
+A push by anyone but Bernard to a batch branch with an open merge request adopts it. Bernard also adopts a branch it finds moved when it writes, and an existing branch whose tip is not a Bernard commit when it has no head recorded for it. Bernard never rewrites an adopted branch: Open is refused with `the branch was changed by hand`, a run that ends only refreshes the merge request description, and no automatic merge request is queued. `deps list` marks the batch `adopted`. The adoption ends with its merge request (merged or closed).
 
 To finish a failed draft yourself, push the fix to its branch: the merge request becomes yours to merge.
 

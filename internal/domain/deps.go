@@ -265,6 +265,28 @@ type DepBatch struct {
 	// Drafts are the draft heads Bernard pushed on the branch, newest last,
 	// at most MaxDepDrafts: CI holds their runs whenever it plans them.
 	Drafts []DepDraft
+	// Pending is a commit Bernard is moving the branch to, from PendingPrev
+	// (the Head then, zero for none): recorded before the move, promoted to
+	// Head after it. A tip that is neither is a human's.
+	Pending, PendingPrev ObjectID
+}
+
+// SettlePending reconciles a pending publication with the tip of the branch:
+// at Pending it becomes Head, at PendingPrev it did not happen; ok is false
+// when the tip is neither (a human moved the branch). The pending
+// publication is cleared in every case.
+func (b *DepBatch) SettlePending(tip ObjectID) (ok bool) {
+	if b.Pending.IsZero() {
+		return true
+	}
+	switch tip {
+	case b.Pending:
+		b.Head, ok = b.Pending, true
+	case b.PendingPrev:
+		ok = true
+	}
+	b.Pending, b.PendingPrev = ObjectID{}, ObjectID{}
+	return ok
 }
 
 // MaxDepDrafts bounds DepBatch.Drafts.

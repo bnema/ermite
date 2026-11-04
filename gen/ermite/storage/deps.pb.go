@@ -240,7 +240,10 @@ type DepBatch struct {
 	Manual    bool                   `protobuf:"varint,14,opt,name=manual,proto3" json:"manual,omitempty"`
 	Repro     []string               `protobuf:"bytes,15,rep,name=repro,proto3" json:"repro,omitempty"`
 	// the draft heads Bernard pushed on the branch, newest last (bounded)
-	Drafts        []*DepDraft `protobuf:"bytes,16,rep,name=drafts,proto3" json:"drafts,omitempty"`
+	Drafts []*DepDraft `protobuf:"bytes,16,rep,name=drafts,proto3" json:"drafts,omitempty"`
+	// a commit Bernard is moving the branch to, and the head it moves from
+	Pending       string `protobuf:"bytes,17,opt,name=pending,proto3" json:"pending,omitempty"`
+	PendingPrev   string `protobuf:"bytes,18,opt,name=pending_prev,json=pendingPrev,proto3" json:"pending_prev,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -385,6 +388,20 @@ func (x *DepBatch) GetDrafts() []*DepDraft {
 		return x.Drafts
 	}
 	return nil
+}
+
+func (x *DepBatch) GetPending() string {
+	if x != nil {
+		return x.Pending
+	}
+	return ""
+}
+
+func (x *DepBatch) GetPendingPrev() string {
+	if x != nil {
+		return x.PendingPrev
+	}
+	return ""
 }
 
 // DepDraft is a manifest-only head Bernard pushed; created: the push created
@@ -689,7 +706,7 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\acurrent\x18\x02 \x01(\tR\acurrent\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\x05R\x04kind\x12\x10\n" +
 	"\x03new\x18\x04 \x01(\bR\x03new\x12\x19\n" +
-	"\bnew_name\x18\x05 \x01(\tR\anewName\"\xb2\x04\n" +
+	"\bnew_name\x18\x05 \x01(\tR\anewName\"\xef\x04\n" +
 	"\bDepBatch\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateR\aupdates\x12\x14\n" +
@@ -710,7 +727,9 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\tqueued_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bqueuedAt\x12\x16\n" +
 	"\x06manual\x18\x0e \x01(\bR\x06manual\x12\x14\n" +
 	"\x05repro\x18\x0f \x03(\tR\x05repro\x120\n" +
-	"\x06drafts\x18\x10 \x03(\v2\x18.ermite.storage.DepDraftR\x06drafts\"6\n" +
+	"\x06drafts\x18\x10 \x03(\v2\x18.ermite.storage.DepDraftR\x06drafts\x12\x18\n" +
+	"\apending\x18\x11 \x01(\tR\apending\x12!\n" +
+	"\fpending_prev\x18\x12 \x01(\tR\vpendingPrev\"6\n" +
 	"\bDepDraft\x12\x10\n" +
 	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x18\n" +
 	"\acreated\x18\x02 \x01(\bR\acreated\"\xe6\x04\n" +

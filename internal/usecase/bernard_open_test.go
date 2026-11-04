@@ -255,7 +255,8 @@ func TestBernardOpenUpdateKeepsMR(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
 	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4, State: domain.DepsFailed, Error: "boom"}}}
-	r.happy(oid("d")) // an earlier Bernard head, possibly someone else's
+	r.happy(oid("d")) // an earlier Bernard head, with no head recorded
+	r.git.EXPECT().ListRange(mock.Anything, r.repo, domain.ObjectID{}, oid("d"), 1).Return([]domain.Commit{{ID: oid("d"), Author: domain.Signature{Name: "Bernard", Email: "bernard@forge.test"}}}, false, nil)
 	r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(4)).Return(domain.MergeRequest{Repo: r.repo, Number: 4, State: domain.MRStateOpen}, nil)
 	var edited ports.EditMergeRequestParams
 	var editor domain.Principal

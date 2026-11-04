@@ -41,6 +41,9 @@ message DepBatch {
   repeated string repro = 15;
   // the draft heads Bernard pushed on the branch, newest last (bounded)
   repeated DepDraft drafts = 16;
+  // a commit Bernard is moving the branch to, and the head it moves from
+  string pending = 17;
+  string pending_prev = 18;
 }
 // DepDraft is a manifest-only head Bernard pushed; created: the push created
 // the branch.

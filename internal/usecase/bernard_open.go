@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/mod/semver"
 
@@ -124,6 +125,7 @@ func (b *Bernard) markAdopted(ctx context.Context, name domain.RepoName, key dom
 		}
 		stored := &d.Batches[i]
 		stored.Adopted = true
+		stored.Pending, stored.PendingPrev = domain.ObjectID{}, domain.ObjectID{}
 		if idle && stored.State != domain.DepsApplying {
 			stored.State, stored.Error, stored.Repro = domain.DepsIdle, "", nil
 		}
@@ -164,8 +166,8 @@ func (b *Bernard) noteAdopted(ctx context.Context, name domain.RepoName, batch d
 
 // Held implements ports.CIHold: every draft head Bernard pushed on a batch
 // branch stays held whatever the batch became since (CI plans late: a failed
-// or replaced draft never starts its runs), and the head Bernard last wrote is
-// held while the batch waits for or runs its dependency job. An adopted branch
+// or replaced draft never starts its runs); a record without draft heads holds
+// its head while the batch is drafted or runs its dependency job. An adopted branch
 // holds nothing. It reads the record without the repository lock: CI asks
 // while Bernard publishes.
 func (b *Bernard) Held(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) bool {
@@ -180,11 +182,14 @@ func (b *Bernard) Held(ctx context.Context, repo domain.RepoName, branch string,
 		if _, ok := batch.Draft(sha); ok {
 			return true
 		}
-		if batch.Head != sha {
+		// A record from before the draft heads were kept holds its head.
+		if len(batch.Drafts) != 0 || batch.Head != sha {
 			continue
 		}
+		// Queued is left out: a server-side publication moves the branch
+		// before the batch leaves the queue, and its commit is final.
 		switch batch.State {
-		case domain.DepsQueued, domain.DepsDrafted, domain.DepsApplying:
+		case domain.DepsDrafted, domain.DepsApplying:
 			return true
 		}
 	}
@@ -220,10 +225,19 @@ func (b *Bernard) onPush(e domain.PushEvent) {
 	}
 	for _, u := range e.Updates {
 		for _, batch := range d.Batches {
-			if batch.Adopted || batch.Head.IsZero() || batch.MR == 0 || "refs/heads/"+batch.BranchName() != u.Ref || u.New == domain.ZeroOID {
+			if batch.Adopted || batch.MR == 0 || "refs/heads/"+batch.BranchName() != u.Ref || u.New == domain.ZeroOID {
 				continue
 			}
-			if u.New != batch.Head.String() {
+			// An open request with no head recorded (from before heads were)
+			// is adopted by any push: Bernard's own publish no event.
+			sha, err := domain.ParseObjectID(u.New)
+			switch {
+			case err != nil:
+			case !batch.Pending.IsZero():
+				if _, err := b.settlePending(ctx, e.Repo, batch.Key, &sha, false); err != nil {
+					ctxLog(ctx).Error().Err(err).Str("repo", e.Repo.String()).Msg("bernard: settle the pending head")
+				}
+			case sha != batch.Head:
 				b.markAdopted(ctx, e.Repo, batch.Key, false)
 			}
 		}
@@ -425,26 +439,14 @@ func (b *Bernard) writeDraft(ctx context.Context, name domain.RepoName, batch do
 	draft := batch
 	draft.State, draft.Error, draft.Repro = domain.DepsDrafted, "", nil
 	// The record holds the draft head before the branch moves: CI holds the
-	// runs of that head (Held) until the runner's commit replaces it.
-	_, _, err = b.writeBranch(ctx, name, draft, tip, tip, batch.Head, changes, func(head domain.ObjectID, created bool) error {
-		_, err := b.cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
-			if err := movedPrecondition(*r, batch.Key, expected); err != nil {
-				return false, err
-			}
-			_, i, ok := r.Batch(batch.Key)
-			if !ok {
-				return false, errRecordMoved
-			}
-			stored := &r.Batches[i]
-			if stored.Branch == "" {
-				stored.Branch = batch.BranchName()
-			}
-			stored.Head = head
-			stored.AddDraft(head, created)
-			stored.State, stored.Error, stored.Repro = domain.DepsDrafted, "", nil
-			return true, nil
-		})
-		return err
+	// runs of that head (Held) whenever it plans them.
+	_, _, err = b.writeBranch(ctx, name, draft, tip, tip, batch.Head, changes, func(r domain.RepoDeps, stored *domain.DepBatch, head domain.ObjectID, created bool) error {
+		if err := movedPrecondition(r, batch.Key, expected); err != nil {
+			return err
+		}
+		stored.AddDraft(head, created)
+		stored.State, stored.Error, stored.Repro = domain.DepsDrafted, "", nil
+		return nil
 	})
 	if err != nil {
 		return domain.RepoDeps{}, err
@@ -635,14 +637,21 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 	// the pull_request runs the push starts see it ready, with its title.
 	var number int64
 	var err error
-	if batch.MR != 0 && !old.IsZero() {
+	if batch.MR != 0 {
 		// The branch must still be Bernard's before its request changes.
 		cur, err := cfg.Git.BranchHead(ctx, name, batch.BranchName())
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			return domain.RepoDeps{}, fmt.Errorf("read %s: %w", batch.BranchName(), err)
 		}
-		if cur != old {
+		if !old.IsZero() && cur != old {
 			return domain.RepoDeps{}, errBranchAdopted
+		}
+		if old.IsZero() && !cur.IsZero() {
+			if bot, err := b.botTip(ctx, name, cur); err != nil {
+				return domain.RepoDeps{}, err
+			} else if !bot {
+				return domain.RepoDeps{}, errBranchAdopted
+			}
 		}
 	}
 	if batch.MR != 0 {
@@ -707,26 +716,42 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 // changed since Bernard last wrote it.
 var errBranchAdopted = fmt.Errorf("%w: the branch was changed by hand", domain.ErrPreconditionFailed)
 
-// writeBranch commits changes on base with parent, records the tip and moves
-// the batch branch to the commit with a compare-and-swap from old. A zero old
-// replaces whatever the branch holds (Bernard's namespace, no head recorded
-// yet); a branch that is no longer at a non-zero old was changed by hand:
-// errBranchAdopted. before, when set, runs once the commit exists (told
-// whether the move creates the branch) and before
-// the branch moves (so that CI, told of the push, sees the record of the new
-// head). When parent is old and the tree is parent's, nothing is written and
-// the parent is returned with moved false.
-func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch domain.DepBatch, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, before func(head domain.ObjectID, created bool) error) (head domain.ObjectID, moved bool, err error) {
+// writeBranch commits changes on base with parent and moves the batch branch
+// to the commit with a compare-and-swap from old. A branch that is no longer
+// at a non-zero old was changed by hand: errBranchAdopted. A zero old (no head
+// recorded) creates the branch; an existing one is taken over only when its
+// tip is a Bernard commit (its head is recorded from it), otherwise it is a
+// human's: errBranchAdopted.
+//
+// The record names the commit as pending (DepBatch.Pending, from the head the
+// branch moves from) before the branch moves, and as the head once it moved;
+// a failure of the move clears it, and settlePending resolves one a crash
+// left. before, when set, edits the batch in that same write (told whether
+// the move creates the branch), so that CI, told of the push, sees it. When
+// parent is old and the tree is parent's, nothing is written and the parent
+// is returned with moved false.
+func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch domain.DepBatch, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, before func(r domain.RepoDeps, stored *domain.DepBatch, head domain.ObjectID, created bool) error) (head domain.ObjectID, moved bool, err error) {
 	cfg := b.cfg
 	branch := batch.BranchName()
-	if !old.IsZero() {
-		cur, err := cfg.Git.BranchHead(ctx, name, branch)
-		if err != nil && !errors.Is(err, domain.ErrNotFound) {
-			return domain.ObjectID{}, false, fmt.Errorf("read %s: %w", branch, err)
+	cur, err := cfg.Git.BranchHead(ctx, name, branch)
+	if errors.Is(err, domain.ErrNotFound) {
+		cur, err = domain.ObjectID{}, nil
+	}
+	if err != nil {
+		return domain.ObjectID{}, false, fmt.Errorf("read %s: %w", branch, err)
+	}
+	switch {
+	case !old.IsZero() && cur != old:
+		return domain.ObjectID{}, false, errBranchAdopted
+	case old.IsZero() && !cur.IsZero():
+		bot, err := b.botTip(ctx, name, cur)
+		if err != nil {
+			return domain.ObjectID{}, false, err
 		}
-		if cur != old {
+		if !bot {
 			return domain.ObjectID{}, false, errBranchAdopted
 		}
+		old = cur
 	}
 	tree, err := cfg.Git.WriteTree(ctx, name, base, changes)
 	if err != nil {
@@ -746,26 +771,59 @@ func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch d
 	if err != nil {
 		return domain.ObjectID{}, false, fmt.Errorf("write the commit: %w", err)
 	}
-	if old.IsZero() {
-		old, err = cfg.Git.BranchHead(ctx, name, branch)
-		if errors.Is(err, domain.ErrNotFound) {
-			old, err = domain.ObjectID{}, nil
+	// The branch was at old: a move meanwhile is a human's.
+	defer func() {
+		if errors.Is(err, domain.ErrConflict) {
+			err = errBranchAdopted
 		}
-		if err != nil {
-			return domain.ObjectID{}, false, fmt.Errorf("read %s: %w", branch, err)
+	}()
+	if _, err := cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
+		_, i, ok := r.Batch(batch.Key)
+		if !ok {
+			return false, errRecordMoved
 		}
-	} else {
-		// The record names the expected head: a move is a human's.
-		defer func() {
-			if errors.Is(err, domain.ErrConflict) {
-				err = errBranchAdopted
+		stored := &r.Batches[i]
+		if before != nil {
+			if err := before(*r, stored, head, old.IsZero()); err != nil {
+				return false, err
 			}
-		}()
-	}
-	if before != nil {
-		if err := before(head, old.IsZero()); err != nil {
-			return domain.ObjectID{}, false, err
 		}
+		if stored.Branch == "" {
+			stored.Branch = branch
+		}
+		if stored.Head.IsZero() {
+			stored.Head = old // a Bernard tip taken over
+		}
+		stored.Pending, stored.PendingPrev = head, old
+		return true, nil
+	}); err != nil {
+		return domain.ObjectID{}, false, err
+	}
+	head, err = b.moveBranch(ctx, name, batch.Key, branch, old, head)
+	if err != nil {
+		return domain.ObjectID{}, false, err
+	}
+	return head, true, nil
+}
+
+// moveBranch moves the branch from old to the pending head and records it as
+// the head; a move that demonstrably did not happen clears the pending head.
+func (b *Bernard) moveBranch(ctx context.Context, name domain.RepoName, key domain.DepBatchKey, branch string, old, head domain.ObjectID) (domain.ObjectID, error) {
+	cfg := b.cfg
+	settle := func(moved bool) error {
+		_, err := cfg.Store.Mutate(context.WithoutCancel(ctx), name, func(r *domain.RepoDeps) (bool, error) {
+			_, i, ok := r.Batch(key)
+			if !ok || r.Batches[i].Pending != head {
+				return false, nil
+			}
+			stored := &r.Batches[i]
+			if moved {
+				stored.Head = head
+			}
+			stored.Pending, stored.PendingPrev = domain.ObjectID{}, domain.ObjectID{}
+			return true, nil
+		})
+		return err
 	}
 	oldStr := domain.ZeroOID
 	if !old.IsZero() {
@@ -774,15 +832,103 @@ func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch d
 	upd := []domain.RefUpdate{{Old: oldStr, New: head.String(), Ref: "refs/heads/" + branch}}
 	bot := domain.Bot(name)
 	if err := recordRefTips(ctx, cfg.Tips, name, upd, domain.AuthorName(bot), domain.PusherOf(bot), false); err != nil {
-		return domain.ObjectID{}, false, err
+		if serr := settle(false); serr != nil {
+			ctxLog(ctx).Error().Err(serr).Str("repo", name.String()).Msg("bernard: clear the pending head")
+		}
+		return domain.ObjectID{}, err
 	}
 	if err := cfg.Git.UpdateBranch(ctx, name, branch, old, head); err != nil {
-		return domain.ObjectID{}, false, fmt.Errorf("move %s: %w", branch, err)
+		if serr := settle(false); serr != nil {
+			ctxLog(ctx).Error().Err(serr).Str("repo", name.String()).Msg("bernard: clear the pending head")
+		}
+		return domain.ObjectID{}, fmt.Errorf("move %s: %w", branch, err)
+	}
+	// Recorded before CI hears of the push. Should it fail, the record keeps
+	// the pending head, which settlePending promotes.
+	if err := settle(true); err != nil {
+		ctxLog(ctx).Error().Err(err).Str("repo", name.String()).Msg("bernard: record the head of the branch")
 	}
 	if cfg.CI != nil {
 		cfg.CI.OnPush(ctx, name, upd, bot)
 	}
-	return head, true, nil
+	return head, nil
+}
+
+// botTip reports whether the tip of a branch is a Bernard commit: its author
+// is the one NewBotCommit writes.
+func (b *Bernard) botTip(ctx context.Context, name domain.RepoName, tip domain.ObjectID) (bool, error) {
+	cs, _, err := b.cfg.Git.ListRange(ctx, name, domain.ObjectID{}, tip, 1)
+	if err != nil {
+		return false, fmt.Errorf("read the tip of the branch: %w", err)
+	}
+	if len(cs) != 1 {
+		return false, nil
+	}
+	want := domain.NewBotCommit(domain.ObjectID{}, domain.ObjectID{}, "", nil, domain.Identity{}, b.cfg.Committer, time.Time{}).Author
+	return cs[0].Author.Name == want.Name && cs[0].Author.Email == want.Email, nil
+}
+
+// settlePending resolves the pending head of a batch against the tip of its
+// branch (read when tip is nil): at the pending head it becomes the head, at
+// the head it moved from it is dropped, anywhere else a human moved the
+// branch and the batch is adopted (idle as for markAdopted). It returns the
+// record. The caller holds the repository lock.
+func (b *Bernard) settlePending(ctx context.Context, name domain.RepoName, key domain.DepBatchKey, tip *domain.ObjectID, idle bool) (domain.RepoDeps, error) {
+	d, err := b.cfg.Store.Get(ctx, name)
+	if err != nil {
+		return domain.RepoDeps{}, err
+	}
+	batch, _, ok := d.Batch(key)
+	if !ok || batch.Pending.IsZero() {
+		return d, nil
+	}
+	var cur domain.ObjectID
+	if tip != nil {
+		cur = *tip
+	} else if cur, err = b.cfg.Git.BranchHead(ctx, name, batch.BranchName()); errors.Is(err, domain.ErrNotFound) {
+		cur = domain.ObjectID{}
+	} else if err != nil {
+		return domain.RepoDeps{}, fmt.Errorf("read %s: %w", batch.BranchName(), err)
+	}
+	human := false
+	d, err = b.cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
+		_, i, ok := r.Batch(key)
+		if !ok || r.Batches[i].Pending != batch.Pending {
+			return false, nil
+		}
+		human = !r.Batches[i].SettlePending(cur)
+		return true, nil
+	})
+	if err != nil {
+		return domain.RepoDeps{}, fmt.Errorf("settle the pending head: %w", err)
+	}
+	if human {
+		b.markAdopted(ctx, name, key, idle)
+		return b.cfg.Store.Get(ctx, name)
+	}
+	return d, nil
+}
+
+// settleAllPending resolves the pending heads a previous process left.
+func (b *Bernard) settleAllPending(ctx context.Context) {
+	recs, err := b.cfg.Store.List(ctx)
+	if err != nil {
+		ctxLog(ctx).Error().Err(err).Msg("bernard: list the records")
+		return
+	}
+	for _, r := range recs {
+		for _, batch := range r.Batches {
+			if batch.Pending.IsZero() || b.cfg.Git == nil {
+				continue
+			}
+			func() {
+				defer b.repoLock(r.Repo)()
+				if _, err := b.settlePending(ctx, r.Repo, batch.Key, nil, true); err != nil {
+					ctxLog(ctx).Error().Err(err).Str("repo", r.Repo.String()).Msg("bernard: settle the pending head")
+				}
+			}()
+		}
+	}
 }
 
 // changes reads the files the updates touch at the tip, applies the updates
@@ -1057,6 +1203,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		}
 		batch.MR, batch.MRVersions, batch.MRUpdates = 0, nil, nil
 		batch.Adopted, batch.Head, batch.Drafts = false, domain.ObjectID{}, nil // the branch is Bernard's again
+		batch.Pending, batch.PendingPrev = domain.ObjectID{}, domain.ObjectID{}
 		if batch.Queued() || (!merged && batch.State == domain.DepsApplying) {
 			batch.State, batch.Error, batch.RunUpdates = domain.DepsIdle, "", nil
 		}

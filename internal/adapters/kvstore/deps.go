@@ -310,6 +310,12 @@ func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {
 	if !b.Head.IsZero() {
 		pb.Head = b.Head.String()
 	}
+	if !b.Pending.IsZero() {
+		pb.Pending = b.Pending.String()
+	}
+	if !b.PendingPrev.IsZero() {
+		pb.PendingPrev = b.PendingPrev.String()
+	}
 	for _, d := range b.Drafts {
 		pb.Drafts = append(pb.Drafts, &storagepb.DepDraft{Sha: d.Sha.String(), Created: d.Created})
 	}
@@ -337,6 +343,16 @@ func decodeDepBatch(pb *storagepb.DepBatch) (domain.DepBatch, error) {
 		if b.Head, err = domain.ParseObjectID(pb.GetHead()); err != nil {
 			return domain.DepBatch{}, fmt.Errorf("decode deps batch head: %w", err)
 		}
+	}
+	for dst, src := range map[*domain.ObjectID]string{&b.Pending: pb.GetPending(), &b.PendingPrev: pb.GetPendingPrev()} {
+		if src == "" {
+			continue
+		}
+		id, err := domain.ParseObjectID(src)
+		if err != nil {
+			return domain.DepBatch{}, fmt.Errorf("decode deps batch pending head: %w", err)
+		}
+		*dst = id
 	}
 	for _, d := range pb.GetDrafts() {
 		sha, err := domain.ParseObjectID(d.GetSha())

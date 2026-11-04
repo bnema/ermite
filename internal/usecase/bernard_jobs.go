@@ -285,6 +285,11 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if err != nil {
 		return fmt.Errorf("read the dependency record: %w", err)
 	}
+	if batch := applyingBatch(&d, run.ID); batch != nil && !batch.Pending.IsZero() {
+		if d, err = b.settlePending(ctx, run.Repo, batch.Key, nil, false); err != nil {
+			return err
+		}
+	}
 	jobGuard := func(r domain.RepoDeps) error {
 		if applyingBatch(&r, run.ID) == nil {
 			return errJobSuperseded

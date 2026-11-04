@@ -123,7 +123,9 @@ func (b *Bernard) workflowsWaiting(ctx context.Context) bool {
 // lock. A failure is recorded on the batch and returned.
 func (b *Bernard) queueStep(ctx context.Context, repo domain.RepoName, key domain.DepBatchKey) error {
 	defer b.repoLock(repo)()
-	d, err := b.cfg.Store.Get(ctx, repo)
+	// A publication a failure or a crash interrupted is settled first: the
+	// branch checks below compare with the head it leaves.
+	d, err := b.settlePending(ctx, repo, key, nil, true)
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Msg("bernard: read the record of a queued batch")
 		return err

@@ -52,6 +52,7 @@ type runnerRig struct {
 	readied  []int64
 	edits    []ports.EditMergeRequestParams
 	onPush   func(domain.RefUpdate) // called as CI hears of each Bernard push
+	moveErr  error                  // the error of the next UpdateBranch, once
 }
 
 // commitIDs are the ids WriteCommit hands out, in order.
@@ -90,6 +91,10 @@ func (rr *runnerRig) fakeForge() {
 		func(_ context.Context, _ domain.RepoName, b string, old, next domain.ObjectID) error {
 			rr.mu.Lock()
 			defer rr.mu.Unlock()
+			if err := rr.moveErr; err != nil {
+				rr.moveErr = nil
+				return err
+			}
 			if rr.branches[b] != old {
 				return domain.ErrConflict
 			}
@@ -1038,4 +1043,106 @@ func TestBernardMarkReadyFailureIsRetryable(t *testing.T) {
 	assert.Contains(t, snap.Base().Error, "mark !7 ready: store down")
 	assert.True(t, rr.mr(7).IsDraft())
 	assert.Equal(t, oid("d"), rr.branches["bernard/deps"], "the branch did not move")
+}
+
+// A move of the branch that fails without a conflict leaves no head that the
+// next attempt would take for a human's.
+func TestBernardTransientMoveFailureDoesNotAdopt(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.moveErr = errors.New("disk full")
+	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
+	_, err := rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, "", []domain.DepRef{goUpdate().DepRef})
+	require.Error(t, err)
+	snap := rr.snapshot()
+	assert.False(t, snap.Base().Adopted)
+	assert.Zero(t, snap.Base().Pending, "the failed move is rolled back")
+	assert.Zero(t, snap.Base().Head)
+
+	rr.open(goUpdate())
+	snap = rr.snapshot()
+	assert.False(t, snap.Base().Adopted, "the retry is Bernard's")
+	assert.Equal(t, oid("e"), snap.Base().Head)
+	assert.Equal(t, oid("e"), rr.branches["bernard/deps"])
+	assert.Equal(t, 1, rr.starts)
+}
+
+// A crash after the pending head was recorded: the next step settles it
+// against the branch.
+func TestBernardResumesPendingPublication(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tip     domain.ObjectID // the branch; zero for none
+		adopted bool
+		head    domain.ObjectID
+	}{
+		{"moved", oid("5"), false, oid("5")},
+		{"not moved", oid("4"), false, oid("4")},
+		{"moved by a human", oid("6"), true, oid("4")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+			up := goUpdate()
+			rr.rec.Batches = []domain.DepBatch{{
+				Updates: []domain.DepUpdate{up}, RunUpdates: []domain.DepUpdate{up}, MRUpdates: []domain.DepUpdate{up}, MRVersions: []domain.DepRef{up.DepRef},
+				MR: 7, State: domain.DepsDrafted, Branch: "bernard/deps", Head: oid("4"), Pending: oid("5"), PendingPrev: oid("4"),
+			}}
+			rr.mrs[7] = domain.MergeRequest{Repo: rr.repo, Number: 7, State: domain.MRStateOpen, Source: "bernard/deps", Target: "main"}
+			rr.branches["bernard/deps"] = tc.tip
+			rr.b.Drain(t.Context())
+			snap := rr.snapshot()
+			assert.Equal(t, tc.adopted, snap.Base().Adopted)
+			assert.Equal(t, tc.head, snap.Base().Head)
+			assert.Zero(t, snap.Base().Pending)
+			if tc.adopted {
+				assert.Zero(t, rr.starts, "a human's branch gets no run")
+			} else {
+				assert.Equal(t, 1, rr.starts, "the draft resumes: its run starts")
+			}
+		})
+	}
+}
+
+// A merge request from before heads were recorded: a push to its branch is
+// a human's.
+func TestBernardUnknownHeadHumanPushAdopts(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.rec.Batches = []domain.DepBatch{{Updates: []domain.DepUpdate{goUpdate()}, MR: 7}}
+	rr.mrs[7] = domain.MergeRequest{Repo: rr.repo, Number: 7, State: domain.MRStateOpen, Source: "bernard/deps", Target: "main"}
+	rr.startWatch()
+	rr.events <- domain.PushEvent{Repo: rr.repo, Updates: []domain.RefUpdate{{Ref: "refs/heads/bernard/deps", Old: oid("4").String(), New: oid("5").String()}}}
+	require.Eventually(t, func() bool { s := rr.snapshot(); return s.Base().Adopted }, 5*time.Second, 5*time.Millisecond)
+}
+
+// With no head recorded, an existing branch is rewritten only from a Bernard
+// tip.
+func TestBernardUnknownHeadBranch(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		author domain.Signature
+		bot    bool
+	}{
+		{"human tip", domain.Signature{Name: "Alice", Email: "alice@example.com"}, false},
+		{"Bernard tip", domain.Signature{Name: "Bernard", Email: "bernard@forge.test"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+			rr.branches["bernard/deps"] = oid("5")
+			rr.git.EXPECT().ListRange(mock.Anything, rr.repo, domain.ObjectID{}, oid("5"), 1).Return([]domain.Commit{{ID: oid("5"), Author: tc.author}}, false, nil)
+			rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
+			_, err := rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, "", []domain.DepRef{goUpdate().DepRef})
+			snap := rr.snapshot()
+			if !tc.bot {
+				require.Error(t, err)
+				assert.True(t, snap.Base().Adopted)
+				assert.Equal(t, oid("5"), rr.branches["bernard/deps"], "not overwritten")
+				assert.Empty(t, rr.commits)
+				return
+			}
+			require.NoError(t, err)
+			assert.False(t, snap.Base().Adopted)
+			assert.Equal(t, oid("d"), rr.branches["bernard/deps"])
+			assert.Equal(t, oid("d"), snap.Base().Head)
+			assert.Contains(t, rr.commits[0], "parent "+oid("a").String())
+		})
+	}
 }

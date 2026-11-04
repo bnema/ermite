@@ -162,6 +162,7 @@ func (b *Bernard) Start() {
 		}
 		sub := b.cfg.Bus.Subscribe(b.ctx) // before returning: no event is missed
 		b.reconcileRuns(b.ctx, 0)         // the runs are the truth: settle the records left applying
+		b.settleAllPending(b.ctx)         // the branches are the truth: settle the heads left pending
 		b.wg.Add(3)
 		go b.loop()
 		go b.watchMergeRequests(sub)
