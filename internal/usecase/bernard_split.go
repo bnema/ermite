@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
+	"unicode"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -17,6 +19,14 @@ import (
 func (b *Bernard) Split(ctx context.Context, p domain.Principal, repo domain.RepoName, name domain.DepName, split bool) (domain.RepoDeps, error) {
 	if !p.HasOwnerRights() {
 		return domain.RepoDeps{}, domain.ErrNotFound
+	}
+	switch name.Ecosystem {
+	case domain.EcosystemGoMod, domain.EcosystemNPM, domain.EcosystemActions:
+	default:
+		return domain.RepoDeps{}, fmt.Errorf("%w: unknown ecosystem %q", domain.ErrInvalid, name.Ecosystem)
+	}
+	if strings.TrimSpace(name.Name) == "" || name.Name != strings.TrimSpace(name.Name) || strings.ContainsFunc(name.Name, unicode.IsControl) {
+		return domain.RepoDeps{}, fmt.Errorf("%w: dependency name %q", domain.ErrInvalid, name.Name)
 	}
 	if _, err := lookupRepo(ctx, b.cfg.Meta, repo); err != nil {
 		return domain.RepoDeps{}, err
@@ -44,8 +54,18 @@ func (b *Bernard) Split(ctx context.Context, p domain.Principal, repo domain.Rep
 				affected[domain.FamilyBatchKey(u, []domain.DepName{name})] = true
 			}
 		}
+		// A batch also holds the dependency through what it is applying or
+		// what its merge request holds, whatever its key (an older key too).
+		holds := func(batch domain.DepBatch) bool {
+			for _, list := range [][]domain.DepUpdate{batch.Updates, batch.RunUpdates, batch.MRUpdates} {
+				if slices.ContainsFunc(list, func(u domain.DepUpdate) bool { return u.Ecosystem == name.Ecosystem && u.Name == name.Name }) {
+					return true
+				}
+			}
+			return slices.ContainsFunc(batch.MRVersions, func(r domain.DepRef) bool { return r.Ecosystem == name.Ecosystem && r.Name == name.Name })
+		}
 		for _, batch := range d.Batches {
-			if affected[batch.Key] && (batch.State == domain.DepsApplying || batch.State == domain.DepsQueued) {
+			if (affected[batch.Key] || holds(batch)) && (batch.State == domain.DepsApplying || batch.Queued()) {
 				return false, fmt.Errorf("%w: dependency updates are being applied", domain.ErrPreconditionFailed)
 			}
 		}

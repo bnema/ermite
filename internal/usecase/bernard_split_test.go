@@ -56,3 +56,27 @@ func TestBernardSplit(t *testing.T) {
 	assert.Equal(t, []domain.DepUpdate{otel, sdk}, got.Batches[1].Updates)
 	assert.Equal(t, 2, r.changedCount())
 }
+
+func TestBernardSplitRefusesBusyAndInvalid(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil).Maybe()
+	sdk := domain.DepUpdate{DepRef: depRef("go.opentelemetry.io/otel/sdk", "v2.0.0"), Current: "v1.0.0"}
+	name := domain.DepName{Ecosystem: domain.EcosystemGoMod, Name: sdk.Name}
+	ctx := t.Context()
+	for _, bad := range []domain.DepName{{Ecosystem: "cargo", Name: "x"}, {Ecosystem: domain.EcosystemGoMod}, {Ecosystem: domain.EcosystemNPM, Name: " x"}, {Ecosystem: domain.EcosystemNPM, Name: "a\nb"}} {
+		_, err := r.b.Split(ctx, domain.Owner(), r.repo, bad, true)
+		require.ErrorIs(t, err, domain.ErrInvalid, "%+v", bad)
+	}
+	// A drafted batch is busy; a legacy key holding the dependency in its
+	// run or its merge request is found by what it holds.
+	for _, busy := range []domain.DepBatch{
+		{Key: domain.FamilyBatchKey(sdk, nil), Updates: []domain.DepUpdate{sdk}, State: domain.DepsDrafted},
+		{Key: "gomod/go.opentelemetry.io/otel/sdk@v2", State: domain.DepsApplying, RunUpdates: []domain.DepUpdate{sdk}},
+		{Key: "gomod/go.opentelemetry.io/otel/sdk@v2", State: domain.DepsQueued, MRUpdates: []domain.DepUpdate{sdk}, MR: 4},
+	} {
+		r.rec.Batches = []domain.DepBatch{{}, busy}
+		_, err := r.b.Split(ctx, domain.Owner(), r.repo, name, true)
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed, "%+v", busy)
+	}
+	assert.Zero(t, r.changedCount())
+}
