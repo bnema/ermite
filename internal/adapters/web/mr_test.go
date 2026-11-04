@@ -355,10 +355,9 @@ func TestMRLinkedIssuesAndHistory(t *testing.T) {
 	rec := r.do("GET", "/proj/merge-requests/12", false, nil)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
-	assert.Contains(t, body, `id="r-issues">Issues`)
+	assert.NotContains(t, body, `<aside class="rail"`, "zero-file requests omit the rail")
 	assert.Contains(t, body, `href="/proj/issues/3">#3 Fix &lt;login&gt;</a>`)
-	assert.Contains(t, body, `data-state="resolved"`)
-	assert.Contains(t, body, " · resolves")
+	assert.NotContains(t, body, `id="r-issues"`)
 	assert.Contains(t, body, "owner referenced")
 	assert.Contains(t, body, "owner will resolve")
 	assert.Contains(t, body, "owner resolved")
@@ -487,4 +486,22 @@ func TestMRDiffViewMenuNeedsFiles(t *testing.T) {
 func TestMRCommentMenuIsJSOnly(t *testing.T) {
 	body := renderToString(t, commentView(CommentView{ID: "1", Quote: "> quote"}, ""))
 	assert.Contains(t, body, `<details class="menu c-menu" data-js>`)
+}
+
+func TestMRZeroFilesPresentation(t *testing.T) {
+	p := MRPage{Verdicts: []VerdictView{{Author: "owner", Label: "approve", Href: "#c1"}, {Author: "reviewer", Label: "changes_requested", Href: "#c2"}}}
+	assert.Nil(t, mrPageRail(p))
+	bar := renderToString(t, mrBar(p))
+	assert.Contains(t, bar, "0 files")
+	assert.NotContains(t, bar, `class="plus"`)
+	assert.NotContains(t, bar, `class="minus"`)
+	fact := renderToString(t, mrVerdictFact(p, false))
+	assert.Contains(t, fact, "✓ approved by owner")
+	assert.Contains(t, fact, "✕ changes requested by reviewer")
+	assert.Contains(t, fact, ", ")
+	assert.NotContains(t, fact, " hidden")
+	assert.Contains(t, renderToString(t, MRStateFragment(p)), `id="mr-verdict-fact" data-k="verdicts" hx-swap-oob`)
+	p.NFiles = 1
+	assert.NotNil(t, mrPageRail(p))
+	assert.Contains(t, renderToString(t, mrVerdictFact(p, false)), " hidden")
 }

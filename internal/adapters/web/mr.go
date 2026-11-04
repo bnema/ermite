@@ -729,7 +729,7 @@ func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragmen
 	}
 	p.Live = true
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head)+"&target="+url.QueryEscape(m.Target))
-	l.HasRail = true
+	l.HasRail = p.NFiles > 0
 	l.MR, l.Lazy = true, true
 	return MergeRequest(l, p), http.StatusOK, nil
 }

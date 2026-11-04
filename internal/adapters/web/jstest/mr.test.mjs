@@ -567,7 +567,7 @@ test('live refresh preserves the open button panel even when the hash points els
     diffs.dataset.diff = 'unified';
     const fresh = el('footer', {}, el('section', { attrs: { 'data-mr-panel': '' } }), el('section', { attrs: { 'data-mr-panel': '' } }));
     const page = { body: { dataset: {} } };
-    const $ = (s, root) => s === '#diffs' ? diffs : s === '.mr-footer' ? (root === page ? fresh : h.footer) : el('div');
+    const $ = (s, root) => s === '.rail' ? null : s === '.work' ? { classList: { toggle() {} } } : s === '#diffs' ? diffs : s === '.mr-footer' ? (root === page ? fresh : h.footer) : el('div');
     const $$ = (s, root) => s === '[data-mr-tabs] button' ? h.tabs : s === '[data-mr-panel]' ? fresh.children : [];
     let selected;
     const lazy = { reset() {}, watch() {} };

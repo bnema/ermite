@@ -18,7 +18,7 @@
     & h1 { margin-bottom: var(--s2); }
     /* the title with its actions on the right (close or reopen an issue) */
     & .mr-title { display: flex; align-items: flex-start; gap: var(--s4); }
-    & .mr-title h1 { flex: 1; min-width: 0; }
+    & .mr-title h1 { flex: 1; min-width: 0; text-wrap: pretty; }
     & .mr-title-acts { flex: none; display: flex; gap: var(--s2); }
     & .mr-title-acts form { margin: 0; }
     & .mr-title-acts:empty { display: none; }
@@ -393,6 +393,9 @@
     & .f-hint kbd { font-size: var(--fs-2xs); line-height: 16px; min-width: 0; }
     @media (hover: none) { & .f-hint { display: none; } }
     /* the first line of a range: a small inline number field */
+    & .f-range-d { font-size: var(--fs-xs); color: var(--ink-mute); }
+    & .f-range-d > summary { cursor: pointer; }
+    & .f-range-d[open] > summary { margin-bottom: var(--s2); }
     & .f-range { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 400; color: var(--ink-mute); font-size: var(--fs-xs); }
     & .f-range input {
       width: 9ch; height: 26px; padding: 0 var(--s2); font: var(--fs-xs) var(--mono); color: var(--ink);
@@ -548,7 +551,7 @@
   .rule-h .c-open { display: inline-flex; align-items: center; gap: var(--s1); font: 500 var(--fs-xs) / 1 var(--font); color: var(--ink-mute); letter-spacing: 0; }
   .rule-h .c-open::before { content: "·"; }
   .rule-h .c-open .count { margin-left: 0; min-width: 0; background: none; box-shadow: none; padding: 0; color: inherit; }
-  .rule-h .c-open:has([data-count="0"]) { opacity: .6; }
+  .rule-h .c-open:has([data-count="0"]) { color: var(--ink-mute); }
   .c-body.prose > * { margin-block: .5em; }
   .c-body .ref { font-variant-numeric: tabular-nums; text-decoration: underline; }
 }

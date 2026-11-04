@@ -128,3 +128,36 @@ test('refresh preserves unfolded resolved notes by ID in comments and both diff 
     }
   }
 });
+
+test('htmx note replacement keeps unfolded state and accessible labels in both swap modes', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { runInNewContext } = await import('node:vm');
+  for (const style of ['outerMorph', 'outerHTML']) {
+    const listeners = {};
+    const button = { textContent: 'show thread', setAttribute(k, v) { this[k] = v; } };
+    const incoming = {
+      id: 'c42-s', open: false,
+      matches: () => true,
+      setAttribute(k) { assert.equal(k, 'data-open'); this.open = true; },
+      querySelector: () => button,
+    };
+    const old = { id: 'c42-s', matches: () => true };
+    const ctx = {};
+    runInNewContext(readFileSync(new URL('../static/js/comments.js', import.meta.url), 'utf8'), {
+      window: {}, location: { hash: '' },
+      document: { getElementById: () => incoming, querySelector: () => old },
+      addEventListener: (name, handler) => { listeners[name] = handler; },
+    });
+    listeners['htmx:before:swap']({ detail: { ctx, tasks: [{ target: '#c42-s', swapSpec: { style }, fragment: { children: [incoming] } }] } });
+    assert.equal(incoming.open, true);
+    assert.equal(button['aria-expanded'], 'true');
+    assert.equal(button.textContent, 'hide thread');
+    button.textContent = 'show thread'; // Morph processing can replace the header children.
+    listeners['htmx:after:swap']({ detail: { ctx } });
+    assert.equal(button.textContent, 'hide thread');
+    listeners['htmx:finally:swap']({ detail: { ctx } });
+    button.textContent = 'unchanged';
+    listeners['htmx:after:swap']({ detail: { ctx } });
+    assert.equal(button.textContent, 'unchanged', 'completed contexts do not retain state');
+  }
+});

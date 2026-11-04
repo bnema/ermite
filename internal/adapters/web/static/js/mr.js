@@ -552,7 +552,7 @@ window.ermiteMR = (() => {
   }
 
   async function refreshPage(page, current = () => true) {
-    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '.rail', '.hint-live'];
+    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '#mr-verdict-fact', '.hint-live'];
     for (const sel of regions) if (!$(sel) || !$(sel, page)) throw new Error('missing MR region');
     let anchor = scrollAnchor();
     const nextDiffs = $('#diffs', page);
@@ -605,6 +605,16 @@ window.ermiteMR = (() => {
       }
       await replaceRegion(old, fresh);
     }
+    // Unlike the fixed regions, the rail exists only while the diff has files.
+    const oldRail = $('.rail'), freshRail = $('.rail', page);
+    if (oldRail && freshRail) await replaceRegion(oldRail, freshRail);
+    else if (oldRail) await window.htmx.swap({ sourceElement: oldRail, target: oldRail, text: '', swap: 'delete settle:0 transition:false' });
+    else if (freshRail) {
+      const rail = document.adoptNode(freshRail);
+      $('.work').append(rail);
+      window.htmx.process(rail);
+    }
+    $('.work')?.classList.toggle('has-rail', !!freshRail);
     for (const key of ['ref', 'sha', 'paths', 'blob']) {
       if (page.body.dataset[key] !== undefined) document.body.dataset[key] = page.body.dataset[key];
     }

@@ -6,7 +6,7 @@
     /* size, lines and language, quiet beside the name */
     & .file-facts { display: inline-flex; flex-wrap: wrap; gap: var(--s3); font: 400 var(--fs-s) / 1 var(--font); color: var(--ink-mute); letter-spacing: 0; }
     & .file-facts > span + span::before { content: "·"; margin-right: var(--s3); color: var(--border-strong); }
-    & .file-last { display: inline-flex; min-width: 0; }
+    & .file-last { display: inline-flex; min-width: 0; gap: var(--s2); }
     & .file-last a { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     & .acts { margin-left: auto; display: flex; gap: var(--s2); }
   }

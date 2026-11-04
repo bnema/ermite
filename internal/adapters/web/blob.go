@@ -11,9 +11,10 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
-	"github.com/a-h/templ"
 	"bnema.dev/zerowrap"
+	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -224,4 +225,13 @@ func firstLines(s string, n int) string {
 		idx += j + 1
 	}
 	return s[:idx]
+}
+
+// blobTimeTitle uses the shared readable UTC format without changing CommitRow.
+func blobTimeTitle(at string) string {
+	t, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return at
+	}
+	return absolute(t)
 }

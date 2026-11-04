@@ -16,10 +16,10 @@ templ Blob(l Layout, p BlobPage) {
 					<span title={ f.Key }>{ f.Val }</span>
 				}
 				if p.Last != nil {
-					<span class="file-last"><a href={ templ.SafeURL(p.Last.CHref) } title={ p.Last.Subject }>{ p.Last.Subject }</a></span>
+					<span class="file-last"><a class="mono" href={ templ.SafeURL(p.Last.CHref) }>{ p.Last.Short }</a><a href={ templ.SafeURL(p.Last.CHref) } title={ p.Last.Subject }>{ p.Last.Subject }</a></span>
 					<span>{ p.Last.Author }</span>
 					if p.Last.WhenAt != "" {
-						<span><time datetime={ p.Last.WhenAt } title={ p.Last.WhenAt }>{ p.Last.When }</time></span>
+						<span><time datetime={ p.Last.WhenAt } title={ blobTimeTitle(p.Last.WhenAt) }>{ p.Last.When }</time></span>
 					}
 				}
 			</span>

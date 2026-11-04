@@ -83,6 +83,31 @@ window.ermiteComments = (() => {
   }
 
   function start() {
+    // htmx 4 includes main and OOB replacement tasks in the before-swap event.
+    // Key by request context so concurrent note requests cannot share state.
+    const unfoldedSwaps = new WeakMap();
+    addEventListener('htmx:before:swap', (e) => {
+      const { ctx, tasks = [] } = e.detail;
+      const ids = [];
+      for (const task of tasks) {
+        const target = typeof task.target === 'string' ? document.querySelector(task.target) : task.target;
+        const style = typeof task.swapSpec === 'string' ? task.swapSpec.split(/\s+/)[0] : task.swapSpec?.style;
+        if (!['outerMorph', 'outerHTML'].includes(style) || !target?.matches?.('.cmt[data-open]') || !target.id) continue;
+        const incoming = [...task.fragment.children].find((node) => node.id === target.id && node.matches('.cmt[data-resolved="true"]'));
+        if (!incoming) continue;
+        setOpen(incoming, true);
+        ids.push(target.id);
+      }
+      if (ids.length) unfoldedSwaps.set(ctx, ids);
+    });
+    addEventListener('htmx:after:swap', (e) => {
+      for (const id of unfoldedSwaps.get(e.detail.ctx) || []) {
+        const note = document.getElementById(id);
+        if (note?.matches('.cmt[data-resolved="true"]')) setOpen(note, true);
+      }
+      unfoldedSwaps.delete(e.detail.ctx);
+    });
+    addEventListener('htmx:finally:swap', (e) => unfoldedSwaps.delete(e.detail.ctx));
     addEventListener('click', (e) => {
       const opener = e.target.closest?.('[data-c-open]');
       if (opener) { e.preventDefault(); open(opener); return; }

@@ -188,3 +188,21 @@ func TestCommentFormResetAndIssueEnhancement(t *testing.T) {
 	assert.Contains(t, html, `hx-post="/demo/merge-requests/3/comments"`)
 	assert.NotContains(t, html, `name="thread"`)
 }
+
+func TestInlineRangeDisclosure(t *testing.T) {
+	for _, start := range []string{"", "152"} {
+		body := renderToString(t, commentForm(CommentForm{ID: "cf-line", Path: "a.go", Line: "153", StartLine: start}, ""))
+		assert.Contains(t, body, `<summary>Extend to a range…</summary>`)
+		assert.Contains(t, body, `name="start_line" min="1" value="`+start+`"`)
+		if start == "" {
+			assert.Contains(t, body, `<details class="f-range-d">`)
+		} else {
+			assert.Contains(t, body, `<details class="f-range-d" open>`)
+		}
+	}
+}
+
+func TestUnfoldFollowsNoteMetadata(t *testing.T) {
+	body := renderToString(t, commentView(CommentView{ID: "1", Resolved: true, Edited: true, Where: "a.go:1", Range: "lines 1–2"}, ""))
+	assert.Less(t, strings.Index(body, `>edited</span>`), strings.Index(body, `class="c-unfold"`))
+}

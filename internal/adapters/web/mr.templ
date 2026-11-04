@@ -127,7 +127,7 @@ templ mrRows(rows []MRRow, label string) {
 // sit in the toolbar, the commits and checks in the card footer, and the rail
 // holds the files and verdicts.
 templ MergeRequest(l Layout, p MRPage) {
-	@Shell(l, mrRail(p)) {
+	@Shell(l, mrPageRail(p)) {
 		<section class="mr-card">
 			<header class="show mr-h">
 				<h1 id="mr-title"><span class="mute">{ p.Number }</span> { p.Title }</h1>
@@ -151,6 +151,7 @@ templ MergeRequest(l Layout, p MRPage) {
 						<dt>updated</dt>
 						<dd data-k="updated"><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
+					@mrVerdictFact(p, false)
 				</dl>
 			</header>
 			if p.Desc != "" {
@@ -293,7 +294,6 @@ templ commentView(c CommentView, suffix string) {
 				}
 				if c.Resolved {
 					{ " " }<span class="c-state" data-state="resolved">resolved</span>
-					<button type="button" class="c-unfold" data-js aria-expanded="false">show thread</button>
 				}
 				if c.Outdated {
 					{ " " }<span class="c-state" title="written on an earlier head; the line may have moved">outdated</span>
@@ -306,6 +306,9 @@ templ commentView(c CommentView, suffix string) {
 				}
 				if c.Edited {
 					{ " " }<span class="c-tag">edited</span>
+				}
+				if c.Resolved {
+					<button type="button" class="c-unfold" data-js aria-expanded="false">show thread</button>
 				}
 			</p>
 			if c.Resolve != nil || c.Quote != "" || c.Edit != nil || c.Delete != nil {
@@ -416,14 +419,14 @@ func boolText(b bool) string {
 
 // commentForm writes a comment, general or on a line.
 templ commentForm(f CommentForm, suffix string) {
- <div id={ "form-" + f.ID + suffix }>
- @ActionForm(ActionProps{Action: f.Action, Class: "cform"}) {
- if !f.Issue {
- <input type="hidden" name="thread" value={ commentThread(f) + suffix }/>
- }
- @commentFields(f, suffix)
- }
- </div>
+	<div id={ "form-" + f.ID + suffix }>
+		@ActionForm(ActionProps{Action: f.Action, Class: "cform"}) {
+			if !f.Issue {
+				<input type="hidden" name="thread" value={ commentThread(f) + suffix }/>
+			}
+			@commentFields(f, suffix)
+		}
+	</div>
 }
 
 templ commentFields(f CommentForm, suffix string) {
@@ -446,7 +449,10 @@ templ commentFields(f CommentForm, suffix string) {
 		<input type="hidden" name="path" value={ f.Path }/>
 		<input type="hidden" name="line" value={ f.Line }/>
 		<input type="hidden" name="side" value={ f.Side }/>
-		<label class="f-range">from line <input type="number" name="start_line" min="1" value={ f.StartLine }/> to { f.Line }</label>
+		<details class="f-range-d" open?={ f.StartLine != "" }>
+			<summary>Extend to a range…</summary>
+			<label class="f-range">from line <input type="number" name="start_line" min="1" value={ f.StartLine }/> to { f.Line }</label>
+		</details>
 	}
 	if f.ReplyTo != "" {
 		<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
@@ -568,7 +574,12 @@ templ mrRail(p MRPage) {
 // works without scripts; with them, M and the keys of the menu drive it.
 templ mrBar(p MRPage) {
 	<div class="diff-tools mr-bar" role="group" aria-label="Diff view and merge">
-		<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
+		<span class="dim">
+			{ plural(p.NFiles, "file", "files") }
+			if p.NFiles > 0 {
+				{ " · " }<span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span>
+			}
+		</span>
 		if p.NFiles > 0 {
 			@diffViewMenu(p.DiffView)
 		}
@@ -810,8 +821,8 @@ templ Compare(l Layout, p ComparePage) {
 				<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 				<span class="grow"></span>
 				if p.NFiles > 0 {
-			@diffViewMenu(p.DiffView)
-		}
+					@diffViewMenu(p.DiffView)
+				}
 			</div>
 			if p.Invisible {
 				<p class="notice">
@@ -891,6 +902,7 @@ templ MRStateFragment(p MRPage) {
 	@ActionStatusClear()
 	@mrState(p)
 	@mrActions(p, true)
+	@mrVerdictFact(p, true)
 }
 
 templ mrState(p MRPage) {
@@ -960,4 +972,32 @@ templ mrCommentChanged(c CommentView, n, unresolved int, line, remove bool) {
 // Keep zero-count styling on the replaced span during comment updates.
 templ mrUnresolvedCount(n int, oob bool) {
 	<span id="mr-unresolved-count" class="count" data-count={ itoa(n) } hx-swap-oob?={ oob }>{ itoa(n) }</span>
+}
+
+// A nil component prevents Shell from rendering any rail on an empty diff.
+func mrPageRail(p MRPage) templ.Component {
+	if p.NFiles == 0 {
+		return nil
+	}
+	return mrRail(p)
+}
+
+templ mrVerdictFact(p MRPage, oob bool) {
+	<dd id="mr-verdict-fact" data-k="verdicts" hidden?={ p.NFiles > 0 || len(p.Verdicts) == 0 } hx-swap-oob?={ oob }>
+		for i, v := range p.Verdicts {
+			if i > 0 {
+				{ ", " }
+			}
+			<a href={ templ.SafeURL(v.Href) }>
+				if v.Label == "approve" {
+					{ "✓ approved by " + v.Author }
+				} else {
+					{ "✕ changes requested by " + v.Author }
+				}
+			</a>
+			if v.Stale {
+				{ " (stale)" }
+			}
+		}
+	</dd>
 }
