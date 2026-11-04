@@ -152,14 +152,6 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 	return &Bernard{cfg: cfg, cron: domain.CronSchedule{Cron: cron, Loc: time.UTC}, ctx: ctx, stop: stop, wake: make(chan struct{}, 1)}, nil
 }
 
-// SetAutoOpen is not implemented yet.
-func (b *Bernard) SetAutoOpen(_ context.Context, p domain.Principal, _ domain.RepoName, _ bool) (domain.RepoDeps, error) {
-	if !p.HasOwnerRights() {
-		return domain.RepoDeps{}, domain.ErrNotFound
-	}
-	return domain.RepoDeps{}, fmt.Errorf("%w: SetAutoOpen not implemented", domain.ErrPreconditionFailed)
-}
-
 // Start starts the daily schedule, once.
 func (b *Bernard) Start() {
 	b.start.Do(func() {
@@ -286,11 +278,12 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	}
 	now := b.cfg.Clock.Now()
 	fresh := 0
-	moved := false
+	moved, queued := false, false
 	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
 		fresh, moved = rebatch(d, carrySkipped(d, ups, skipped, allowed))
 		d.Repo = name
 		d.CheckedAt = now
+		queued = b.autoEnqueue(d, now) // a queue hook (bernard_settings.go)
 		return true, nil
 	})
 	if err != nil {
@@ -299,8 +292,11 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	if fresh > 0 {
 		b.cfg.Bus.Publish(ctx, domain.DependencyUpdatesFound{Repo: name, Count: fresh, At: now})
 	}
-	if moved {
+	if moved || queued {
 		b.changed(ctx, name)
+	}
+	if queued {
+		b.wakeQueue()
 	}
 	return rec, nil
 }

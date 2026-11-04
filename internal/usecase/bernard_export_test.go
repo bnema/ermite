@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // UnderRepoLock holds Bernard's per-repository lock while fn runs.
@@ -49,3 +50,10 @@ func (b *Bernard) SetConcurrencyForTest(n int) { b.cfg.Concurrency = n }
 
 // MetaForTest returns the repository metadata store of b.
 func (b *Bernard) MetaForTest() any { return b.cfg.Meta }
+
+// EnableAutoOpenForTest turns cfg.AutoOpen on with placeholder Open ports, so
+// that canOpen holds; the queue is not started.
+func (b *Bernard) EnableAutoOpenForTest(git ports.MergeGit, repos ports.GitRepos, signer ports.CommitSigner, mrs ports.MergeRequestService, mrst ports.MergeRequestStore) {
+	b.cfg.AutoOpen = true
+	b.cfg.Git, b.cfg.Repos, b.cfg.Signer, b.cfg.MRs, b.cfg.MRStore = git, repos, signer, mrs, mrst
+}
