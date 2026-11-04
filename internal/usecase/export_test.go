@@ -274,3 +274,18 @@ func WorkflowMatches(r domain.CIRun, workflow string) bool { return workflowMatc
 
 // ImplicitRunConcurrency exposes the event policy to external unit tests.
 var ImplicitRunConcurrency = implicitRunConcurrency
+
+// StartPullRunsForTest starts the pull_request runs of an activity of mr at
+// head, as the event worker does for a clean merge.
+func (c *CI) StartPullRunsForTest(ctx context.Context, mr domain.MergeRequest, action string, head domain.ObjectID) error {
+	e := pullEvent{repo: mr.Repo, number: mr.Number, action: action, head: head, run: true}
+	return c.startPullRuns(ctx, e, mr, pullState{head: head, merge: head, clean: true}, false)
+}
+
+// StartQueuedPullRuns takes the next queued activity and starts its
+// pull_request runs for a clean merge at its head; it returns the action.
+func (c *CI) StartQueuedPullRuns(ctx context.Context, mr domain.MergeRequest) (string, error) {
+	e := <-c.pull.events
+	defer c.finishPull(pullKey{repo: e.repo, number: e.number})
+	return e.action, c.startPullRuns(ctx, e, mr, pullState{head: e.head, merge: e.head, clean: true}, false)
+}
