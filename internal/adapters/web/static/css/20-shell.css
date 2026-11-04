@@ -22,6 +22,7 @@
   .i-file { --i: url(icons/file.svg); }
   .i-chevron { --i: url(icons/chevron.svg); }
   .i-tag { --i: url(icons/tag.svg); }
+  .i-link { --i: url(icons/md-link.svg); }
   .i-user { --i: url(icons/user.svg); }
   .i-key { --i: url(icons/key.svg); }
   .i-log-in { --i: url(icons/log-in.svg); }
