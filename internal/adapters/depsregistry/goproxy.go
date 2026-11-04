@@ -19,7 +19,8 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// GoDirective reads the go directive of the module's go.mod at version.
+// GoDirective reads the go directive of the module's go.mod at version. A
+// go.mod whose module line is not name is domain.ErrModulePathMismatch.
 func (r *Registry) GoDirective(ctx context.Context, name, version string) (string, error) {
 	path, err := module.EscapePath(name)
 	if err != nil {
@@ -40,6 +41,13 @@ func (r *Registry) GoDirective(ctx context.Context, name, version string) (strin
 	f, err := modfile.ParseLax("go.mod", data, nil)
 	if err != nil {
 		return "", fmt.Errorf("go proxy go.mod: %w", err)
+	}
+	if f.Module == nil || f.Module.Mod.Path != name {
+		declared := ""
+		if f.Module != nil {
+			declared = f.Module.Mod.Path
+		}
+		return "", fmt.Errorf("%w: module declares its path as %q", domain.ErrModulePathMismatch, declared)
 	}
 	if f.Go == nil {
 		return "", nil

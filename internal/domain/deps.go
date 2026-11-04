@@ -4,6 +4,7 @@ package domain
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	goversion "go/version"
 	"slices"
@@ -12,6 +13,10 @@ import (
 
 	"golang.org/x/mod/semver"
 )
+
+// ErrModulePathMismatch means a Go module version's go.mod declares another
+// module path than the one it is fetched as (vanity move, case change).
+var ErrModulePathMismatch = errors.New("go.mod declares another module path")
 
 // DepsCacheRef isolates the deps module cache from workflow caches both ways.
 const DepsCacheRef = "refs/ermite/deps"

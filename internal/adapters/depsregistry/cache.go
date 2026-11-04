@@ -33,7 +33,9 @@ type cached struct {
 func NewCached(registry ports.DepsRegistry) ports.DepsRegistry {
 	return &cached{registry: registry, npmVersions: make(map[string]result[[]domain.DepVersion]), majorPaths: make(map[string]result[[]string]), goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
 }
-func cacheable(err error) bool { return err == nil || errors.Is(err, domain.ErrNotFound) }
+func cacheable(err error) bool {
+	return err == nil || errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrModulePathMismatch)
+}
 
 func (c *cached) GoVersions(ctx context.Context, name, current string) ([]domain.DepVersion, error) {
 	c.mu.Lock()
