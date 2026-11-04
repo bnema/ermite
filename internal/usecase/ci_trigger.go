@@ -295,8 +295,8 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 	// three, and no create event when it creates more than three.
 	push := !isTag || tagCount <= workflow.MaxTagsPerPush
 	create := u.IsCreate() && (!isTag || tagsCreated <= workflow.MaxTagsPerPush)
-	if push && !t.release && c.heldRef(ctx, t.repo, u) {
-		push = false // held head: ReleaseHold or a later push starts them
+	if (push || create) && !t.release && c.heldRef(ctx, t.repo, u) {
+		push, create = false, false // held head: ReleaseHold or a later push starts them
 	}
 	if !push && !create {
 		return nil

@@ -56,6 +56,46 @@ func TestHoldSkipsPushRunsOfTheHeldHeadOnly(t *testing.T) {
 	assert.Equal(t, 2, hold.calls)
 }
 
+// The first push of a held branch is a creation: its create workflows wait
+// for the release too.
+func TestHoldSkipsCreateRunsOfTheHeldHead(t *testing.T) {
+	u := newCIUnit(t, nil)
+	repo := name(t, "proj")
+	hold := &fakeHold{branch: "bernard/deps", sha: heldSHA}
+	u.ci.SetHold(hold)
+	u.store.EXPECT().ListRunners(mock.Anything).Return([]domain.CIRunner{{ID: "r1"}}, nil)
+	// An unexpected Meta.Get (planning of the on: create workflows) fails the mock.
+	u.ci.OnPush(context.Background(), repo, []domain.RefUpdate{{Ref: "refs/heads/bernard/deps", Old: domain.ZeroOID, New: heldSHA.String()}}, domain.Root())
+	u.ci.PlanQueuedPush()
+	assert.Equal(t, 1, hold.calls)
+}
+
+// A release of a head that created the branch replays the creation: no
+// parent is read, and planning (create and push workflows) goes on.
+func TestReleaseHoldReplaysTheCreation(t *testing.T) {
+	mrs := mocks.NewMergeRequestStore(t)
+	git := mocks.NewMergeGit(t)
+	repos := mocks.NewGitRepos(t)
+	u := newCIUnit(t, func(cfg *usecase.CIConfig) {
+		cfg.MRs, cfg.Pull, cfg.Git, cfg.Repos = mrs, mocks.NewPullGit(t), git, repos
+	})
+	repo := name(t, "proj")
+	u.ci.SetHold(&fakeHold{branch: "deps", sha: heldSHA})
+	git.EXPECT().BranchHead(mock.Anything, repo, "deps").Return(heldSHA, nil)
+	git.EXPECT().ListRange(mock.Anything, repo, domain.ObjectID{}, heldSHA, 1).
+		Return([]domain.Commit{{ID: heldSHA, Parents: []domain.ObjectID{parentSH}}}, false, nil).Maybe()
+	repos.EXPECT().DefaultBranch(mock.Anything, repo).Return("main", true, nil).Maybe()
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(parentSH, nil).Maybe()
+	mrs.EXPECT().OpenByTarget(mock.Anything, repo, mock.Anything, mock.Anything).Return(nil, false, nil).Maybe()
+	mrs.EXPECT().OpenBySource(mock.Anything, repo, mock.Anything, mock.Anything).Return(nil, false, nil).Maybe()
+	require.NoError(t, u.ci.ReleaseHold(context.Background(), repo, "deps", heldSHA, true))
+	u.store.EXPECT().ListRunners(mock.Anything).Return([]domain.CIRunner{{ID: "r1"}}, nil).Once()
+	u.meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{}, domain.ErrNotFound).Once()
+	seen := u.ci.PlanQueuedPushUpdates()
+	require.Len(t, seen, 1)
+	assert.True(t, seen[0].IsCreate(), "replayed as the creation of the branch")
+}
+
 // startPullRuns lists the runners first: no ListRunners call means no run.
 func TestHoldSkipsPullRequestRunsOfTheHeldHead(t *testing.T) {
 	u := newCIUnit(t, nil)
@@ -92,7 +132,7 @@ func TestReleaseHoldStartsPushAndSynchronizeRuns(t *testing.T) {
 	mrs.EXPECT().OpenByTarget(mock.Anything, repo, []string{"deps"}, mock.Anything).Return(nil, false, nil)
 	mrs.EXPECT().OpenBySource(mock.Anything, repo, []string{"deps"}, mock.Anything).Return([]int64{1}, false, nil)
 	mrs.EXPECT().Get(mock.Anything, repo, int64(1)).Return(mr, nil)
-	require.NoError(t, u.ci.ReleaseHold(ctx, repo, "deps", heldSHA))
+	require.NoError(t, u.ci.ReleaseHold(ctx, repo, "deps", heldSHA, false))
 
 	// The push runs: planning reaches the repository despite the hold.
 	u.store.EXPECT().ListRunners(mock.Anything).Return([]domain.CIRunner{{ID: "r1"}}, nil).Once()
@@ -112,6 +152,6 @@ func TestReleaseHoldOfAMovedBranchStartsNothing(t *testing.T) {
 	u := newCIUnit(t, func(cfg *usecase.CIConfig) { cfg.Git = git })
 	repo := name(t, "proj")
 	git.EXPECT().BranchHead(mock.Anything, repo, "deps").Return(otherSHA, nil)
-	require.NoError(t, u.ci.ReleaseHold(context.Background(), repo, "deps", heldSHA))
+	require.NoError(t, u.ci.ReleaseHold(context.Background(), repo, "deps", heldSHA, false))
 	assert.True(t, u.ci.Settled(context.Background(), repo, 1))
 }

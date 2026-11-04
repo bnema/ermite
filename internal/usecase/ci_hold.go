@@ -65,8 +65,10 @@ func (c *CI) heldPull(ctx context.Context, e pullEvent, mr domain.MergeRequest, 
 // merge requests from that branch. The runs are attributed to whoever the
 // record of the branch says set it to sha (untrusted without one). Nothing
 // starts when the branch is no longer at sha: the push that moved it started
-// its own runs. Asynchronous, as a push: it returns once the work is queued.
-func (c *CI) ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) error {
+// its own runs. created replays the push as the creation of the branch (its
+// create workflows run too). Asynchronous, as a push: it returns once the work
+// is queued.
+func (c *CI) ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID, created bool) error {
 	head, err := c.cfg.Git.BranchHead(ctx, repo, branch)
 	if err != nil {
 		return fmt.Errorf("read the head of %s: %w", branch, err)
@@ -74,10 +76,10 @@ func (c *CI) ReleaseHold(ctx context.Context, repo domain.RepoName, branch strin
 	if head != sha {
 		return nil
 	}
-	// The push replayed is the one from the first parent, as a fast-forward of
-	// one commit; a root commit is a creation.
+	// The push replayed is the creation, or the one from the first parent, as
+	// a fast-forward of one commit; a root commit is a creation.
 	old := domain.ZeroOID
-	if cs, _, err := c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, sha, 1); err == nil && len(cs) == 1 && len(cs[0].Parents) > 0 {
+	if cs, _, err := c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, sha, 1); !created && err == nil && len(cs) == 1 && len(cs[0].Parents) > 0 {
 		old = cs[0].Parents[0].String()
 	}
 	updates := []domain.RefUpdate{{Ref: "refs/heads/" + branch, Old: old, New: sha.String()}}

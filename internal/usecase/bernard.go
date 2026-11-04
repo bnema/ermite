@@ -92,7 +92,7 @@ type BernardConfig struct {
 	// Hold starts the runs CI held on a draft head that became final without
 	// a new commit; may be nil.
 	Hold interface {
-		ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) error
+		ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID, created bool) error
 	}
 }
 

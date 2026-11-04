@@ -262,6 +262,45 @@ type DepBatch struct {
 	Manual bool
 	// Repro holds local reproduction commands for a failure.
 	Repro []string
+	// Drafts are the draft heads Bernard pushed on the branch, newest last,
+	// at most MaxDepDrafts: CI holds their runs whenever it plans them.
+	Drafts []DepDraft
+}
+
+// MaxDepDrafts bounds DepBatch.Drafts.
+const MaxDepDrafts = 16
+
+// DepDraft is a manifest-only head Bernard pushed on a batch branch. Created
+// means the push created the branch.
+type DepDraft struct {
+	Sha     ObjectID
+	Created bool
+}
+
+// AddDraft records a draft head, dropping the oldest past MaxDepDrafts.
+func (b *DepBatch) AddDraft(sha ObjectID, created bool) {
+	b.Drafts = append(slices.DeleteFunc(slices.Clone(b.Drafts), func(d DepDraft) bool { return d.Sha == sha }), DepDraft{Sha: sha, Created: created})
+	if n := len(b.Drafts) - MaxDepDrafts; n > 0 {
+		b.Drafts = slices.Delete(b.Drafts, 0, n)
+	}
+}
+
+// Draft returns the recorded draft head sha.
+func (b DepBatch) Draft(sha ObjectID) (DepDraft, bool) {
+	for _, d := range b.Drafts {
+		if d.Sha == sha {
+			return d, true
+		}
+	}
+	return DepDraft{}, false
+}
+
+// RemoveDraft forgets the draft head sha.
+func (b *DepBatch) RemoveDraft(sha ObjectID) {
+	b.Drafts = slices.DeleteFunc(slices.Clone(b.Drafts), func(d DepDraft) bool { return d.Sha == sha })
+	if len(b.Drafts) == 0 {
+		b.Drafts = nil
+	}
 }
 
 // BranchName returns the stored branch or the key-derived branch when unset.

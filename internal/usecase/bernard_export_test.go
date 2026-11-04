@@ -17,7 +17,7 @@ func (b *Bernard) UnderRepoLock(repo domain.RepoName, fn func()) {
 
 // SetHoldForTest sets the hold release of b.
 func (b *Bernard) SetHoldForTest(h interface {
-	ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) error
+	ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID, created bool) error
 }) {
 	b.cfg.Hold = h
 }

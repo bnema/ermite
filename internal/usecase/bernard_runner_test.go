@@ -841,8 +841,36 @@ func TestBernardHoldsDraftHead(t *testing.T) {
 	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("a")), "another head")
 	assert.False(t, rr.b.Held(t.Context(), rr.repo, "main", oid("d")), "another branch")
 
+}
+
+// CI plans a push late: the draft head event, planned after the run failed,
+// still starts no normal run.
+func TestBernardDraftHeadHeldAfterFailure(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
 	rr.end(&ports.DepsReport{Error: "tidy failed"}, domain.CIFailure)
-	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")), "a failed batch holds nothing (and starts nothing)")
+	assert.True(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")), "a failed draft never starts normal CI")
+}
+
+// The draft head event, planned after the final commit replaced it, starts
+// no normal run.
+func TestBernardDraftHeadHeldAfterSuccess(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
+	rr.end(goReport(goMod, goSum), domain.CISuccess)
+	assert.True(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")), "the obsolete draft")
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("e")), "the final head")
+	snap := rr.snapshot()
+	assert.Equal(t, []domain.ObjectID{oid("d")}, draftShas(snap.Base().Drafts), "final commits are not recorded")
+}
+
+func draftShas(ds []domain.DepDraft) []domain.ObjectID {
+	var out []domain.ObjectID
+	for _, d := range ds {
+		out = append(out, d.Sha)
+	}
+	return out
 }
 
 func TestBernardFinalCommitNotHeld(t *testing.T) {
@@ -858,7 +886,6 @@ func TestBernardFinalCommitNotHeld(t *testing.T) {
 	rr.end(goReport(goMod, goSum), domain.CISuccess)
 	assert.Equal(t, []bool{false}, heldAtPush, "CI runs the final commit normally")
 	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("e")))
-	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")))
 }
 
 // The final tree equals the draft: no new commit, the held draft head is
@@ -875,13 +902,20 @@ func TestBernardFinalWithoutNewCommitReleasesTheHold(t *testing.T) {
 	snap := rr.snapshot()
 	assert.Equal(t, domain.DepsIdle, snap.Base().State)
 	assert.Equal(t, []domain.ObjectID{oid("d")}, hold.released)
+	assert.Equal(t, []bool{true}, hold.created, "the draft created the branch: its creation is replayed")
+	assert.Empty(t, snap.Base().Drafts, "the released head is no longer a draft")
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")), "the released head runs normally")
 	assert.False(t, rr.mr(7).IsDraft())
 }
 
-type releaseRecorder struct{ released []domain.ObjectID }
+type releaseRecorder struct {
+	released []domain.ObjectID
+	created  []bool
+}
 
-func (h *releaseRecorder) ReleaseHold(_ context.Context, _ domain.RepoName, _ string, sha domain.ObjectID) error {
+func (h *releaseRecorder) ReleaseHold(_ context.Context, _ domain.RepoName, _ string, sha domain.ObjectID, created bool) error {
 	h.released = append(h.released, sha)
+	h.created = append(h.created, created)
 	return nil
 }
 

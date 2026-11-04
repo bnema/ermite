@@ -235,6 +235,13 @@ func (c *CI) QueuePush(ctx context.Context, repo domain.RepoName) {
 // PlanQueuedPush handles the next queued trigger without starting workers.
 func (c *CI) PlanQueuedPush() { c.planPush(<-c.queue) }
 
+// PlanQueuedPushUpdates plans the next queued push and returns its updates.
+func (c *CI) PlanQueuedPushUpdates() []domain.RefUpdate {
+	t := <-c.queue
+	c.planPush(t)
+	return t.updates
+}
+
 // QueuePull exposes the pull activity queue for accounting tests.
 func (c *CI) QueuePull(repo domain.RepoName, number int64) {
 	c.queuePullEvent(pullEvent{repo: repo, number: number})

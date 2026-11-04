@@ -310,6 +310,9 @@ func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {
 	if !b.Head.IsZero() {
 		pb.Head = b.Head.String()
 	}
+	for _, d := range b.Drafts {
+		pb.Drafts = append(pb.Drafts, &storagepb.DepDraft{Sha: d.Sha.String(), Created: d.Created})
+	}
 	for _, u := range b.Updates {
 		pb.Updates = append(pb.Updates, encodeDepUpdate(u))
 	}
@@ -334,6 +337,13 @@ func decodeDepBatch(pb *storagepb.DepBatch) (domain.DepBatch, error) {
 		if b.Head, err = domain.ParseObjectID(pb.GetHead()); err != nil {
 			return domain.DepBatch{}, fmt.Errorf("decode deps batch head: %w", err)
 		}
+	}
+	for _, d := range pb.GetDrafts() {
+		sha, err := domain.ParseObjectID(d.GetSha())
+		if err != nil {
+			return domain.DepBatch{}, fmt.Errorf("decode deps batch draft: %w", err)
+		}
+		b.Drafts = append(b.Drafts, domain.DepDraft{Sha: sha, Created: d.GetCreated()})
 	}
 	for _, u := range pb.GetUpdates() {
 		b.Updates = append(b.Updates, decodeDepUpdate(u))

@@ -162,16 +162,25 @@ func (b *Bernard) noteAdopted(ctx context.Context, name domain.RepoName, batch d
 	}
 }
 
-// Held implements ports.CIHold: the head Bernard last wrote on a batch branch
-// is held while the batch waits for or runs its dependency job. It reads the
-// record without the repository lock: CI asks while Bernard publishes.
+// Held implements ports.CIHold: every draft head Bernard pushed on a batch
+// branch stays held whatever the batch became since (CI plans late: a failed
+// or replaced draft never starts its runs), and the head Bernard last wrote is
+// held while the batch waits for or runs its dependency job. An adopted branch
+// holds nothing. It reads the record without the repository lock: CI asks
+// while Bernard publishes.
 func (b *Bernard) Held(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) bool {
 	d, err := b.cfg.Store.Get(ctx, repo)
 	if err != nil {
 		return false
 	}
 	for _, batch := range d.Batches {
-		if batch.BranchName() != branch || batch.Head != sha || batch.Adopted {
+		if batch.BranchName() != branch || batch.Adopted {
+			continue
+		}
+		if _, ok := batch.Draft(sha); ok {
+			return true
+		}
+		if batch.Head != sha {
 			continue
 		}
 		switch batch.State {
@@ -417,7 +426,7 @@ func (b *Bernard) writeDraft(ctx context.Context, name domain.RepoName, batch do
 	draft.State, draft.Error, draft.Repro = domain.DepsDrafted, "", nil
 	// The record holds the draft head before the branch moves: CI holds the
 	// runs of that head (Held) until the runner's commit replaces it.
-	_, _, err = b.writeBranch(ctx, name, draft, tip, tip, batch.Head, changes, func(head domain.ObjectID) error {
+	_, _, err = b.writeBranch(ctx, name, draft, tip, tip, batch.Head, changes, func(head domain.ObjectID, created bool) error {
 		_, err := b.cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
 			if err := movedPrecondition(*r, batch.Key, expected); err != nil {
 				return false, err
@@ -431,6 +440,7 @@ func (b *Bernard) writeDraft(ctx context.Context, name domain.RepoName, batch do
 				stored.Branch = batch.BranchName()
 			}
 			stored.Head = head
+			stored.AddDraft(head, created)
 			stored.State, stored.Error, stored.Repro = domain.DepsDrafted, "", nil
 			return true, nil
 		})
@@ -641,6 +651,7 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 		}
 	}
 	head, moved, err := b.writeBranch(ctx, name, batch, base, parent, old, changes, nil)
+	var draft domain.DepDraft
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
@@ -670,6 +681,11 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 			stored.Branch = batch.BranchName()
 		}
 		stored.Head = head
+		if !moved {
+			// The draft head is the final one: no longer held.
+			draft, _ = stored.Draft(head)
+			stored.RemoveDraft(head)
+		}
 		return true, nil
 	})
 	if err != nil {
@@ -680,7 +696,7 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 	b.changed(ctx, name)
 	if !moved && cfg.Hold != nil {
 		// The draft head is the final one: the runs it held start now.
-		if err := cfg.Hold.ReleaseHold(ctx, name, batch.BranchName(), head); err != nil {
+		if err := cfg.Hold.ReleaseHold(ctx, name, batch.BranchName(), head, draft.Created); err != nil {
 			ctxLog(ctx).Error().Err(err).Str("repo", name.String()).Msg("bernard: release the runs of the head")
 		}
 	}
@@ -695,11 +711,12 @@ var errBranchAdopted = fmt.Errorf("%w: the branch was changed by hand", domain.E
 // the batch branch to the commit with a compare-and-swap from old. A zero old
 // replaces whatever the branch holds (Bernard's namespace, no head recorded
 // yet); a branch that is no longer at a non-zero old was changed by hand:
-// errBranchAdopted. before, when set, runs once the commit exists and before
+// errBranchAdopted. before, when set, runs once the commit exists (told
+// whether the move creates the branch) and before
 // the branch moves (so that CI, told of the push, sees the record of the new
 // head). When parent is old and the tree is parent's, nothing is written and
 // the parent is returned with moved false.
-func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch domain.DepBatch, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, before func(head domain.ObjectID) error) (head domain.ObjectID, moved bool, err error) {
+func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch domain.DepBatch, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, before func(head domain.ObjectID, created bool) error) (head domain.ObjectID, moved bool, err error) {
 	cfg := b.cfg
 	branch := batch.BranchName()
 	if !old.IsZero() {
@@ -746,7 +763,7 @@ func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch d
 		}()
 	}
 	if before != nil {
-		if err := before(head); err != nil {
+		if err := before(head, old.IsZero()); err != nil {
 			return domain.ObjectID{}, false, err
 		}
 	}
@@ -1039,7 +1056,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 			return false, nil
 		}
 		batch.MR, batch.MRVersions, batch.MRUpdates = 0, nil, nil
-		batch.Adopted, batch.Head = false, domain.ObjectID{} // the branch is Bernard's again
+		batch.Adopted, batch.Head, batch.Drafts = false, domain.ObjectID{}, nil // the branch is Bernard's again
 		if batch.Queued() || (!merged && batch.State == domain.DepsApplying) {
 			batch.State, batch.Error, batch.RunUpdates = domain.DepsIdle, "", nil
 		}

@@ -39,6 +39,14 @@ message DepBatch {
   google.protobuf.Timestamp queued_at = 13;
   bool manual = 14;
   repeated string repro = 15;
+  // the draft heads Bernard pushed on the branch, newest last (bounded)
+  repeated DepDraft drafts = 16;
+}
+// DepDraft is a manifest-only head Bernard pushed; created: the push created
+// the branch.
+message DepDraft {
+  string sha = 1;
+  bool created = 2;
 }
 // RepoDeps is the whole record under dpend/<repo>.
 message RepoDeps {

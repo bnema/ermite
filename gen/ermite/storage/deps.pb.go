@@ -232,13 +232,15 @@ type DepBatch struct {
 	Mr         int64                  `protobuf:"varint,7,opt,name=mr,proto3" json:"mr,omitempty"`
 	MrVersions []*DepRef              `protobuf:"bytes,8,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
 	// the updates the merge request holds, with their current versions
-	MrUpdates     []*DepUpdate           `protobuf:"bytes,9,rep,name=mr_updates,json=mrUpdates,proto3" json:"mr_updates,omitempty"`
-	Branch        string                 `protobuf:"bytes,10,opt,name=branch,proto3" json:"branch,omitempty"`
-	Head          string                 `protobuf:"bytes,11,opt,name=head,proto3" json:"head,omitempty"`
-	Adopted       bool                   `protobuf:"varint,12,opt,name=adopted,proto3" json:"adopted,omitempty"`
-	QueuedAt      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=queued_at,json=queuedAt,proto3" json:"queued_at,omitempty"`
-	Manual        bool                   `protobuf:"varint,14,opt,name=manual,proto3" json:"manual,omitempty"`
-	Repro         []string               `protobuf:"bytes,15,rep,name=repro,proto3" json:"repro,omitempty"`
+	MrUpdates []*DepUpdate           `protobuf:"bytes,9,rep,name=mr_updates,json=mrUpdates,proto3" json:"mr_updates,omitempty"`
+	Branch    string                 `protobuf:"bytes,10,opt,name=branch,proto3" json:"branch,omitempty"`
+	Head      string                 `protobuf:"bytes,11,opt,name=head,proto3" json:"head,omitempty"`
+	Adopted   bool                   `protobuf:"varint,12,opt,name=adopted,proto3" json:"adopted,omitempty"`
+	QueuedAt  *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=queued_at,json=queuedAt,proto3" json:"queued_at,omitempty"`
+	Manual    bool                   `protobuf:"varint,14,opt,name=manual,proto3" json:"manual,omitempty"`
+	Repro     []string               `protobuf:"bytes,15,rep,name=repro,proto3" json:"repro,omitempty"`
+	// the draft heads Bernard pushed on the branch, newest last (bounded)
+	Drafts        []*DepDraft `protobuf:"bytes,16,rep,name=drafts,proto3" json:"drafts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -378,6 +380,67 @@ func (x *DepBatch) GetRepro() []string {
 	return nil
 }
 
+func (x *DepBatch) GetDrafts() []*DepDraft {
+	if x != nil {
+		return x.Drafts
+	}
+	return nil
+}
+
+// DepDraft is a manifest-only head Bernard pushed; created: the push created
+// the branch.
+type DepDraft struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sha           string                 `protobuf:"bytes,1,opt,name=sha,proto3" json:"sha,omitempty"`
+	Created       bool                   `protobuf:"varint,2,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DepDraft) Reset() {
+	*x = DepDraft{}
+	mi := &file_ermite_storage_deps_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DepDraft) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DepDraft) ProtoMessage() {}
+
+func (x *DepDraft) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_deps_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DepDraft.ProtoReflect.Descriptor instead.
+func (*DepDraft) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DepDraft) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *DepDraft) GetCreated() bool {
+	if x != nil {
+		return x.Created
+	}
+	return false
+}
+
 // RepoDeps is the whole record under dpend/<repo>.
 type RepoDeps struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -429,7 +492,7 @@ type RepoDeps struct {
 
 func (x *RepoDeps) Reset() {
 	*x = RepoDeps{}
-	mi := &file_ermite_storage_deps_proto_msgTypes[4]
+	mi := &file_ermite_storage_deps_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -441,7 +504,7 @@ func (x *RepoDeps) String() string {
 func (*RepoDeps) ProtoMessage() {}
 
 func (x *RepoDeps) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_deps_proto_msgTypes[4]
+	mi := &file_ermite_storage_deps_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -454,7 +517,7 @@ func (x *RepoDeps) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepoDeps.ProtoReflect.Descriptor instead.
 func (*RepoDeps) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{4}
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RepoDeps) GetRepo() string {
@@ -573,7 +636,7 @@ type DepFirstSeen struct {
 
 func (x *DepFirstSeen) Reset() {
 	*x = DepFirstSeen{}
-	mi := &file_ermite_storage_deps_proto_msgTypes[5]
+	mi := &file_ermite_storage_deps_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -585,7 +648,7 @@ func (x *DepFirstSeen) String() string {
 func (*DepFirstSeen) ProtoMessage() {}
 
 func (x *DepFirstSeen) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_deps_proto_msgTypes[5]
+	mi := &file_ermite_storage_deps_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -598,7 +661,7 @@ func (x *DepFirstSeen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepFirstSeen.ProtoReflect.Descriptor instead.
 func (*DepFirstSeen) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{5}
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DepFirstSeen) GetAt() *timestamppb.Timestamp {
@@ -626,7 +689,7 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\acurrent\x18\x02 \x01(\tR\acurrent\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\x05R\x04kind\x12\x10\n" +
 	"\x03new\x18\x04 \x01(\bR\x03new\x12\x19\n" +
-	"\bnew_name\x18\x05 \x01(\tR\anewName\"\x80\x04\n" +
+	"\bnew_name\x18\x05 \x01(\tR\anewName\"\xb2\x04\n" +
 	"\bDepBatch\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateR\aupdates\x12\x14\n" +
@@ -646,7 +709,11 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\aadopted\x18\f \x01(\bR\aadopted\x127\n" +
 	"\tqueued_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bqueuedAt\x12\x16\n" +
 	"\x06manual\x18\x0e \x01(\bR\x06manual\x12\x14\n" +
-	"\x05repro\x18\x0f \x03(\tR\x05repro\"\xe6\x04\n" +
+	"\x05repro\x18\x0f \x03(\tR\x05repro\x120\n" +
+	"\x06drafts\x18\x10 \x03(\v2\x18.ermite.storage.DepDraftR\x06drafts\"6\n" +
+	"\bDepDraft\x12\x10\n" +
+	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x18\n" +
+	"\acreated\x18\x02 \x01(\bR\acreated\"\xe6\x04\n" +
 	"\bRepoDeps\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x127\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateB\x02\x18\x01R\aupdates\x129\n" +
@@ -681,15 +748,16 @@ func file_ermite_storage_deps_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_deps_proto_rawDescData
 }
 
-var file_ermite_storage_deps_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_ermite_storage_deps_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_ermite_storage_deps_proto_goTypes = []any{
 	(*DepRef)(nil),                // 0: ermite.storage.DepRef
 	(*DepName)(nil),               // 1: ermite.storage.DepName
 	(*DepUpdate)(nil),             // 2: ermite.storage.DepUpdate
 	(*DepBatch)(nil),              // 3: ermite.storage.DepBatch
-	(*RepoDeps)(nil),              // 4: ermite.storage.RepoDeps
-	(*DepFirstSeen)(nil),          // 5: ermite.storage.DepFirstSeen
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(*DepDraft)(nil),              // 4: ermite.storage.DepDraft
+	(*RepoDeps)(nil),              // 5: ermite.storage.RepoDeps
+	(*DepFirstSeen)(nil),          // 6: ermite.storage.DepFirstSeen
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_ermite_storage_deps_proto_depIdxs = []int32{
 	0,  // 0: ermite.storage.DepUpdate.ref:type_name -> ermite.storage.DepRef
@@ -697,20 +765,21 @@ var file_ermite_storage_deps_proto_depIdxs = []int32{
 	2,  // 2: ermite.storage.DepBatch.run_updates:type_name -> ermite.storage.DepUpdate
 	0,  // 3: ermite.storage.DepBatch.mr_versions:type_name -> ermite.storage.DepRef
 	2,  // 4: ermite.storage.DepBatch.mr_updates:type_name -> ermite.storage.DepUpdate
-	6,  // 5: ermite.storage.DepBatch.queued_at:type_name -> google.protobuf.Timestamp
-	2,  // 6: ermite.storage.RepoDeps.updates:type_name -> ermite.storage.DepUpdate
-	6,  // 7: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
-	6,  // 8: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
-	0,  // 9: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
-	2,  // 10: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
-	3,  // 11: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
-	1,  // 12: ermite.storage.RepoDeps.split_out:type_name -> ermite.storage.DepName
-	6,  // 13: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	7,  // 5: ermite.storage.DepBatch.queued_at:type_name -> google.protobuf.Timestamp
+	4,  // 6: ermite.storage.DepBatch.drafts:type_name -> ermite.storage.DepDraft
+	2,  // 7: ermite.storage.RepoDeps.updates:type_name -> ermite.storage.DepUpdate
+	7,  // 8: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
+	7,  // 9: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
+	0,  // 10: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
+	2,  // 11: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
+	3,  // 12: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
+	1,  // 13: ermite.storage.RepoDeps.split_out:type_name -> ermite.storage.DepName
+	7,  // 14: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_deps_proto_init() }
@@ -724,7 +793,7 @@ func file_ermite_storage_deps_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_deps_proto_rawDesc), len(file_ermite_storage_deps_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

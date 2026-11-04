@@ -51,7 +51,7 @@ A batch with Go or npm updates gets its merge request before the runner works:
 2. The run updates the dependencies on that tip (see below). Its accepted report becomes a second commit on top of the draft, and the merge request is marked ready with the plain subject.
 3. If the run fails, the draft stays. Its description shows the failure and the commands that redo the update locally.
 
-Workflows do not run on the draft commit: its push and `pull_request` runs are held until the dependency run ends. The final commit runs them as any push; when it equals the draft, the held runs start on the draft. After a failure no run starts.
+Workflows do not run on the draft commit: its push, `create` and `pull_request` runs are held, even when CI plans them after the dependency run ended. The final commit runs them as any push; when it equals the draft, the held runs start on the draft (with its `create` runs when the draft created the branch). A failed or replaced draft never starts them.
 
 A batch of Actions updates only gets one commit and a ready merge request.
 

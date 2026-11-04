@@ -67,6 +67,7 @@ func TestDepsQueueFieldsRoundTrip(t *testing.T) {
 				Batches: []domain.DepBatch{{
 					State: tc.state, Branch: "bernard/stored", Head: oid('a'), Adopted: true,
 					QueuedAt: created.Add(time.Minute), Manual: true, Repro: []string{"go mod tidy", "go test ./..."},
+					Drafts: []domain.DepDraft{{Sha: oid('d'), Created: true}},
 				}},
 			}
 			got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { *r = want; return true, nil })
