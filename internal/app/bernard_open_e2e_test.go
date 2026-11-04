@@ -38,6 +38,9 @@ jobs:
       - run: echo hello
 `
 
+// bernardPullWorkflow also runs on pull requests, as most repositories' CI does.
+var bernardPullWorkflow = strings.Replace(bernardWorkflow, "on:\n  push:\n    branches: ['bernard/**']\n", "on:\n  push:\n    branches: ['bernard/**']\n  pull_request:\n", 1)
+
 // AC5, AC7: Open MR on a repository with an outdated action creates the
 // signed commit on bernard/deps, a merge request authored by bernard and an
 // untrusted run; a second Open updates the same merge request.
@@ -207,7 +210,7 @@ func newBernardGoRig(t *testing.T) *bernardGoRig {
 	require.Nil(t, poll.GetJob())
 	rig.oldSum = "golang.org/x/text v0.20.0 " + bernardSumHash + "\ngolang.org/x/text v0.20.0/go.mod " + bernardSumHash + "\n"
 	c.push("main", map[string]string{
-		".github/workflows/ci.yml": bernardWorkflow,
+		".github/workflows/ci.yml": bernardPullWorkflow,
 		"go.mod":                   bernardGoMod("v0.20.0"),
 		"go.sum":                   rig.oldSum,
 	}, "")
@@ -378,8 +381,22 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 		}
 		return false
 	})
+	c.waitFor("a pull_request run on the final head", func() bool {
+		for _, r := range c.runs() {
+			if r.GetEvent() == "pull_request" {
+				return true
+			}
+		}
+		return false
+	})
 	for _, r := range c.runs() {
 		assert.NotEqual(t, draft, r.GetSha(), "still no run on the draft head")
+		if r.GetEvent() == "pull_request" {
+			// The merge request was ready before the final push: the run is
+			// not titled as a draft, and it tests the final head.
+			assert.Equal(t, "build(deps): update 2 dependencies", r.GetTitle())
+			assert.Equal(t, head, c.bareGit("proj", "rev-parse", r.GetSha()+"^2"))
+		}
 	}
 	assert.Equal(t, "Bernard", c.bareGit("proj", "log", "-1", "--format=%an", head))
 	assert.Equal(t, "build(deps): update 2 dependencies", c.bareGit("proj", "log", "-1", "--format=%s", head))
@@ -387,7 +404,7 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	assert.ElementsMatch(t, []string{".github/workflows/ci.yml", "go.mod", "go.sum"}, changed)
 	assert.Equal(t, bernardGoMod("v0.21.0"), c.mustGit(c.repoDir("proj"), "show", head+":go.mod"))
 	assert.Equal(t, newSum, c.mustGit(c.repoDir("proj"), "show", head+":go.sum"))
-	assert.Equal(t, strings.Replace(bernardWorkflow, "checkout@v4.1.0", "checkout@v4.2.0", 1), c.mustGit(c.repoDir("proj"), "show", head+":.github/workflows/ci.yml"))
+	assert.Equal(t, strings.Replace(bernardPullWorkflow, "checkout@v4.1.0", "checkout@v4.2.0", 1), c.mustGit(c.repoDir("proj"), "show", head+":.github/workflows/ci.yml"))
 	list, err := c.root.git.ListCommits(c.ctx, &pb.ListCommitsRequest{Repo: "proj", Revision: "bernard/deps", PageSize: 1})
 	require.NoError(t, err)
 	require.Len(t, list.GetCommits(), 1)

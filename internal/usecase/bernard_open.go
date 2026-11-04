@@ -621,13 +621,33 @@ func (b *Bernard) apply(ctx context.Context, name domain.RepoName, batch domain.
 func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target string, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, batch domain.DepBatch, guard func(domain.RepoDeps) error, effects []domain.DepSideEffect) (domain.RepoDeps, error) {
 	cfg := b.cfg
 	ups := batch.Updates
+	// A kept merge request (the draft) is made ready before the branch moves:
+	// the pull_request runs the push starts see it ready, with its title.
+	var number int64
+	var err error
+	if batch.MR != 0 && !old.IsZero() {
+		// The branch must still be Bernard's before its request changes.
+		cur, err := cfg.Git.BranchHead(ctx, name, batch.BranchName())
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return domain.RepoDeps{}, fmt.Errorf("read %s: %w", batch.BranchName(), err)
+		}
+		if cur != old {
+			return domain.RepoDeps{}, errBranchAdopted
+		}
+	}
+	if batch.MR != 0 {
+		if number, err = b.ensureMR(ctx, name, target, batch, effects, false); err != nil {
+			return domain.RepoDeps{}, err
+		}
+	}
 	head, moved, err := b.writeBranch(ctx, name, batch, base, parent, old, changes, nil)
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
-	number, err := b.ensureMR(ctx, name, target, batch, effects, false)
-	if err != nil {
-		return domain.RepoDeps{}, err
+	if number == 0 {
+		if number, err = b.ensureMR(ctx, name, target, batch, effects, false); err != nil {
+			return domain.RepoDeps{}, err
+		}
 	}
 	refs := make([]domain.DepRef, len(ups))
 	for i, u := range ups {
