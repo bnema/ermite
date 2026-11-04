@@ -38,6 +38,7 @@
 
   /* the dependency rows stack: the status and the actions go below */
   @media (max-width: 720px) {
+    .deps-repo-row { grid-template-columns: minmax(0, 1fr); }
     .deps-row {
       grid-template-columns: minmax(0, 1fr);
       & .deps-act > :is(form, a.btn) { flex: 1; }

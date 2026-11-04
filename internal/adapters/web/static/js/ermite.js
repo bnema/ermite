@@ -1088,6 +1088,13 @@ window.ermiteLive = (() => {
             const same = [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
             if (same) same.setAttribute('open', '');
           }
+          // A row the server opens (a repository with a failure) stays
+          // closed when the user closed it.
+          for (const shut of old.querySelectorAll('li[id] > details:not(.menu):not([open])')) {
+            const fresh = items.find((e) => e.id === shut.parentElement.id);
+            const same = [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
+            if (same) same.removeAttribute('open');
+          }
         }
         old.replaceWith(el);
         const rows = document.getElementById('repo-rows');

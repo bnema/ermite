@@ -81,12 +81,17 @@ Nothing is retried on its own. A failed update keeps its updates listed with a b
 
 ## The Inbox table
 
-**Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked and how many batches and updates are pending. There is one row per batch:
+**Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked, how many batches and updates are pending and, while Bernard works, the queue (`queue 1/1 running, 12 waiting`). The chips **All**, **Failures**, **Majors** and **MRs** filter the batches (`?filter=`); **sort** puts the repositories with a failure first, then the most updates, or orders them by name.
 
-- A disclosure arrow, the repository name, the batch (**Updates** for base, `<name> → <major>` for a major), an **outdated** badge when its merge request holds other versions or was built from other current versions, the number of updates, their kinds (`1 major · 2 minor · 3 patch`, empty kinds left out) and a **new** badge for versions that appeared since the last check. Open the row to see each update: name, `current → latest`, kind, **new**, and the directory when it is not the repository root.
-- The status: `queued` or `running` with a link to the run while Bernard applies updates, `failed` with a link to the run (the Inbox shows the failure’s last output line; expand the row for the full excerpt), or the link to the open merge request (`MR !7`).
-- The main button: **Open MR** opens the Bernard merge request, **Update MR** updates it, **View MR** is a link when it already holds exactly the pending versions, **Retry** starts a new run after a failure. There is no button while a run is going.
-- The **⋯** menu holds **Ignore**, which hides exactly the listed versions (a newer version shows up again), and **Snooze**, which hides the repository for seven days (`ERMITE_DEPS_SNOOZE`).
+There is one collapsible row per repository, closed unless it holds a failure. Its line tells the failures, the number of patch and minor updates with the state of their batch, the number of major families and a **new** badge for versions that appeared since the last check. Open it to see:
+
+- **Patch & minor**, the batch Bernard opens on its own as a draft merge request: its status (`queued #3`, `drafting`, `running` with a link to the run, `MR !41` with **draft** until its run passes, **adopted** once someone pushed to the branch, or `failed`) and its button.
+- **Majors**, one row per family (`github.com/charmbracelet/*  bubbles, lipgloss → v2`) or lone package (`go-acme/lego → v5`), each with its status and button.
+- A failure shows the full output in a block, the commands that reproduce it locally, and a link to the log.
+
+Open any batch row to see each update: name, `current → latest`, kind, **new**, and the directory when it is not the repository root. An **outdated** badge marks a merge request that holds other versions.
+
+The buttons: **Open MR** opens the Bernard merge request, **Update MR** updates it, **View MR** is a link when it already holds exactly the pending versions (or was adopted), **Retry** starts a new run after a failure. There is no button while a batch is queued or running. The **⋯** menu of a batch holds **Ignore**, which hides exactly the listed versions (a newer version shows up again), **Split <package>** to give a package of a family its own merge request, and **Join family** to put it back. The repository row has **Re-check**, which detects its updates again, and a **⋯** menu with **Auto-open on/off** (whether Bernard opens the patch and minor merge request by itself) and **Snooze**, which hides the repository for seven days (`ERMITE_DEPS_SNOOZE`).
 
 Each button sends the versions you saw. If a check changed the list in the meantime, or an update is being applied, the server refuses and you reload. The table updates live and keeps the rows you opened. Only the owner sees the Inbox and these buttons; everyone else gets a 404.
 

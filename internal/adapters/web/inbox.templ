@@ -236,54 +236,80 @@ templ InboxRuns(p InboxPage) {
 	</section>
 }
 
-// InboxDeps is Bernard's table: one row per repository with pending updates, a
-// disclosure for its updates, the status of its run or merge request, and the
+// InboxDeps is Bernard's table: one collapsible row per repository, its patch
+// and minor batch first, then its major families, each with its status and
 // actions. It stays as an empty fragment when there is nothing to show.
-// data-keep-open: the live swap keeps the open rows open.
+// data-keep-open: the live swap keeps the open rows open, and closed ones
+// closed.
 templ InboxDeps(p InboxPage) {
 	<section
 		id="inbox-deps"
 		data-keep-open
-		hidden?={ len(p.Deps) == 0 }
-		if len(p.Deps) > 0 {
+		hidden?={ p.DepsBatches == 0 }
+		if p.DepsBatches > 0 {
 			aria-labelledby="inbox-deps-h"
 		}
 	>
-		if len(p.Deps) > 0 {
+		if p.DepsBatches > 0 {
 			<h2 id="inbox-deps-h" class="rule-h">
 				<span>Dependency updates</span>
 				<span class="dim">
 					if p.DepsCheckedAt != "" {
 						checked <time datetime={ p.DepsCheckedAt }>{ p.DepsChecked }</time> ·{ " " }
 					}
-					{ plural(len(p.Deps), "batch", "batches") } · { plural(p.DepsUpdates, "update", "updates") }
+					{ plural(p.DepsBatches, "batch", "batches") } · { plural(p.DepsUpdates, "update", "updates") }
+					if p.DepsQueue != "" {
+						{ " · " }<span class="deps-queue">{ p.DepsQueue }</span>
+					}
 				</span>
 			</h2>
-			<nav class="deps-sort" aria-label="Sort repositories">
-				<span class="mute">sort:</span>
-				for i, o := range p.DepsSorts {
-					<a
-						href={ templ.SafeURL(o.Href) }
-						if o.Current {
-							aria-current="page"
-						}
-					>{ o.Label }</a>
-					if i < len(p.DepsSorts)-1 {
-						<span class="mute" aria-hidden="true">·</span>
+			<div class="deps-bar">
+				<nav class="deps-filters" aria-label="Filter batches">
+					for _, f := range p.DepsFilters {
+						<a
+							class="btn deps-chip"
+							href={ templ.SafeURL(f.Href) }
+							if f.Current {
+								aria-current="page"
+							}
+						>
+							{ f.Label }
+							if f.Label != "All" {
+								{ " " }<span class="count">{ itoa(f.Count) }</span>
+							}
+						</a>
 					}
-				}
-			</nav>
-			<ul class="deps-rows">
-				for _, d := range p.Deps {
-					@inboxDepsRow(d)
-				}
-			</ul>
+				</nav>
+				<nav class="deps-sort" aria-label="Sort repositories">
+					<span class="mute">sort:</span>
+					for i, o := range p.DepsSorts {
+						<a
+							href={ templ.SafeURL(o.Href) }
+							if o.Current {
+								aria-current="page"
+							}
+						>{ o.Label }</a>
+						if i < len(p.DepsSorts)-1 {
+							<span class="mute" aria-hidden="true">·</span>
+						}
+					}
+				</nav>
+			</div>
+			if len(p.Deps) == 0 {
+				<p class="dim deps-none">no batch matches this filter.</p>
+			} else {
+				<ul class="deps-repos">
+					for _, r := range p.Deps {
+						@inboxDepsRepo(r)
+					}
+				</ul>
+			}
 		}
 	</section>
 }
 
-// depsStatusCell is the state of the run, when there is one to tell, and the
-// open merge request. The failure reason is shown in the row details.
+// depsStatusCell is the state of the batch: its run or its place in the
+// queue, and its merge request.
 templ depsStatusCell(s InboxDepsStatus) {
 	if s.State != "" {
 		<span class="deps-state">
@@ -297,7 +323,15 @@ templ depsStatusCell(s InboxDepsStatus) {
 		</span>
 	}
 	if s.MR != 0 {
-		<a href={ templ.SafeURL(s.MRHref) }>MR !{ itoa64(s.MR) }</a>
+		<span class="deps-mr">
+			<a href={ templ.SafeURL(s.MRHref) }>MR !{ itoa64(s.MR) }</a>
+			if s.Draft {
+				<span class="pill">draft</span>
+			}
+			if s.Adopted {
+				<span class="pill" title="a human pushed to the branch: Bernard leaves it alone">adopted</span>
+			}
+		</span>
 	}
 }
 
@@ -324,32 +358,123 @@ templ depsForm(d InboxDepsRow, action, label, class string, refs bool, id string
 	}
 }
 
+// depsFieldForm is a POST button with one fixed field.
+templ depsFieldForm(action, field, value, label string) {
+	@ActionForm(ActionProps{Action: action}) {
+		<input type="hidden" name={ field } value={ value }/>
+		<button type="submit" class="btn">{ label }</button>
+	}
+}
+
+// depsRepoSummary is the line of a repository: failures, counts, and the
+// state of its patch and minor batch.
+templ depsRepoSummary(r InboxDepsRepo) {
+	<span class="deps-repo">{ r.Repo }</span>
+	if r.Failed > 0 {
+		<span class="deps-failed">
+			<span aria-hidden="true">
+				@CheckIcon("bad", "failed")
+			</span>
+			{ itoa(r.Failed) } failed
+		</span>
+	}
+	if r.Base != nil {
+		<span class="dim">{ itoa(r.BaseCount) } patch/minor</span>
+		if r.Base.Status.MR != 0 {
+			<span class="dim">MR !{ itoa64(r.Base.Status.MR) }</span>
+		} else if r.Base.Status.State != "" && r.Base.Status.Kind != "failed" {
+			<span class="dim">{ r.Base.Status.State }</span>
+		}
+	}
+	if r.MajorCount > 0 {
+		<span class="dim">{ plural(r.MajorCount, "major", "majors") }</span>
+	}
+	if r.New > 0 {
+		<span class="pill deps-new">new { itoa(r.New) }</span>
+	}
+	<span class="sr">{ ", " + plural(r.Count, "update", "updates") }</span>
+}
+
+templ inboxDepsRepo(r InboxDepsRepo) {
+	<li class="deps-repo-row" id={ r.ID } data-failed?={ r.Failed > 0 }>
+		<details class="deps-main" open?={ r.Open }>
+			<summary id={ r.ID + "-sum" }>
+				@depsRepoSummary(r)
+			</summary>
+			<div class="deps-body">
+				<p class="deps-repolink"><a href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a></p>
+				if r.Base != nil {
+					<ul class="deps-rows deps-base" aria-label={ "Patch and minor updates of " + r.Repo }>
+						@inboxDepsRow(*r.Base)
+					</ul>
+				}
+				if len(r.Majors) > 0 {
+					<h3 class="deps-group-h">Majors</h3>
+					<ul class="deps-rows deps-majors" aria-label={ "Major updates of " + r.Repo }>
+						for _, d := range r.Majors {
+							@inboxDepsRow(d)
+						}
+					</ul>
+				}
+			</div>
+		</details>
+		if r.Recheck != "" {
+			<span class="deps-repo-act">
+				@depsForm(InboxDepsRow{}, r.Recheck, "Re-check", "btn", false, r.ID+"-recheck")
+				<details class="menu deps-menu">
+					<summary id={ r.ID + "-more" } class="btn icon" aria-label={ "More actions for " + r.Repo }>⋯</summary>
+					<div class="menu-pop">
+						if r.AutoOn {
+							@depsFieldForm(r.Auto, "on", "0", "Auto-open off")
+						} else {
+							@depsFieldForm(r.Auto, "on", "1", "Auto-open on")
+						}
+						@depsForm(InboxDepsRow{}, r.Snooze, "Snooze", "btn", false, "")
+					</div>
+				</details>
+			</span>
+		}
+	</li>
+}
+
+// depsFailure is the failure of a batch: the full reason, the commands that
+// redo it by hand, and the link to the log.
+templ depsFailure(d InboxDepsRow) {
+	<div class="deps-failure" role="region" aria-label={ "Failure of " + d.Title }>
+		<pre class="deps-error">{ d.Status.Title }</pre>
+		if d.Repro != "" {
+			<p class="dim">Reproduce locally:</p>
+			<pre class="deps-repro">{ d.Repro }</pre>
+		}
+		if d.Status.Href != "" {
+			<a id={ d.ID + "-log" } href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
+		}
+	</div>
+}
+
 templ inboxDepsRow(d InboxDepsRow) {
-	<li class="deps-row" id={ d.ID }>
-		<details class="deps-main">
+	<li class={ "deps-row", templ.KV("deps-major", d.Major) } id={ d.ID } data-failed?={ d.Status.Kind == "failed" }>
+		<details class="deps-batch">
 			<summary id={ d.ID + "-sum" }>
-				<span class="deps-repo">{ d.Repo }</span>
-				<span>{ d.Title }</span>
+				<span class="deps-title">{ d.Title }</span>
+				if d.Packages != "" {
+					<span class="deps-pkgs dim">{ d.Packages }</span>
+				}
+				if d.Target != "" {
+					<span class="deps-target">→ { d.Target }</span>
+				}
 				if d.Outdated {
 					<span class="pill">outdated</span>
 				}
 				<span class="count">{ itoa(d.Count) }</span><span class="sr">{ " updates" }</span>
-				<span class="dim">{ d.Breakdown }</span>
+				if !d.Major {
+					<span class="dim">{ d.Breakdown }</span>
+				}
 				if d.New > 0 {
 					<span class="pill deps-new">new { itoa(d.New) }</span>
 				}
 			</summary>
-			if d.Status.Title != "" {
-				<div class="deps-output prose" role="region" aria-label="Last output">
-					<p class="dim">Last output</p>
-					<pre>{ d.Status.Title }</pre>
-					if d.Status.Href != "" {
-						<a id={ d.ID + "-log" } href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
-					}
-				</div>
-			}
-			<p class="deps-repolink"><a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a></p>
-			<table class="deps-sub" aria-label={ "Updates of " + d.Repo }>
+			<table class="deps-sub" aria-label={ "Updates of " + d.Repo + ": " + d.Title }>
 				<thead class="sr">
 					<tr><th>name</th><th>version</th><th>kind</th><th>new</th><th>directory</th></tr>
 				</thead>
@@ -372,9 +497,6 @@ templ inboxDepsRow(d InboxDepsRow) {
 		</details>
 		<span class="deps-status">
 			@depsStatusCell(d.Status)
-			if d.Status.Title != "" {
-				<span class="deps-error-tail" title={ d.Status.Title }>{ depsErrorTail(d.Status.Title) }</span>
-			}
 		</span>
 		<span class="deps-act">
 			if d.Primary.Href != "" {
@@ -382,20 +504,28 @@ templ inboxDepsRow(d InboxDepsRow) {
 			} else if d.Primary.Action != "" {
 				@depsForm(d, d.Primary.Action, d.Primary.Label, "btn primary", true, d.ID+"-act")
 			}
-			if d.Ignore != "" || d.Snooze != "" {
+			if d.Ignore != "" || len(d.Splits) > 0 {
 				<details class="menu deps-menu">
-					<summary id={ d.ID + "-more" } class="btn icon" aria-label={ "More actions for " + d.Repo }>⋯</summary>
+					<summary id={ d.ID + "-more" } class="btn icon" aria-label={ "More actions for " + d.Title }>⋯</summary>
 					<div class="menu-pop">
 						if d.Ignore != "" {
 							@depsForm(d, d.Ignore, "Ignore", "btn", true, "")
 						}
-						if d.Snooze != "" {
-							@depsForm(d, d.Snooze, "Snooze", "btn", false, "")
+						for _, sp := range d.Splits {
+							@ActionForm(ActionProps{Action: sp.Action}) {
+								<input type="hidden" name="ecosystem" value={ sp.Ecosystem }/>
+								<input type="hidden" name="name" value={ sp.Name }/>
+								<input type="hidden" name="split" value={ boolFlag(sp.Split) }/>
+								<button type="submit" class="btn">{ sp.Label }</button>
+							}
 						}
 					</div>
 				</details>
 			}
 		</span>
+		if d.Status.Title != "" {
+			@depsFailure(d)
+		}
 	</li>
 }
 
@@ -404,11 +534,11 @@ templ inboxModerated(id string, count int) {
 	@CountOOB("inbox-pending-count", count)
 }
 
-templ inboxDepsChanged(rows []InboxDepsRow, removed []string) {
+templ inboxDepsChanged(rows []InboxDepsRepo, removed []string) {
 	for _, id := range removed {
 		@RemoveEl(id)
 	}
 	for _, row := range rows {
-		<hx-partial hx-target={ "#" + row.ID } hx-swap="outerMorph">@inboxDepsRow(row)</hx-partial>
+		<hx-partial hx-target={ "#" + row.ID } hx-swap="outerMorph">@inboxDepsRepo(row)</hx-partial>
 	}
 }

@@ -54,121 +54,6 @@ func depsServer(t *testing.T, inbox ports.InboxService, deps ports.DepsService) 
 	})
 }
 
-func TestInboxDepsTable(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
-	srv := depsServer(t, svc, mocks.NewDepsService(t))
-
-	rec := inboxGet(srv, "/-/inbox?tab=deps", true)
-	require.Equal(t, 200, rec.Code)
-	body := rec.Body.String()
-	assert.Contains(t, body, "Deps Updates (3)")
-	assert.NotContains(t, body, `id="inbox-runs"`)
-	depsAt := strings.Index(body, `id="inbox-deps"`)
-	require.GreaterOrEqual(t, depsAt, 0)
-	sec := body[depsAt:]
-
-	assert.Contains(t, sec, " data-keep-open")
-	assert.Contains(t, sec, "Dependency updates")
-	assert.Contains(t, sec, `checked <time datetime="2026-03-04T05:06:07Z">2026-03-04</time>`)
-	assert.Contains(t, sec, "1 batch · 3 updates")
-	assert.Contains(t, sec, `<li class="deps-row" id="deps-alpha">`)
-	assert.Contains(t, sec, "1 major · 1 minor · 1 patch")
-	assert.Contains(t, sec, "new 1")
-	assert.Contains(t, sec, `aria-label="Updates of alpha"`)
-	assert.Contains(t, sec, `aria-label="More actions for alpha"`)
-	for _, want := range []string{"golang.org/x/text", "v0.20.0 → v0.21.0", ">minor<", ">major<", ">patch<", ">tools<"} {
-		assert.Contains(t, sec, want)
-	}
-	assert.Contains(t, sec, `<a href="/alpha/actions/runs/12">run #3</a>`)
-	assert.Contains(t, sec, ">Retry<")
-	// stable ids keep the focus on the same control through a live update
-	for _, id := range []string{"deps-alpha-sum", "deps-alpha-act", "deps-alpha-more", "deps-alpha-log"} {
-		assert.Contains(t, sec, `id="`+id+`"`)
-	}
-	// the screen reader hears words, not the icon
-	assert.Contains(t, sec, `<span class="count">3</span><span class="sr"> updates</span>`)
-	assert.Contains(t, sec, `>the run ended: failure</span>`)
-	assert.Contains(t, sec, `<span aria-hidden="true"><span class="ck ck-bad"`)
-	assert.Contains(t, sec, `action="/-/inbox/deps/alpha/open"`)
-	for _, a := range []string{"ignore", "snooze"} {
-		assert.Contains(t, sec, `action="/-/inbox/deps/alpha/`+a+`"`)
-	}
-	assert.Contains(t, sec, `name="version" value="v0.21.0"`)
-	assert.Contains(t, sec, `name="directory" value="tools"`)
-	assert.Contains(t, sec, `name="ecosystem" value="github-actions"`, "the forms carry the ecosystem")
-
-	// language-agnostic, compact: no ecosystem on screen, no log or error text
-	visible := regexp.MustCompile(`<input[^>]*>`).ReplaceAllString(sec, "")
-	for _, banned := range []string{"gomod", "go mod", "github-actions", "ecosystem", "pending-list", `class="pending"`, "p-body"} {
-		assert.NotContains(t, visible, banned)
-	}
-	assert.NotContains(t, sec, "FAILED")
-	assert.NotContains(t, sec, "APPLYING")
-}
-
-func TestInboxDepsSortsByUpdates(t *testing.T) {
-	t.Parallel()
-	ov := depsOverview(t)
-	// aaa: 2 base updates and a major batch of 2 (4 in total); zzz: 3 base
-	// updates, the largest single row.
-	aaa := depsRec(t)
-	aaa.Repo = repoName(t, "aaa")
-	base := aaa.Batches[0]
-	base.Updates = base.Updates[:2]
-	major := domain.DepBatch{Key: "npm/web/react@v19", Updates: []domain.DepUpdate{
-		{DepRef: domain.DepRef{Ecosystem: domain.EcosystemNPM, Directory: "web", Name: "react", Version: "v19.0.0"}, Current: "v18.3.1", Kind: domain.DepMajor},
-		{DepRef: domain.DepRef{Ecosystem: domain.EcosystemNPM, Directory: "web", Name: "react-dom", Version: "v19.0.0"}, Current: "v18.3.1", Kind: domain.DepMajor},
-	}}
-	aaa.Batches = []domain.DepBatch{base, major}
-	zzz := depsRec(t)
-	zzz.Repo = repoName(t, "zzz")
-	ov.Deps = []ports.InboxDeps{{Rec: zzz, Batch: zzz.Batches[0]}, {Rec: aaa, Batch: base}, {Rec: aaa, Batch: major}}
-	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
-	srv := depsServer(t, svc, mocks.NewDepsService(t))
-
-	var majorAt int
-	order := func(path string) (first, second int, body string) {
-		body = inboxGet(srv, path, true).Body.String()
-		majorAt = strings.Index(body, `id="deps-aaa-`)
-		return strings.Index(body, `id="deps-aaa"`), strings.Index(body, `id="deps-zzz"`), body
-	}
-	a, z, body := order("/-/inbox?tab=deps")
-	assert.Less(t, a, z, "the repository with the most updates across its batches comes first")
-	assert.Less(t, a, majorAt, "the batches of a repository stay together")
-	assert.Less(t, majorAt, z, "the batches of a repository stay together")
-	assert.Contains(t, body, `<a href="/-/inbox?tab=deps#inbox-deps" aria-current="page">most updates</a>`)
-	assert.Contains(t, body, `<a href="/-/inbox?tab=deps&amp;sort=name#inbox-deps">name</a>`)
-
-	a, z, body = order("/-/inbox?tab=deps&sort=name")
-	assert.Less(t, a, z, "sort=name orders by repository name")
-	assert.Contains(t, body, `sort=name#inbox-deps" aria-current="page">name</a>`)
-	assert.Contains(t, body, `action="/-/inbox/deps/aaa/snooze?sort=name"`, "the actions keep the order")
-	assert.Regexp(t, `action="/-/inbox/deps/aaa/open\?sort=name"[^>]*><input type="hidden" name="batch" value="npm/web/react@v19">`, body[majorAt:], "the batch forms keep the order")
-}
-
-func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
-	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox?tab=deps", true).Body.String()
-	sec := body[strings.Index(body, `id="inbox-deps"`):]
-	summaries := regexp.MustCompile(`(?s)<summary[^>]*>.*?</summary>`).FindAllString(sec, -1)
-	require.Len(t, summaries, 2, "the row and its menu")
-	for _, s := range summaries {
-		for _, tag := range []string{"<form", "<button", "<input", "<select"} {
-			assert.NotContains(t, s, tag)
-		}
-	}
-	assert.NotContains(t, summaries[0], "<a ", "the summary of the row holds no link")
-	assert.Contains(t, summaries[1], "⋯")
-	// the menu is a details.menu, closed
-	assert.Contains(t, sec, `<details class="menu deps-menu">`)
-	assert.NotContains(t, sec, "<details open")
-}
-
 func TestInboxDepsRowMapping(t *testing.T) {
 	t.Parallel()
 	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
@@ -182,14 +67,14 @@ func TestInboxDepsRowMapping(t *testing.T) {
 
 		status  InboxDepsStatus
 		primary InboxDepsAction
-		menu    [2]string // Ignore, Snooze
+		ignore  string
 	}{
 		{
 			name:    "idle without a merge request",
 			mutate:  func(d *domain.RepoDeps) { d.Base().State, d.Base().Error, d.Base().RunID = domain.DepsIdle, "", 0 },
 			status:  InboxDepsStatus{},
 			primary: InboxDepsAction{Label: "Open MR", Action: base + "open"},
-			menu:    [2]string{base + "ignore", base + "snooze"},
+			ignore:  base + "ignore",
 		},
 		{
 			name: "idle with a merge request that differs",
@@ -199,7 +84,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			},
 			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
 			primary: InboxDepsAction{Label: "Update MR", Action: base + "open"},
-			menu:    [2]string{base + "ignore", base + "snooze"},
+			ignore:  base + "ignore",
 		},
 		{
 			name: "idle with a merge request up to date",
@@ -210,7 +95,6 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			run:     run(3, domain.CICompleted),
 			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
 			primary: InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/7"},
-			menu:    [2]string{"", base + "snooze"},
 		},
 		{
 			name:   "applying, run queued",
@@ -248,7 +132,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
 			run:    run(3, domain.CIInProgress),
-			status: InboxDepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12", MR: 7, MRHref: "/alpha/merge-requests/7"},
+			status: InboxDepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12", MR: 7, MRHref: "/alpha/merge-requests/7", Draft: true},
 		},
 		{
 			name:    "failed with a run",
@@ -256,23 +140,23 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			run:     run(3, domain.CICompleted),
 			status:  InboxDepsStatus{Kind: "failed", State: "failed", Text: "run #3", Href: "/alpha/actions/runs/12", Title: "the run ended: failure"},
 			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
-			menu:    [2]string{base + "ignore", base + "snooze"},
+			ignore:  base + "ignore",
 		},
 		{
 			name:    "failed, the run is gone",
 			mutate:  func(d *domain.RepoDeps) { d.Base().Error = "the run no longer exists" },
 			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run no longer exists"},
 			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
-			menu:    [2]string{base + "ignore", base + "snooze"},
+			ignore:  base + "ignore",
 		},
 		{
 			name: "failed with a merge request that holds the versions still retries",
 			mutate: func(d *domain.RepoDeps) {
 				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
-			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run ended: failure", MR: 7, MRHref: "/alpha/merge-requests/7"},
+			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run ended: failure", MR: 7, MRHref: "/alpha/merge-requests/7", Draft: true},
 			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
-			menu:    [2]string{base + "ignore", base + "snooze"},
+			ignore:  base + "ignore",
 		},
 	}
 	for _, tc := range tests {
@@ -280,25 +164,12 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			t.Parallel()
 			rec := depsRec(t)
 			tc.mutate(&rec)
-			row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: *rec.Base(), Run: tc.run})
+			row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: *rec.Base(), Run: tc.run}, "")
 			assert.Equal(t, tc.status, row.Status)
 			assert.Equal(t, tc.primary, row.Primary)
-			assert.Equal(t, tc.menu, [2]string{row.Ignore, row.Snooze})
+			assert.Equal(t, tc.ignore, row.Ignore)
 		})
 	}
-}
-
-// Whatever the state, the row names the repository and summarises its updates.
-func TestInboxDepsRowSummarisesTheUpdates(t *testing.T) {
-	t.Parallel()
-	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
-	row := srv.depsRow(ports.InboxDeps{Rec: depsRec(t), Batch: depsRec(t).Batches[0], Run: depsRun(3, domain.CICompleted)})
-	assert.Equal(t, "deps-alpha", row.ID)
-	assert.Equal(t, "alpha", row.Repo)
-	assert.Equal(t, 3, row.Count)
-	assert.Equal(t, 1, row.New)
-	assert.Equal(t, "1 major · 1 minor · 1 patch", row.Breakdown)
-	assert.Len(t, row.Updates, 3)
 }
 
 func TestDepsBreakdownOmitsZeroParts(t *testing.T) {
@@ -442,137 +313,6 @@ func TestInboxDepsChangedRefreshesTheLiveView(t *testing.T) {
 	assert.NotEmpty(t, frags)
 }
 
-func TestInboxDepsFailureExcerpt(t *testing.T) {
-	for _, reason := range []string{"dependency command failed", "dependency command failed (exit 1)\ngo: requires go >= 1.26\n<script>alert(1)</script>\n"} {
-		t.Run(reason, func(t *testing.T) {
-			svc := mocks.NewInboxService(t)
-			ov := depsOverview(t)
-			ov.Deps[0].Batch.Error = reason
-			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
-			srv := depsServer(t, svc, mocks.NewDepsService(t))
-			body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()
-			assert.Contains(t, body, `<pre>`+html.EscapeString(reason)+`</pre>`)
-			assert.Contains(t, body, `title="`+html.EscapeString(reason)+`">`+html.EscapeString(depsErrorTail(reason))+`</span>`)
-			assert.NotContains(t, body, "<script>alert(1)</script>")
-			assert.Contains(t, body, `<a href="/alpha/actions/runs/12">run #3</a>`)
-			if strings.Contains(reason, "<script>") {
-				start := strings.Index(body, `<li class="deps-row"`)
-				row := body[start:]
-				t.Log(row[:strings.Index(row, `</li>`)+len(`</li>`)])
-			}
-		})
-	}
-}
-
-func TestInboxMajorBatchRow(t *testing.T) {
-	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
-	rec := depsRec(t)
-	batch := domain.DepBatch{Key: "npm/web/@scope/pkg@v2", MR: 9, Updates: []domain.DepUpdate{{DepRef: domain.DepRef{Name: "@scope/pkg", Version: "v2.1.0"}}}}
-	row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: batch})
-	assert.Equal(t, "@scope/pkg → v2", row.Title)
-	assert.Equal(t, string(batch.Key), row.Batch)
-	assert.True(t, row.Outdated)
-	assert.NotEqual(t, "deps-alpha", row.ID)
-	var buf strings.Builder
-	require.NoError(t, depsForm(row, row.Primary.Action, "Open", "btn", true, "").Render(t.Context(), &buf))
-	assert.Contains(t, buf.String(), `name="batch" value="npm/web/@scope/pkg@v2"`)
-}
-
-func TestInboxAsyncDeps(t *testing.T) {
-	for _, op := range []string{"open", "ignore", "snooze"} {
-		for _, key := range []domain.DepBatchKey{"", "npm/web/react@v19"} {
-			t.Run(op+"/"+string(key), func(t *testing.T) {
-				inbox := mocks.NewInboxService(t)
-				deps := mocks.NewDepsService(t)
-				before := depsOverview(t)
-				before.Deps[0].Batch.Key = key
-				before.Deps = append(before.Deps, ports.InboxDeps{Rec: before.Deps[0].Rec, Batch: domain.DepBatch{Key: "npm/web/other@v2"}})
-				after := before
-				if op == "open" {
-					after.Deps = append([]ports.InboxDeps(nil), before.Deps...)
-					after.Deps[0].Batch.State = domain.DepsApplying
-				} else {
-					after.Deps = nil
-				}
-				if op == "snooze" {
-					inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(before, nil).Once()
-				}
-				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
-				switch op {
-				case "open":
-					deps.EXPECT().Open(mock.Anything, mock.Anything, repoName(t, "alpha"), key, mock.Anything).Return(domain.RepoDeps{}, nil).Once()
-				case "ignore":
-					deps.EXPECT().Ignore(mock.Anything, mock.Anything, repoName(t, "alpha"), key, mock.Anything).Return(domain.RepoDeps{}, nil).Once()
-				case "snooze":
-					deps.EXPECT().Snooze(mock.Anything, mock.Anything, repoName(t, "alpha")).Return(domain.RepoDeps{}, nil).Once()
-				}
-				srv := depsServer(t, inbox, deps)
-				form := url.Values{"batch": {string(key)}}
-				req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op+"?sort=name", strings.NewReader(form.Encode()))
-				req.Header.Set("Origin", testPublicURL)
-				req.Header.Set("HX-Request", "true")
-				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-				req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
-				w := httptest.NewRecorder()
-				srv.ServeHTTP(w, req)
-				assert.Equal(t, http.StatusOK, w.Code)
-				assert.Empty(t, w.Header().Get("Location"))
-				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-				id := srv.depsRow(before.Deps[0]).ID
-				body := w.Body.String()
-				if op == "open" {
-					assert.Contains(t, body, `hx-target="#`+id+`" hx-swap="outerMorph"`)
-					assert.Contains(t, body, "applying")
-					assert.NotContains(t, body, `hx-target="#`+srv.depsRow(before.Deps[1]).ID+`"`)
-				} else {
-					assert.Contains(t, body, `hx-target="#`+id+`" hx-swap="delete"`)
-					if op == "snooze" {
-						assert.Contains(t, body, `hx-target="#`+srv.depsRow(before.Deps[1]).ID+`" hx-swap="delete"`)
-					}
-				}
-				assert.NotContains(t, body, "<html")
-				assert.NotContains(t, body, `id="inbox-content"`)
-			})
-		}
-	}
-}
-
-func TestInboxDottedRepoDepsIDs(t *testing.T) {
-	for _, key := range []domain.DepBatchKey{"", "npm/web/react@v19"} {
-		for _, removed := range []bool{false, true} {
-			t.Run(string(key)+"/removed="+boolText(removed), func(t *testing.T) {
-				inbox := mocks.NewInboxService(t)
-				ov := depsOverview(t)
-				ov.Deps[0].Rec.Repo = repoName(t, "alpha.beta")
-				ov.Deps[0].Batch.Key = key
-				srv := depsServer(t, inbox, mocks.NewDepsService(t))
-				row := srv.depsRow(ov.Deps[0])
-				assert.Regexp(t, `^[a-zA-Z0-9_-]+$`, row.ID)
-				html := renderToString(t, inboxDepsRow(row))
-				assert.Contains(t, html, `id="`+row.ID+`"`)
-				assert.Contains(t, html, `/deps/alpha.beta/open`)
-				if removed {
-					ov.Deps = nil
-				}
-				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
-				r := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha.beta/open", strings.NewReader(url.Values{"batch": {string(key)}}.Encode()))
-				r.SetPathValue("repo", "alpha.beta")
-				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-				r.Header.Set("HX-Request", "true")
-				require.NoError(t, r.ParseForm())
-				result, err := srv.depsResult(t.Context(), r, depsOpen, ports.InboxOverview{})
-				require.NoError(t, err)
-				fragment := renderToString(t, result.Fragment)
-				swap := "outerMorph"
-				if removed {
-					swap = "delete"
-				}
-				assert.Contains(t, fragment, `hx-target="#`+row.ID+`" hx-swap="`+swap+`"`)
-			})
-		}
-	}
-}
-
 func TestInboxIDPartEncoding(t *testing.T) {
 	seen := map[string]bool{}
 	for _, name := range []string{"alpha", "alpha-beta", "alpha.beta", "alpha_2ebeta", "alpha_beta"} {
@@ -582,4 +322,413 @@ func TestInboxIDPartEncoding(t *testing.T) {
 		seen[id] = true
 	}
 	assert.Equal(t, "alpha-beta", inboxIDPart("alpha-beta"))
+}
+
+func depsMajor(key domain.DepBatchKey, ups ...domain.DepUpdate) domain.DepBatch {
+	return domain.DepBatch{Key: key, Updates: ups}
+}
+
+func depsUp(eco domain.DepsEcosystem, name, cur, ver string) domain.DepUpdate {
+	return domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: eco, Name: name, Version: ver}, Current: cur, Kind: domain.DepMajor}
+}
+
+// treeOverview: gordon has a failed base batch and two major families; lazy
+// has more updates but no failure; idle has a single base batch.
+func treeOverview(t testing.TB) ports.InboxOverview {
+	ov := depsOverview(t)
+	gordon := depsRec(t)
+	gordon.Repo = repoName(t, "gordon")
+	charm := depsMajor("major:gomod:github.com/charmbracelet/",
+		depsUp(domain.EcosystemGoMod, "github.com/charmbracelet/bubbles", "v0.20.0", "v2.0.0"),
+		depsUp(domain.EcosystemGoMod, "github.com/charmbracelet/lipgloss", "v1.0.0", "v2.0.0"))
+	lego := depsMajor("major:gomod:github.com/go-acme/lego", depsUp(domain.EcosystemGoMod, "github.com/go-acme/lego", "v4.0.0", "v5.0.0"))
+	gordon.Batches = append(gordon.Batches, charm, lego)
+	gordon.Base().Repro = []string{"go get golang.org/x/text@v0.21.0", "go mod tidy"}
+	lazy := depsRec(t)
+	lazy.Repo = repoName(t, "lazy")
+	lazy.Base().State, lazy.Base().Error, lazy.Base().MR, lazy.Base().MRVersions = domain.DepsIdle, "", 38, lazy.Base().Refs()
+	var majors []domain.DepBatch
+	for _, n := range []string{"a", "b", "c", "d"} {
+		majors = append(majors, depsMajor(domain.DepBatchKey("major:npm:"+n), depsUp(domain.EcosystemNPM, n, "v1.0.0", "v2.0.0")))
+	}
+	lazy.Batches = append(lazy.Batches, majors...)
+	idle := depsRec(t)
+	idle.Repo = repoName(t, "idle")
+	idle.Base().State, idle.Base().Error = domain.DepsQueued, ""
+	idle.AutoOpenDisabled = true
+	ov.Deps = nil
+	for _, rec := range []domain.RepoDeps{idle, lazy, gordon} {
+		for _, b := range rec.Batches {
+			in := ports.InboxDeps{Rec: rec, Batch: b}
+			if rec.Repo.String() == "idle" {
+				in.QueuePos = 3
+			}
+			ov.Deps = append(ov.Deps, in)
+		}
+	}
+	ov.DepsQueue = ports.DepsQueue{Running: 1, Limit: 1, Queued: 12}
+	return ov
+}
+
+func depsSection(t *testing.T, path string, ov ports.InboxOverview) string {
+	t.Helper()
+	svc := mocks.NewInboxService(t)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
+	rec := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), path, true)
+	require.Equal(t, 200, rec.Code)
+	body := rec.Body.String()
+	at := strings.Index(body, `id="inbox-deps"`)
+	require.GreaterOrEqual(t, at, 0)
+	return body[at : at+strings.Index(body[at:], "</section>")]
+}
+
+// liOf is the markup of the element with the id, up to the next row of the
+// same kind.
+func liOf(t *testing.T, sec, id, next string) string {
+	t.Helper()
+	at := strings.Index(sec, `id="`+id+`"`)
+	require.GreaterOrEqual(t, at, 0, id)
+	rest := sec[at:]
+	if end := strings.Index(rest[1:], next); end >= 0 {
+		return rest[:end+1]
+	}
+	return rest
+}
+
+func TestInboxDepsTree(t *testing.T) {
+	t.Parallel()
+	sec := depsSection(t, "/-/inbox?tab=deps", treeOverview(t))
+
+	// header: totals and the queue
+	assert.Contains(t, sec, "9 batches · 16 updates")
+	assert.Contains(t, sec, `<span class="deps-queue">queue 1/1 running, 12 waiting</span>`)
+	// filter chips with their counts
+	assert.Regexp(t, `href="/-/inbox\?tab=deps#inbox-deps" aria-current="page">All`, sec)
+	assert.Regexp(t, `filter=failures#inbox-deps">Failures\s+<span class="count">1</span>`, sec)
+	assert.Regexp(t, `filter=majors#inbox-deps">Majors\s+<span class="count">6</span>`, sec)
+	assert.Regexp(t, `filter=mrs#inbox-deps">MRs\s+<span class="count">1</span>`, sec)
+
+	// one row per repository: the failure first, then the most updates
+	g, l, i := strings.Index(sec, `id="deps-gordon"`), strings.Index(sec, `id="deps-lazy"`), strings.Index(sec, `id="deps-idle"`)
+	require.True(t, g > 0 && l > 0 && i > 0)
+	assert.Less(t, g, l, "failures first")
+	assert.Less(t, l, i, "then the most updates")
+	assert.Equal(t, 3, strings.Count(sec, `<li class="deps-repo-row"`))
+
+	gordon := liOf(t, sec, "deps-gordon", `<li class="deps-repo-row"`)
+	lazy := liOf(t, sec, "deps-lazy", `<li class="deps-repo-row"`)
+	idle := liOf(t, sec, "deps-idle", `<li class="deps-repo-row"`)
+	// collapsed by default, open with a failure
+	assert.Contains(t, gordon, `<details class="deps-main" open>`)
+	assert.Contains(t, lazy, `<details class="deps-main">`)
+	assert.Contains(t, idle, `<details class="deps-main">`)
+	// the summary counts
+	assert.Contains(t, gordon, "1 failed")
+	assert.Contains(t, gordon, "3 patch/minor")
+	assert.Contains(t, gordon, "2 majors")
+	assert.Contains(t, lazy, "MR !38")
+	assert.Contains(t, lazy, "4 majors")
+	assert.Contains(t, idle, "queued #3")
+	assert.Contains(t, idle, `<span class="sr">, 3 updates</span>`)
+
+	// the base batch first, then the majors group, failure-free majors by title
+	base := strings.Index(gordon, `id="deps-gordon-base"`)
+	group := strings.Index(gordon, `<h3 class="deps-group-h">Majors</h3>`)
+	charm := strings.Index(gordon, "github.com/charmbracelet/*")
+	lego := strings.Index(gordon, ">github.com/go-acme/lego<")
+	require.True(t, base > 0 && group > 0 && charm > 0 && lego > 0)
+	assert.Less(t, base, group)
+	assert.Less(t, group, charm)
+	assert.Less(t, charm, lego)
+	assert.Contains(t, gordon, `<span class="deps-pkgs dim">bubbles, lipgloss</span>`)
+	assert.Contains(t, gordon, `<span class="deps-target">→ v2</span>`)
+	assert.Contains(t, gordon, `<span class="deps-target">→ v5</span>`)
+	assert.Contains(t, gordon, ">Open MR<")
+	// a family offers to split each of its packages; a lone package does not
+	assert.Contains(t, gordon, ">Split bubbles<")
+	assert.Contains(t, gordon, ">Split lipgloss<")
+	legoRow := liOf(t, gordon, strings.TrimPrefix(regexp.MustCompile(`id="(deps-gordon-major-gomod-github-com-go-acme-lego-[0-9a-f]+)"`).FindStringSubmatch(gordon)[1], ""), `<li class="deps-row`)
+	assert.NotContains(t, legoRow, ">Split")
+
+	// the repository actions
+	assert.Contains(t, gordon, `action="/-/inbox/deps/gordon/recheck"`)
+	assert.Contains(t, gordon, `id="deps-gordon-recheck"`)
+	assert.Contains(t, gordon, `aria-label="More actions for gordon"`)
+	assert.Regexp(t, `action="/-/inbox/deps/gordon/auto"[^>]*><input type="hidden" name="on" value="0">\s*<button type="submit" class="btn">Auto-open off`, gordon)
+	assert.Regexp(t, `name="on" value="1">\s*<button type="submit" class="btn">Auto-open on`, idle)
+	assert.Contains(t, gordon, `action="/-/inbox/deps/gordon/snooze"`)
+	// a queued batch has no button
+	assert.NotContains(t, liOf(t, idle, "deps-idle-base", "</li>"), `class="btn primary"`)
+
+	// no summary holds a control
+	for _, sum := range regexp.MustCompile(`(?s)<summary[^>]*>.*?</summary>`).FindAllString(sec, -1) {
+		if strings.Contains(sum, "⋯") {
+			continue
+		}
+		for _, tag := range []string{"<form", "<button", "<input", "<a "} {
+			assert.NotContains(t, sum, tag)
+		}
+	}
+	// language-agnostic: no ecosystem on screen (the ids and hidden fields
+	// are not shown)
+	visible := regexp.MustCompile(`<input[^>]*>| id="[^"]*"`).ReplaceAllString(sec, "")
+	for _, banned := range []string{"gomod", "github-actions", "ecosystem"} {
+		assert.NotContains(t, visible, banned)
+	}
+}
+
+func TestInboxDepsTreeFilterAndSort(t *testing.T) {
+	t.Parallel()
+	sec := depsSection(t, "/-/inbox?tab=deps&filter=failures", treeOverview(t))
+	assert.Contains(t, sec, `id="deps-gordon"`)
+	assert.NotContains(t, sec, `id="deps-lazy"`)
+	assert.NotContains(t, sec, "charmbracelet", "only the failed batches")
+	assert.Contains(t, sec, `action="/-/inbox/deps/gordon/open?filter=failures"`, "the actions keep the view")
+	assert.Contains(t, sec, `sort=name&amp;filter=failures#inbox-deps">name</a>`)
+
+	sec = depsSection(t, "/-/inbox?tab=deps&filter=mrs", treeOverview(t))
+	assert.Contains(t, sec, `id="deps-lazy"`)
+	assert.NotContains(t, sec, `id="deps-gordon"`)
+
+	sec = depsSection(t, "/-/inbox?tab=deps&sort=name", treeOverview(t))
+	g, i, l := strings.Index(sec, `id="deps-gordon"`), strings.Index(sec, `id="deps-idle"`), strings.Index(sec, `id="deps-lazy"`)
+	assert.True(t, g < i && i < l, "sort=name orders by repository name")
+	assert.Contains(t, sec, `action="/-/inbox/deps/idle/snooze?sort=name"`)
+
+	ov := treeOverview(t)
+	ov.Deps = ov.Deps[:1]
+	sec = depsSection(t, "/-/inbox?tab=deps&filter=majors", ov)
+	assert.Contains(t, sec, "no batch matches this filter.")
+	assert.Contains(t, sec, "Dependency updates")
+}
+
+func TestInboxDepsSplitOut(t *testing.T) {
+	t.Parallel()
+	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+	rec := depsRec(t)
+	rec.SplitOut = []domain.DepName{{Ecosystem: domain.EcosystemGoMod, Name: "github.com/charmbracelet/bubbles"}}
+	b := depsMajor("major:gomod:github.com/charmbracelet/bubbles", depsUp(domain.EcosystemGoMod, "github.com/charmbracelet/bubbles", "v0.20.0", "v2.0.0"))
+	row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b}, "")
+	assert.Equal(t, "github.com/charmbracelet/bubbles", row.Title)
+	assert.Equal(t, "v2", row.Target)
+	require.Len(t, row.Splits, 1)
+	assert.Equal(t, InboxDepsSplit{Label: "Join family", Action: "/-/inbox/deps/alpha/split", Ecosystem: "gomod", Name: "github.com/charmbracelet/bubbles"}, row.Splits[0])
+	html := renderToString(t, inboxDepsRow(row))
+	assert.Regexp(t, `name="split" value="0">\s*<button type="submit" class="btn">Join family`, html)
+}
+
+func TestInboxDepsBatchStates(t *testing.T) {
+	t.Parallel()
+	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+	for _, tc := range []struct {
+		name   string
+		mutate func(b *domain.DepBatch)
+		pos    int
+		status InboxDepsStatus
+		label  string
+	}{
+		{"queued", func(b *domain.DepBatch) { b.State = domain.DepsQueued }, 4, InboxDepsStatus{Kind: "queued", State: "queued #4"}, ""},
+		{"drafting", func(b *domain.DepBatch) { b.State = domain.DepsQueued }, 1, InboxDepsStatus{Kind: "running", State: "drafting"}, ""},
+		{"draft waits for a slot", func(b *domain.DepBatch) { b.State, b.MR = domain.DepsDrafted, 41 }, 2,
+			InboxDepsStatus{Kind: "queued", State: "queued #2", MR: 41, MRHref: "/alpha/merge-requests/41", Draft: true}, ""},
+		{"adopted", func(b *domain.DepBatch) { b.State, b.MR, b.Adopted = domain.DepsIdle, 41, true }, 0,
+			InboxDepsStatus{MR: 41, MRHref: "/alpha/merge-requests/41", Adopted: true}, "View MR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := depsRec(t)
+			b := rec.Batches[0]
+			b.Error = ""
+			tc.mutate(&b)
+			row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b, QueuePos: tc.pos}, "")
+			assert.Equal(t, tc.status, row.Status)
+			assert.Equal(t, tc.label, row.Primary.Label)
+		})
+	}
+}
+
+func TestInboxDepsFailureBlock(t *testing.T) {
+	reason := "dependency command failed (exit 1)\ngo: requires go >= 1.26\n<script>alert(1)</script>\n"
+	ov := treeOverview(t)
+	for i := range ov.Deps {
+		if ov.Deps[i].Rec.Repo.String() == "gordon" && ov.Deps[i].Batch.Key == "" {
+			ov.Deps[i].Batch.Error = reason
+			ov.Deps[i].Run = depsRun(3, domain.CICompleted)
+		}
+	}
+	sec := depsSection(t, "/-/inbox?tab=deps", ov)
+	gordon := liOf(t, sec, "deps-gordon-base", `<h3 class="deps-group-h">`)
+	assert.Contains(t, gordon, `<div class="deps-failure" role="region" aria-label="Failure of Patch &amp; minor">`)
+	// the full text, newlines kept, escaped
+	assert.Contains(t, gordon, `<pre class="deps-error">`+html.EscapeString(reason)+`</pre>`)
+	assert.NotContains(t, sec, "<script>alert(1)</script>")
+	assert.Contains(t, gordon, "Reproduce locally:")
+	assert.Contains(t, gordon, `<pre class="deps-repro">go get golang.org/x/text@v0.21.0`+"\n"+`go mod tidy</pre>`)
+	assert.Contains(t, gordon, `<a id="deps-gordon-base-log" href="/gordon/actions/runs/12">View log · run #3</a>`)
+	assert.Contains(t, gordon, ">Retry<")
+	assert.Contains(t, gordon, ">Ignore<")
+	// no truncated red line any more
+	assert.NotContains(t, sec, "deps-error-tail")
+	// the other repositories have no failure block
+	assert.NotContains(t, liOf(t, sec, "deps-lazy", `<li class="deps-repo-row"`), "deps-failure")
+}
+
+func TestInboxDepsRepoActions(t *testing.T) {
+	t.Parallel()
+	alpha := repoName(t, "alpha")
+	post := func(srv *Server, path string, form url.Values, hx bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", testPublicURL)
+		if hx {
+			req.Header.Set("HX-Request", "true")
+		}
+		req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec
+	}
+	bubbles := domain.DepName{Ecosystem: domain.EcosystemGoMod, Name: "github.com/charmbracelet/bubbles"}
+	for _, tc := range []struct {
+		name, path string
+		form       url.Values
+		expect     func(d *mocks.DepsService)
+	}{
+		{"recheck", "/-/inbox/deps/alpha/recheck", nil, func(d *mocks.DepsService) {
+			d.EXPECT().Check(mock.Anything, mock.Anything, alpha).Return(domain.RepoDeps{}, nil).Once()
+		}},
+		{"auto off", "/-/inbox/deps/alpha/auto", url.Values{"on": {"0"}}, func(d *mocks.DepsService) {
+			d.EXPECT().SetAutoOpen(mock.Anything, mock.Anything, alpha, false).Return(domain.RepoDeps{}, nil).Once()
+		}},
+		{"auto on", "/-/inbox/deps/alpha/auto", url.Values{"on": {"1"}}, func(d *mocks.DepsService) {
+			d.EXPECT().SetAutoOpen(mock.Anything, mock.Anything, alpha, true).Return(domain.RepoDeps{}, nil).Once()
+		}},
+		{"split", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"gomod"}, "name": {bubbles.Name}, "split": {"1"}}, func(d *mocks.DepsService) {
+			d.EXPECT().Split(mock.Anything, mock.Anything, alpha, bubbles, true).Return(domain.RepoDeps{}, nil).Once()
+		}},
+		{"join", "/-/inbox/deps/alpha/split?filter=majors", url.Values{"ecosystem": {"gomod"}, "name": {bubbles.Name}, "split": {"0"}}, func(d *mocks.DepsService) {
+			d.EXPECT().Split(mock.Anything, mock.Anything, alpha, bubbles, false).Return(domain.RepoDeps{}, nil).Once()
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			deps := mocks.NewDepsService(t)
+			tc.expect(deps)
+			rec := post(depsServer(t, mocks.NewInboxService(t), deps), tc.path, tc.form, false)
+			assert.Equal(t, 303, rec.Code)
+			want := "/-/inbox?tab=deps"
+			if strings.Contains(tc.path, "filter=majors") {
+				want += "&filter=majors"
+			}
+			assert.Equal(t, want, rec.Header().Get("Location"))
+		})
+	}
+	for _, tc := range []struct {
+		name, path string
+		form       url.Values
+	}{
+		{"auto without a flag", "/-/inbox/deps/alpha/auto", url.Values{"on": {"yes"}}},
+		{"split without a name", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"gomod"}, "split": {"1"}}},
+		{"split without a flag", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"gomod"}, "name": {"x"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := post(depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t)), tc.path, tc.form, false)
+			assert.NotEqual(t, 303, rec.Code, "the service is not called (the mock has no expectation)")
+		})
+	}
+	t.Run("everyone else", func(t *testing.T) {
+		t.Parallel()
+		srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+		for _, op := range []string{"recheck", "auto", "split"} {
+			req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op, nil)
+			req.Header.Set("Origin", testPublicURL)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			assert.Equal(t, 403, rec.Code, op)
+			// past the gate, the handler hides the action from a non-owner
+			r := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op, nil)
+			r.SetPathValue("repo", "alpha")
+			_, err := srv.depsAction(depsRecheck)(r.Context(), r)
+			assert.ErrorIs(t, err, errNotFound)
+		}
+	})
+	t.Run("htmx swaps the repository row, open", func(t *testing.T) {
+		t.Parallel()
+		inbox := mocks.NewInboxService(t)
+		inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil).Once()
+		deps := mocks.NewDepsService(t)
+		deps.EXPECT().Check(mock.Anything, mock.Anything, alpha).Return(domain.RepoDeps{}, nil).Once()
+		rec := post(depsServer(t, inbox, deps), "/-/inbox/deps/alpha/recheck", nil, true)
+		assert.Equal(t, 200, rec.Code)
+		body := rec.Body.String()
+		assert.Contains(t, body, `hx-target="#deps-alpha" hx-swap="outerMorph"`)
+		assert.Contains(t, body, `<details class="deps-main" open>`)
+		assert.NotContains(t, body, "<html")
+	})
+}
+
+func TestInboxAsyncDeps(t *testing.T) {
+	for _, op := range []string{"open", "ignore", "snooze"} {
+		for _, gone := range []bool{false, true} {
+			t.Run(op+"/gone="+boolText(gone), func(t *testing.T) {
+				inbox := mocks.NewInboxService(t)
+				deps := mocks.NewDepsService(t)
+				after := depsOverview(t)
+				after.Deps = append(after.Deps, ports.InboxDeps{Rec: after.Deps[0].Rec, Batch: depsMajor("major:npm:other", depsUp(domain.EcosystemNPM, "other", "v1.0.0", "v2.0.0"))})
+				after.Deps[0].Batch.State = domain.DepsApplying
+				if gone {
+					after.Deps = nil
+				}
+				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+				switch op {
+				case "open":
+					deps.EXPECT().Open(mock.Anything, mock.Anything, repoName(t, "alpha"), domain.DepBatchKey(""), mock.Anything).Return(domain.RepoDeps{}, nil).Once()
+				case "ignore":
+					deps.EXPECT().Ignore(mock.Anything, mock.Anything, repoName(t, "alpha"), domain.DepBatchKey(""), mock.Anything).Return(domain.RepoDeps{}, nil).Once()
+				case "snooze":
+					deps.EXPECT().Snooze(mock.Anything, mock.Anything, repoName(t, "alpha")).Return(domain.RepoDeps{}, nil).Once()
+				}
+				srv := depsServer(t, inbox, deps)
+				req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op+"?sort=name", strings.NewReader(url.Values{"batch": {""}}.Encode()))
+				req.Header.Set("Origin", testPublicURL)
+				req.Header.Set("HX-Request", "true")
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+				w := httptest.NewRecorder()
+				srv.ServeHTTP(w, req)
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Empty(t, w.Header().Get("Location"))
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+				body := w.Body.String()
+				if gone {
+					assert.Contains(t, body, `hx-target="#deps-alpha" hx-swap="delete"`)
+				} else {
+					assert.Contains(t, body, `hx-target="#deps-alpha" hx-swap="outerMorph"`)
+					assert.Contains(t, body, "applying")
+					assert.Contains(t, body, `id="deps-alpha-base"`)
+					assert.Contains(t, body, `/deps/alpha/open?sort=name`, "the swapped row keeps the order")
+				}
+				assert.NotContains(t, body, `id="inbox-content"`)
+			})
+		}
+	}
+}
+
+func TestInboxDottedRepoDepsIDs(t *testing.T) {
+	for _, key := range []domain.DepBatchKey{"", "major:npm:react"} {
+		t.Run(string(key), func(t *testing.T) {
+			srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+			ov := depsOverview(t)
+			ov.Deps[0].Rec.Repo = repoName(t, "alpha.beta")
+			ov.Deps[0].Batch.Key = key
+			repos := srv.depsRepos(ov.Deps, depsQuery{})
+			require.Len(t, repos, 1)
+			assert.Equal(t, "deps-alpha_2ebeta", repos[0].ID)
+			html := renderToString(t, inboxDepsRepo(repos[0]))
+			for _, id := range regexp.MustCompile(`id="([^"]+)"`).FindAllStringSubmatch(html, -1) {
+				assert.Regexp(t, `^[a-zA-Z0-9_-]+$`, id[1])
+			}
+			assert.Contains(t, html, `/deps/alpha.beta/`)
+		})
+	}
 }
