@@ -109,7 +109,10 @@ type pullEvent struct {
 	merge domain.ObjectID
 	// run is false when the cause is a job token: no run starts.
 	run bool
-	log zerowrap.Logger
+	// release: the event replays a held head (ReleaseHold), the hold is not
+	// consulted.
+	release bool
+	log     zerowrap.Logger
 }
 
 func (e pullEvent) trigger(at time.Time) ciTrigger {
@@ -353,7 +356,7 @@ func (c *CI) pullBaseTrusted(ctx context.Context, repo domain.RepoName, number i
 // refresh worker, which is the only fully asynchronous part. A push that touches
 // no merge request queues nothing and marks nothing; the whole-repository rescan
 // is for overflow, truncation and startup.
-func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted, run bool) {
+func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted, run, release bool) {
 	if !c.pullEnabled() {
 		return
 	}
@@ -444,7 +447,7 @@ func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates 
 				}
 				c.queuePullEvent(pullEvent{
 					repo: repo, number: mr.Number, action: domain.PullSynchronize, head: head, base: base, before: before,
-					actor: actor, pusher: pusher, trusted: evTrusted, actorTrusted: trusted, target: *target, run: true, log: log,
+					actor: actor, pusher: pusher, trusted: evTrusted, actorTrusted: trusted, target: *target, run: true, release: release, log: log,
 				})
 			}
 		}
@@ -944,6 +947,9 @@ func (c *CI) closedPull(ctx context.Context, e pullEvent, mr domain.MergeRequest
 func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequest, st pullState, target bool) error {
 	if target && (e.target.commit.IsZero() || st.head.IsZero()) {
 		return nil // no default branch, or no head to run for
+	}
+	if c.heldPull(ctx, e, mr, st) {
+		return nil // ReleaseHold or a later push starts them
 	}
 	runners, err := c.cfg.Store.ListRunners(ctx)
 	if err != nil {

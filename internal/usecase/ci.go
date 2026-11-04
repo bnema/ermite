@@ -289,9 +289,11 @@ type CI struct {
 	archiveTokens map[string]map[string]string
 	// depsObserver is told when a dependency job ends (SetDepsObserver).
 	depsObserver ports.DepsRunObserver
-	streams      int
-	perClient    map[string]int
-	closed       bool
+	// hold holds the runs of some branch heads (SetHold).
+	hold      ports.CIHold
+	streams   int
+	perClient map[string]int
+	closed    bool
 	// artifactLocks serialize the commits of each artifact (ci_artifacts.go).
 	artifactLocks map[int64]*artifactLock
 	// reservations are the artifact bytes being written (ci_artifacts.go).

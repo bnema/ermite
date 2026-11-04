@@ -44,6 +44,9 @@ type ciTrigger struct {
 	trusted bool
 	at      time.Time
 	log     zerowrap.Logger
+	// release: the trigger replays a held head (ReleaseHold); the hold is not
+	// consulted.
+	release bool
 }
 
 // OnPush queues the refs of a push or a merge for planning and returns; a
@@ -64,14 +67,14 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 	c.markSchedulesDirty(repo, updates)
 	// The merge requests follow the push whoever made it (their refs); only a
 	// push that is not a job's starts pull_request runs.
-	defer c.onBranchesMoved(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), !pusher.ViaJobToken())
+	defer c.onBranchesMoved(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), !pusher.ViaJobToken(), false)
 	if pusher.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("push by a job token starts no run")
 		done()
 		return
 	}
-	c.enqueuePush(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), done)
+	c.enqueuePush(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), done, false)
 }
 
 // OnMerge queues the move of a target branch by a merge. The actor of the run is
@@ -88,18 +91,18 @@ func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain
 	// The merge moved a target branch: the test merges of the other requests
 	// into it are computed again (a merge starts no synchronize run), after the
 	// push workflows are queued.
-	defer c.onBranchesMoved(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), false)
+	defer c.onBranchesMoved(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), false, false)
 	if merger.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("merge by a job token starts no run")
 		done()
 		return
 	}
-	c.enqueuePush(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), done)
+	c.enqueuePush(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), done, false)
 }
 
 func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool) {
-	c.enqueuePush(ctx, repo, updates, actor, pusher, trusted, c.pushLifecycle(ctx, repo, 1))
+	c.enqueuePush(ctx, repo, updates, actor, pusher, trusted, c.pushLifecycle(ctx, repo, 1), false)
 }
 
 // pushLifecycle holds one repository activity count until all parts finish.
@@ -117,7 +120,7 @@ func (c *CI) pushLifecycle(ctx context.Context, repo domain.RepoName, parts int3
 	}
 }
 
-func (c *CI) enqueuePush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool, done func()) {
+func (c *CI) enqueuePush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool, done func(), release bool) {
 	var kept []domain.RefUpdate
 	for _, u := range updates {
 		if strings.HasPrefix(u.Ref, "refs/heads/") || strings.HasPrefix(u.Ref, "refs/tags/") {
@@ -128,7 +131,7 @@ func (c *CI) enqueuePush(ctx context.Context, repo domain.RepoName, updates []do
 		done()
 		return
 	}
-	t := ciTrigger{done: done, repo: repo, updates: kept, actor: actor, pusher: pusher, trusted: trusted, at: c.now(), log: zerowrap.FromCtx(ctx)}
+	t := ciTrigger{done: done, repo: repo, updates: kept, actor: actor, pusher: pusher, trusted: trusted, at: c.now(), log: zerowrap.FromCtx(ctx), release: release}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -292,6 +295,9 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 	// three, and no create event when it creates more than three.
 	push := !isTag || tagCount <= workflow.MaxTagsPerPush
 	create := u.IsCreate() && (!isTag || tagsCreated <= workflow.MaxTagsPerPush)
+	if push && !t.release && c.heldRef(ctx, t.repo, u) {
+		push = false // held head: ReleaseHold or a later push starts them
+	}
 	if !push && !create {
 		return nil
 	}
