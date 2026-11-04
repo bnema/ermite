@@ -76,6 +76,9 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	if len(batch.Updates) == 0 {
 		return domain.RepoDeps{}, fmt.Errorf("%w: no dependency update is pending", domain.ErrPreconditionFailed)
 	}
+	if batch.Adopted {
+		return domain.RepoDeps{}, errBranchAdopted
+	}
 	var runnerSide bool
 	for _, u := range batch.Updates {
 		eco := b.ecosystem(u.Ecosystem)
@@ -93,12 +96,125 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 		rec, err = b.apply(ctx, repoName, batch, func(r domain.RepoDeps) error { return movedPrecondition(r, key, expected) })
 	}
 	if err != nil {
-		if !errors.Is(err, errRecordMoved) { // the record is not ours to fail
+		switch {
+		case errors.Is(err, errBranchAdopted):
+			b.markAdopted(ctx, repoName, key, true)
+		case !errors.Is(err, errRecordMoved): // the record is not ours to fail
 			b.fail(ctx, repoName, key, err)
 		}
 		return domain.RepoDeps{}, err
 	}
 	return rec, nil
+}
+
+// markAdopted records that a human changed the branch of the batch: Bernard
+// never rewrites it again, and its merge request body says so. idle ends a
+// draft in progress (a run still applying finishes and only refreshes the
+// body). The caller holds the repository lock.
+func (b *Bernard) markAdopted(ctx context.Context, name domain.RepoName, key domain.DepBatchKey, idle bool) {
+	ctx = context.WithoutCancel(ctx)
+	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
+		_, i, ok := d.Batch(key)
+		if !ok {
+			return false, nil
+		}
+		stored := &d.Batches[i]
+		stored.Adopted = true
+		if idle && stored.State != domain.DepsApplying {
+			stored.State, stored.Error, stored.Repro = domain.DepsIdle, "", nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		ctxLog(ctx).Error().Err(err).Str("repo", name.String()).Msg("bernard: record the adoption of the branch")
+		return
+	}
+	if batch, _, ok := rec.Batch(key); ok {
+		b.noteAdopted(ctx, name, batch)
+	}
+	b.changed(ctx, name)
+}
+
+// noteAdopted refreshes only the description of the merge request of an
+// adopted batch: its title and its branch are the human's.
+func (b *Bernard) noteAdopted(ctx context.Context, name domain.RepoName, batch domain.DepBatch) {
+	if batch.MR == 0 || !b.canOpen() {
+		return
+	}
+	mr, err := b.cfg.MRStore.Get(ctx, name, batch.MR)
+	if err != nil || !mr.IsOpen() {
+		return
+	}
+	ups := batch.MRUpdates
+	if len(ups) == 0 {
+		ups = batch.Updates
+	}
+	desc := domain.BotMRBodyFor(batch, ups, nil)
+	if mr.Description.String() == desc {
+		return
+	}
+	if _, err := b.cfg.MRs.Edit(ctx, domain.Bot(name), name, batch.MR, ports.EditMergeRequestParams{Description: &desc}); err != nil {
+		ctxLog(ctx).Error().Err(err).Str("repo", name.String()).Int64("mr", batch.MR).Msg("bernard: note the adoption on the merge request")
+	}
+}
+
+// Held implements ports.CIHold: the head Bernard last wrote on a batch branch
+// is held while the batch waits for or runs its dependency job. It reads the
+// record without the repository lock: CI asks while Bernard publishes.
+func (b *Bernard) Held(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) bool {
+	d, err := b.cfg.Store.Get(ctx, repo)
+	if err != nil {
+		return false
+	}
+	for _, batch := range d.Batches {
+		if batch.BranchName() != branch || batch.Head != sha || batch.Adopted {
+			continue
+		}
+		switch batch.State {
+		case domain.DepsQueued, domain.DepsDrafted, domain.DepsApplying:
+			return true
+		}
+	}
+	return false
+}
+
+var _ ports.CIHold = (*Bernard)(nil)
+
+// onPush marks adopted the batches whose branch a human push moved away from
+// the head Bernard wrote. Bernard's own writes publish no PushEvent.
+func (b *Bernard) onPush(e domain.PushEvent) {
+	ctx := b.ctx
+	defer func() {
+		if r := recover(); r != nil {
+			ctxLog(ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("bernard: push event panicked")
+		}
+	}()
+	var branches []string
+	for _, u := range e.Updates {
+		branch, ok := strings.CutPrefix(u.Ref, "refs/heads/")
+		if ok && u.New != domain.ZeroOID && strings.HasPrefix(branch, "bernard/") {
+			branches = append(branches, branch)
+		}
+	}
+	if len(branches) == 0 {
+		return
+	}
+	defer b.repoLock(e.Repo)()
+	d, err := b.cfg.Store.Get(ctx, e.Repo)
+	if err != nil {
+		ctxLog(ctx).Error().Err(err).Str("repo", e.Repo.String()).Msg("bernard: read the record")
+		return
+	}
+	for _, u := range e.Updates {
+		for _, batch := range d.Batches {
+			if batch.Adopted || batch.Head.IsZero() || batch.MR == 0 || "refs/heads/"+batch.BranchName() != u.Ref || u.New == domain.ZeroOID {
+				continue
+			}
+			if u.New != batch.Head.String() {
+				b.markAdopted(ctx, e.Repo, batch.Key, false)
+			}
+		}
+	}
 }
 
 // errRecordMoved marks a transition refused because the record changed since
@@ -294,7 +410,27 @@ func (b *Bernard) openDraft(ctx context.Context, name domain.RepoName, batch dom
 	}
 	draft := batch
 	draft.State, draft.Error, draft.Repro = domain.DepsDrafted, "", nil
-	head, err := b.writeBranch(ctx, name, draft, tip, tip, domain.ObjectID{}, changes)
+	// The record holds the draft head before the branch moves: CI holds the
+	// runs of that head (Held) until the runner's commit replaces it.
+	_, _, err = b.writeBranch(ctx, name, draft, tip, tip, batch.Head, changes, func(head domain.ObjectID) error {
+		_, err := b.cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
+			if err := movedPrecondition(*r, batch.Key, expected); err != nil {
+				return false, err
+			}
+			_, i, ok := r.Batch(batch.Key)
+			if !ok {
+				return false, errRecordMoved
+			}
+			stored := &r.Batches[i]
+			if stored.Branch == "" {
+				stored.Branch = batch.BranchName()
+			}
+			stored.Head = head
+			stored.State, stored.Error, stored.Repro = domain.DepsDrafted, "", nil
+			return true, nil
+		})
+		return err
+	})
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
@@ -311,12 +447,8 @@ func (b *Bernard) openDraft(ctx context.Context, name domain.RepoName, batch dom
 			return false, errRecordMoved
 		}
 		stored := &r.Batches[i]
-		if stored.Branch == "" {
-			stored.Branch = batch.BranchName()
-		}
-		stored.Head, stored.MR = head, number
+		stored.MR = number
 		stored.MRVersions, stored.MRUpdates = slices.Clone(batch.Refs()), slices.Clone(batch.Updates)
-		stored.State, stored.Error, stored.Repro = domain.DepsDrafted, "", nil
 		return true, nil
 	})
 	if err != nil {
@@ -472,7 +604,7 @@ func (b *Bernard) apply(ctx context.Context, name domain.RepoName, batch domain.
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
-	return b.publish(ctx, name, target, tip, tip, domain.ObjectID{}, changes, batch, guard, nil)
+	return b.publish(ctx, name, target, tip, tip, batch.Head, changes, batch, guard, nil)
 }
 
 // publish commits changes on base (with parent as the commit's parent), moves
@@ -484,7 +616,7 @@ func (b *Bernard) apply(ctx context.Context, name domain.RepoName, batch domain.
 func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target string, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, batch domain.DepBatch, guard func(domain.RepoDeps) error, effects []domain.DepSideEffect) (domain.RepoDeps, error) {
 	cfg := b.cfg
 	ups := batch.Updates
-	head, err := b.writeBranch(ctx, name, batch, base, parent, old, changes)
+	head, moved, err := b.writeBranch(ctx, name, batch, base, parent, old, changes, nil)
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
@@ -521,27 +653,56 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 	// After the final mutation, so the view that MergeRequestOpened woke sees
 	// the record Idle with its merge request.
 	b.changed(ctx, name)
+	if !moved && cfg.Hold != nil {
+		// The draft head is the final one: the runs it held start now.
+		if err := cfg.Hold.ReleaseHold(ctx, name, batch.BranchName(), head); err != nil {
+			ctxLog(ctx).Error().Err(err).Str("repo", name.String()).Msg("bernard: release the runs of the head")
+		}
+	}
 	return rec, nil
 }
 
+// errBranchAdopted is the error of a write to a batch branch that a human
+// changed since Bernard last wrote it.
+var errBranchAdopted = fmt.Errorf("%w: the branch was changed by hand", domain.ErrPreconditionFailed)
+
 // writeBranch commits changes on base with parent, records the tip and moves
-// the batch branch to the commit with a compare-and-swap from old, or from
-// whatever the branch holds when old is zero (Bernard's namespace).
-func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch domain.DepBatch, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte) (domain.ObjectID, error) {
+// the batch branch to the commit with a compare-and-swap from old. A zero old
+// replaces whatever the branch holds (Bernard's namespace, no head recorded
+// yet); a branch that is no longer at a non-zero old was changed by hand:
+// errBranchAdopted. before, when set, runs once the commit exists and before
+// the branch moves (so that CI, told of the push, sees the record of the new
+// head). When parent is old and the tree is parent's, nothing is written and
+// the parent is returned with moved false.
+func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch domain.DepBatch, base, parent, old domain.ObjectID, changes map[domain.TreePath][]byte, before func(head domain.ObjectID) error) (head domain.ObjectID, moved bool, err error) {
 	cfg := b.cfg
 	branch := batch.BranchName()
+	if !old.IsZero() {
+		cur, err := cfg.Git.BranchHead(ctx, name, branch)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return domain.ObjectID{}, false, fmt.Errorf("read %s: %w", branch, err)
+		}
+		if cur != old {
+			return domain.ObjectID{}, false, errBranchAdopted
+		}
+	}
 	tree, err := cfg.Git.WriteTree(ctx, name, base, changes)
 	if err != nil {
-		return domain.ObjectID{}, fmt.Errorf("write the tree: %w", err)
+		return domain.ObjectID{}, false, fmt.Errorf("write the tree: %w", err)
+	}
+	if !old.IsZero() && parent == old {
+		if same, err := cfg.Git.CommitTree(ctx, name, parent); err == nil && same == tree {
+			return parent, false, nil
+		}
 	}
 	commit := domain.NewBotCommit(tree, parent, domain.BotSubject(batch), batch.Updates, domain.Identity{}, cfg.Committer, cfg.Clock.Now())
 	armored, err := cfg.Signer.Sign(commit.Payload())
 	if err != nil {
-		return domain.ObjectID{}, fmt.Errorf("sign the commit: %w", err)
+		return domain.ObjectID{}, false, fmt.Errorf("sign the commit: %w", err)
 	}
-	head, err := cfg.Git.WriteCommit(ctx, name, commit.Signed(armored))
+	head, err = cfg.Git.WriteCommit(ctx, name, commit.Signed(armored))
 	if err != nil {
-		return domain.ObjectID{}, fmt.Errorf("write the commit: %w", err)
+		return domain.ObjectID{}, false, fmt.Errorf("write the commit: %w", err)
 	}
 	if old.IsZero() {
 		old, err = cfg.Git.BranchHead(ctx, name, branch)
@@ -549,7 +710,19 @@ func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch d
 			old, err = domain.ObjectID{}, nil
 		}
 		if err != nil {
-			return domain.ObjectID{}, fmt.Errorf("read %s: %w", branch, err)
+			return domain.ObjectID{}, false, fmt.Errorf("read %s: %w", branch, err)
+		}
+	} else {
+		// The record names the expected head: a move is a human's.
+		defer func() {
+			if errors.Is(err, domain.ErrConflict) {
+				err = errBranchAdopted
+			}
+		}()
+	}
+	if before != nil {
+		if err := before(head); err != nil {
+			return domain.ObjectID{}, false, err
 		}
 	}
 	oldStr := domain.ZeroOID
@@ -559,15 +732,15 @@ func (b *Bernard) writeBranch(ctx context.Context, name domain.RepoName, batch d
 	upd := []domain.RefUpdate{{Old: oldStr, New: head.String(), Ref: "refs/heads/" + branch}}
 	bot := domain.Bot(name)
 	if err := recordRefTips(ctx, cfg.Tips, name, upd, domain.AuthorName(bot), domain.PusherOf(bot), false); err != nil {
-		return domain.ObjectID{}, err
+		return domain.ObjectID{}, false, err
 	}
 	if err := cfg.Git.UpdateBranch(ctx, name, branch, old, head); err != nil {
-		return domain.ObjectID{}, fmt.Errorf("move %s: %w", branch, err)
+		return domain.ObjectID{}, false, fmt.Errorf("move %s: %w", branch, err)
 	}
 	if cfg.CI != nil {
 		cfg.CI.OnPush(ctx, name, upd, bot)
 	}
-	return head, nil
+	return head, true, nil
 }
 
 // changes reads the files the updates touch at the tip, applies the updates
@@ -745,6 +918,8 @@ func (b *Bernard) watchMergeRequests(sub <-chan domain.Event) {
 				b.onMRDone(e.MergeRequest, false)
 			case domain.MergeRequestMerged:
 				b.onMRDone(e.MergeRequest, true)
+			case domain.PushEvent:
+				b.onPush(e)
 			}
 		}
 	}
@@ -833,6 +1008,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 			return false, nil
 		}
 		batch.MR, batch.MRVersions, batch.MRUpdates = 0, nil, nil
+		batch.Adopted, batch.Head = false, domain.ObjectID{} // the branch is Bernard's again
 		if !merged && (batch.State == domain.DepsApplying || batch.State == domain.DepsDrafted) {
 			batch.State, batch.Error, batch.RunUpdates = domain.DepsIdle, "", nil
 		}

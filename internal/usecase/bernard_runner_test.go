@@ -51,6 +51,7 @@ type runnerRig struct {
 	nextMR   int64
 	readied  []int64
 	edits    []ports.EditMergeRequestParams
+	onPush   func(domain.RefUpdate) // called as CI hears of each Bernard push
 }
 
 // commitIDs are the ids WriteCommit hands out, in order.
@@ -84,6 +85,7 @@ func (rr *runnerRig) fakeForge() {
 		return oid(commitIDs[len(rr.commits)-1]), nil
 	}).Maybe()
 	rr.tips.EXPECT().PutRefTip(mock.Anything, mock.Anything).Return(nil).Maybe()
+	rr.git.EXPECT().CommitTree(mock.Anything, rr.repo, mock.Anything).Return(oid("9"), nil).Maybe()
 	rr.git.EXPECT().UpdateBranch(mock.Anything, rr.repo, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.RepoName, b string, old, next domain.ObjectID) error {
 			rr.mu.Lock()
@@ -94,7 +96,13 @@ func (rr *runnerRig) fakeForge() {
 			rr.branches[b] = next
 			return nil
 		}).Maybe()
-	rr.ci.EXPECT().OnPush(mock.Anything, rr.repo, mock.Anything, mock.Anything).Maybe()
+	rr.ci.EXPECT().OnPush(mock.Anything, rr.repo, mock.Anything, mock.Anything).Run(func(_ context.Context, _ domain.RepoName, ups []domain.RefUpdate, _ domain.Principal) {
+		if rr.onPush != nil {
+			for _, u := range ups {
+				rr.onPush(u)
+			}
+		}
+	}).Maybe()
 	rr.mrst.EXPECT().OpenBySource(mock.Anything, rr.repo, mock.Anything, mock.Anything).Return(nil, false, nil).Maybe()
 	rr.mrst.EXPECT().Get(mock.Anything, rr.repo, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, n int64) (domain.MergeRequest, error) {
 		rr.mu.Lock()
@@ -814,4 +822,121 @@ func TestBernardRunFailureKeepsDraft(t *testing.T) {
 	assert.Contains(t, mr.Description.String(), "Bernard: update failed")
 	assert.Contains(t, mr.Description.String(), "go: missing go.sum entry")
 	assert.Contains(t, mr.Description.String(), "go get golang.org/x/text@v0.21.0")
+}
+
+// CI holds the runs of the draft head while the dependency job runs: the
+// record already names it when CI hears of the push.
+func TestBernardHoldsDraftHead(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	var heldAtPush []bool
+	rr.onPush = func(u domain.RefUpdate) {
+		sha, err := domain.ParseObjectID(u.New)
+		require.NoError(t, err)
+		heldAtPush = append(heldAtPush, rr.b.Held(t.Context(), rr.repo, "bernard/deps", sha))
+	}
+	rr.open(goUpdate())
+	assert.Equal(t, []bool{true}, heldAtPush, "the draft push is held")
+	assert.True(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")))
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("a")), "another head")
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "main", oid("d")), "another branch")
+
+	rr.end(&ports.DepsReport{Error: "tidy failed"}, domain.CIFailure)
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")), "a failed batch holds nothing (and starts nothing)")
+}
+
+func TestBernardFinalCommitNotHeld(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	var heldAtPush []bool
+	rr.onPush = func(u domain.RefUpdate) {
+		sha, err := domain.ParseObjectID(u.New)
+		require.NoError(t, err)
+		heldAtPush = append(heldAtPush, rr.b.Held(t.Context(), rr.repo, "bernard/deps", sha))
+	}
+	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
+	rr.end(goReport(goMod, goSum), domain.CISuccess)
+	assert.Equal(t, []bool{false}, heldAtPush, "CI runs the final commit normally")
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("e")))
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")))
+}
+
+// The final tree equals the draft: no new commit, the held draft head is
+// released instead.
+func TestBernardFinalWithoutNewCommitReleasesTheHold(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	hold := &releaseRecorder{}
+	rr.b.SetHoldForTest(hold)
+	rr.open(goUpdate())
+	rr.git.ExpectedCalls = slices.DeleteFunc(rr.git.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "CommitTree" })
+	rr.git.EXPECT().CommitTree(mock.Anything, rr.repo, oid("d")).Return(oid("b"), nil) // the draft tree is the final tree
+	rr.end(goReport(goModText("go 1.24", "", textNew), rr.files["go.sum"]), domain.CISuccess)
+	assert.Len(t, rr.commits, 1, "nothing new")
+	snap := rr.snapshot()
+	assert.Equal(t, domain.DepsIdle, snap.Base().State)
+	assert.Equal(t, []domain.ObjectID{oid("d")}, hold.released)
+	assert.False(t, rr.mr(7).IsDraft())
+}
+
+type releaseRecorder struct{ released []domain.ObjectID }
+
+func (h *releaseRecorder) ReleaseHold(_ context.Context, _ domain.RepoName, _ string, sha domain.ObjectID) error {
+	h.released = append(h.released, sha)
+	return nil
+}
+
+func TestBernardHumanPushAdopts(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	rr.startWatch()
+	// Another branch, and a push of Bernard's own head, change nothing.
+	rr.events <- domain.PushEvent{Repo: rr.repo, Updates: []domain.RefUpdate{{Ref: "refs/heads/other", Old: domain.ZeroOID, New: oid("5").String()}}}
+	rr.events <- domain.PushEvent{Repo: rr.repo, Updates: []domain.RefUpdate{{Ref: "refs/heads/bernard/deps", Old: oid("a").String(), New: oid("d").String()}}}
+	rr.mu.Lock()
+	rr.branches["bernard/deps"] = oid("5")
+	rr.mu.Unlock()
+	rr.events <- domain.PushEvent{Repo: rr.repo, Updates: []domain.RefUpdate{{Ref: "refs/heads/bernard/deps", Old: oid("d").String(), New: oid("5").String()}}}
+	require.Eventually(t, func() bool { return rr.snapshot().Batches[0].Adopted }, 5*time.Second, 5*time.Millisecond)
+	assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
+	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")))
+
+	// The MR ends: the branch is Bernard's again.
+	rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 7}}
+	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(runnerRunID)).Return(nil).Maybe()
+	require.Eventually(t, func() bool { return !rr.snapshot().Batches[0].Adopted }, 5*time.Second, 5*time.Millisecond)
+}
+
+func TestBernardAdoptedBranchNotRewritten(t *testing.T) {
+	t.Run("job success only refreshes the body", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		rr.mu.Lock()
+		rr.branches["bernard/deps"] = oid("5") // a human push Bernard has not heard of: the CAS tells
+		rr.mu.Unlock()
+		goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.21.0")
+		rr.end(goReport(goMod, goSum), domain.CISuccess)
+		snap := rr.snapshot()
+		assert.True(t, snap.Base().Adopted)
+		assert.Equal(t, domain.DepsIdle, snap.Base().State)
+		assert.Equal(t, oid("5"), rr.branches["bernard/deps"], "not rewritten")
+		assert.Len(t, rr.commits, 1)
+		assert.Empty(t, rr.readied, "the title is the human's")
+		assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
+
+		_, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, "", snap.Base().Refs())
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+		require.ErrorContains(t, err, "the branch was changed by hand")
+		assert.Equal(t, 1, rr.starts)
+	})
+	t.Run("Open finds the branch moved", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.rec.Base().Head, rr.rec.Base().MR = oid("d"), 7
+		rr.branches["bernard/deps"] = oid("5")
+		rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
+		_, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, "", []domain.DepRef{goUpdate().DepRef})
+		require.ErrorContains(t, err, "the branch was changed by hand")
+		assert.True(t, rr.snapshot().Batches[0].Adopted)
+		assert.Equal(t, domain.DepsIdle, rr.snapshot().Batches[0].State)
+		assert.Zero(t, rr.starts)
+		assert.Empty(t, rr.commits)
+	})
 }

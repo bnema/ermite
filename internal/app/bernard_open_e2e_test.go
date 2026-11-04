@@ -294,11 +294,14 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	assert.False(t, run.GetTrusted())
 	assert.Empty(t, c.checks(main), "a dependency run posts no check")
 
-	// A runner that did not ask for the deps kind never gets the job (it may
-	// get the workflow job of the draft push).
+	// A runner that did not ask for the deps kind never gets the job, and the
+	// draft head starts no workflow run: CI holds it until the job ends.
 	old, err := runner.fetch("")
 	require.NoError(t, err)
-	assert.Nil(t, old.GetDeps())
+	assert.Nil(t, old)
+	for _, r := range c.runs() {
+		assert.NotEqual(t, draft, r.GetSha(), "no normal run on the draft head")
+	}
 
 	fetch, err := runner.api.runner.FetchJob(c.ctx, &pb.FetchJobRequest{Kinds: []string{"workflow", "deps"}})
 	require.NoError(t, err)
@@ -363,6 +366,18 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	assert.Equal(t, "2", c.bareGit("proj", "rev-list", "--count", main+"..refs/heads/bernard/deps"))
 	head := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
 	assert.Equal(t, draft, c.bareGit("proj", "rev-parse", head+"^"))
+	// The final commit runs the repository's workflow normally.
+	c.waitFor("a workflow run on the final commit", func() bool {
+		for _, r := range c.runs() {
+			if r.GetSha() == head && r.GetWorkflowPath() == ".github/workflows/ci.yml" {
+				return true
+			}
+		}
+		return false
+	})
+	for _, r := range c.runs() {
+		assert.NotEqual(t, draft, r.GetSha(), "still no run on the draft head")
+	}
 	assert.Equal(t, "Bernard", c.bareGit("proj", "log", "-1", "--format=%an", head))
 	assert.Equal(t, "build(deps): update 2 dependencies", c.bareGit("proj", "log", "-1", "--format=%s", head))
 	changed := strings.Fields(c.bareGit("proj", "diff", "--name-only", main, head))

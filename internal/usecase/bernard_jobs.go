@@ -117,6 +117,33 @@ func (b *Bernard) refreshDraft(ctx context.Context, repo domain.RepoName, batch 
 	b.refreshMR(ctx, repo, batch.MR, mr, shown, nil, true)
 }
 
+// adoptedRunEnded ends the run of a batch whose branch a human took: nothing is
+// pushed, the batch goes Idle and its merge request body is refreshed. The
+// caller holds the repository lock.
+func (b *Bernard) adoptedRunEnded(ctx context.Context, repo domain.RepoName, runID int64) {
+	ctx = context.WithoutCancel(ctx)
+	var key domain.DepBatchKey
+	rec, err := b.cfg.Store.Mutate(ctx, repo, func(d *domain.RepoDeps) (bool, error) {
+		batch := applyingBatch(d, runID)
+		if batch == nil {
+			return false, errJobSuperseded
+		}
+		key = batch.Key
+		batch.State, batch.Error, batch.RunUpdates, batch.Repro = domain.DepsIdle, "", nil, nil
+		return true, nil
+	})
+	if err != nil {
+		if !errors.Is(err, errJobSuperseded) {
+			ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Msg("bernard: end the run of an adopted branch")
+		}
+		return
+	}
+	if batch, _, ok := rec.Batch(key); ok {
+		b.noteAdopted(ctx, repo, batch)
+	}
+	b.changed(ctx, repo)
+}
+
 // depsReconcileGrace is how long the daily pass leaves a run that just ended to
 // the observer, which may still be publishing its result.
 const depsReconcileGrace = 10 * time.Minute
@@ -272,8 +299,17 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !current.Head.IsZero() {
 		parent, old = current.Head, current.Head
 	}
-	final := domain.DepBatch{Key: started.Key, Updates: started.RunUpdates, MR: current.MR, Branch: current.Branch}
+	if current.Adopted {
+		b.adoptedRunEnded(ctx, run.Repo, run.ID)
+		return nil
+	}
+	final := domain.DepBatch{Key: started.Key, Updates: started.RunUpdates, MR: current.MR, Branch: current.Branch, Head: current.Head}
 	_, err = b.publish(ctx, run.Repo, target, base, parent, old, changes, final, jobGuard, effects)
+	if errors.Is(err, errBranchAdopted) {
+		b.markAdopted(ctx, run.Repo, started.Key, false)
+		b.adoptedRunEnded(ctx, run.Repo, run.ID)
+		return nil
+	}
 	return err
 }
 

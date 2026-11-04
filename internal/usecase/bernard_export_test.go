@@ -3,6 +3,8 @@
 package usecase
 
 import (
+	"context"
+
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -10,4 +12,11 @@ import (
 func (b *Bernard) UnderRepoLock(repo domain.RepoName, fn func()) {
 	defer b.repoLock(repo)()
 	fn()
+}
+
+// SetHoldForTest sets the hold release of b.
+func (b *Bernard) SetHoldForTest(h interface {
+	ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) error
+}) {
+	b.cfg.Hold = h
 }

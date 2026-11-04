@@ -89,6 +89,11 @@ type BernardConfig struct {
 	MRs ports.MergeRequestService
 	// MRStore tells whether the stored merge request is still open.
 	MRStore ports.MergeRequestStore
+	// Hold starts the runs CI held on a draft head that became final without
+	// a new commit; may be nil.
+	Hold interface {
+		ReleaseHold(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) error
+	}
 }
 
 // Bernard checks the dependencies of the repositories every day and keeps the

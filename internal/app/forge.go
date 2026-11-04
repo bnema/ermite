@@ -450,12 +450,14 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
 			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
 			JobTimeout: cfg.DepsJobTimeout, Runs: f.CI, Runners: store.CI(), RunnerLabel: cfg.DepsRunnerLabel,
+			Hold: f.CI,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("bernard: %w", err)
 		}
 		f.Deps, inboxDeps = f.bernard, store.Deps()
 		f.CI.SetDepsObserver(f.bernard) // Bernard is built after CI
+		f.CI.SetHold(f.bernard)         // no normal CI on a draft head until its dependency job ends
 		f.bernard.Start()
 	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
