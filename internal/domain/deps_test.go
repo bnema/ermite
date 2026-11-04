@@ -226,6 +226,42 @@ func TestMajorBatchKey(t *testing.T) {
 	}
 }
 
+func TestDepsStates(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state DepsState
+		want  int
+	}{
+		{"idle", DepsIdle, 0},
+		{"applying", DepsApplying, 1},
+		{"failed", DepsFailed, 2},
+		{"queued", DepsQueued, 3},
+		{"drafted", DepsDrafted, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, int(tc.state))
+		})
+	}
+}
+
+func TestDepBatchBranchName(t *testing.T) {
+	key := DepBatchKey("npm/web/react@v19")
+	for _, tc := range []struct {
+		name  string
+		batch DepBatch
+		want  string
+	}{
+		{"base fallback", DepBatch{}, "bernard/deps"},
+		{"major fallback", DepBatch{Key: key}, key.Branch()},
+		{"base override", DepBatch{Branch: "bernard/custom"}, "bernard/custom"},
+		{"major override", DepBatch{Key: key, Branch: "bernard/stored"}, "bernard/stored"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.batch.BranchName())
+		})
+	}
+}
+
 func TestDepBatchBranch(t *testing.T) {
 	for _, tc := range []struct{ key, slug string }{
 		{"", ""}, {"npm/web/@scope/pkg@v19", "npm-web-scope-pkg-v19"},

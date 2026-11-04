@@ -55,6 +55,12 @@ type DepRef struct {
 	Version   string
 }
 
+// DepName identifies a dependency across its family batches.
+type DepName struct {
+	Ecosystem DepsEcosystem
+	Name      string
+}
+
 // DepCandidate is an installed dependency and its available versions.
 type DepCandidate struct {
 	Ecosystem   DepsEcosystem
@@ -101,6 +107,8 @@ const (
 	DepsIdle DepsState = iota
 	DepsApplying
 	DepsFailed
+	DepsQueued  // Waiting for the server to bump manifests, push and open a draft MR.
+	DepsDrafted // Draft MR pushed; waiting for a deps-run slot.
 )
 
 // RepoDeps holds Bernard's repository record, apart from ignores and first-seen.
@@ -109,6 +117,10 @@ type RepoDeps struct {
 	Batches      []DepBatch
 	CheckedAt    time.Time
 	SnoozedUntil time.Time
+	// AutoOpenDisabled opts out of automatic patch/minor merge requests.
+	AutoOpenDisabled bool
+	// SplitOut holds majors pulled out of their family batch.
+	SplitOut []DepName
 }
 
 // Base returns the base batch, installing it first when absent.
@@ -233,6 +245,26 @@ type DepBatch struct {
 	// MRUpdates are the updates the merge request holds, with the versions
 	// they update from.
 	MRUpdates []DepUpdate
+	// Branch is stored when first written; empty uses the key-derived branch.
+	Branch string
+	// Head is the last commit Bernard wrote on the branch.
+	Head ObjectID
+	// Adopted means a human pushed to the branch; Bernard never rewrites it again.
+	Adopted bool
+	// QueuedAt records when the batch entered the queue.
+	QueuedAt time.Time
+	// Manual puts the batch before automatic batches, then ordered by QueuedAt.
+	Manual bool
+	// Repro holds local reproduction commands for a failure.
+	Repro []string
+}
+
+// BranchName returns the stored branch or the key-derived branch when unset.
+func (b DepBatch) BranchName() string {
+	if b.Branch != "" {
+		return b.Branch
+	}
+	return b.Key.Branch()
 }
 
 // Outdated reports whether the batch has a merge request that no longer
