@@ -53,6 +53,7 @@ type runnerRig struct {
 	edits    []ports.EditMergeRequestParams
 	onPush   func(domain.RefUpdate) // called as CI hears of each Bernard push
 	moveErr  error                  // the error of the next UpdateBranch, once
+	movedErr error                  // the error of the next UpdateBranch, once, after it moved the branch
 }
 
 // commitIDs are the ids WriteCommit hands out, in order.
@@ -99,6 +100,10 @@ func (rr *runnerRig) fakeForge() {
 				return domain.ErrConflict
 			}
 			rr.branches[b] = next
+			if err := rr.movedErr; err != nil {
+				rr.movedErr = nil
+				return err
+			}
 			return nil
 		}).Maybe()
 	rr.ci.EXPECT().OnPush(mock.Anything, rr.repo, mock.Anything, mock.Anything).Run(func(_ context.Context, _ domain.RepoName, ups []domain.RefUpdate, _ domain.Principal) {
@@ -1145,4 +1150,41 @@ func TestBernardUnknownHeadBranch(t *testing.T) {
 			assert.Contains(t, rr.commits[0], "parent "+oid("a").String())
 		})
 	}
+}
+
+// A move that reports an error after the ref moved (a cancelled context after
+// update-ref) is a move: the head is promoted, nothing is adopted.
+func TestBernardMoveErrorAfterTheRefMovedPromotes(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.movedErr = context.Canceled
+	rr.open(goUpdate())
+	snap := rr.snapshot()
+	assert.False(t, snap.Base().Adopted)
+	assert.Equal(t, oid("d"), snap.Base().Head)
+	assert.Zero(t, snap.Base().Pending)
+	assert.Equal(t, 1, rr.starts, "the draft goes on to its run")
+}
+
+// A record from before the draft heads were kept, applying: CI planning the
+// final commit after its head is recorded and before the batch goes Idle runs
+// it normally.
+func TestBernardLegacyApplyingFinalHeadNotHeld(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	rr.mu.Lock()
+	rr.rec.Base().Drafts = nil
+	rr.mu.Unlock()
+	var heldAtPush []bool
+	var stateAtPush []domain.DepsState
+	rr.onPush = func(u domain.RefUpdate) {
+		sha, err := domain.ParseObjectID(u.New)
+		require.NoError(t, err)
+		heldAtPush = append(heldAtPush, rr.b.Held(t.Context(), rr.repo, "bernard/deps", sha))
+		snap := rr.snapshot()
+		stateAtPush = append(stateAtPush, snap.Base().State)
+	}
+	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
+	rr.end(goReport(goMod, goSum), domain.CISuccess)
+	assert.Equal(t, []domain.DepsState{domain.DepsApplying}, stateAtPush, "CI plans before the Idle write")
+	assert.Equal(t, []bool{false}, heldAtPush, "the final head is never held")
 }

@@ -166,9 +166,9 @@ func (b *Bernard) noteAdopted(ctx context.Context, name domain.RepoName, batch d
 
 // Held implements ports.CIHold: every draft head Bernard pushed on a batch
 // branch stays held whatever the batch became since (CI plans late: a failed
-// or replaced draft never starts its runs); a record without draft heads holds
-// its head while the batch is drafted or runs its dependency job. An adopted branch
-// holds nothing. It reads the record without the repository lock: CI asks
+// or replaced draft never starts its runs). Only draft heads are held: a final
+// commit never is, whatever the state of the record when CI plans it. An
+// adopted branch holds nothing. It reads the record without the repository lock: CI asks
 // while Bernard publishes.
 func (b *Bernard) Held(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) bool {
 	d, err := b.cfg.Store.Get(ctx, repo)
@@ -180,16 +180,6 @@ func (b *Bernard) Held(ctx context.Context, repo domain.RepoName, branch string,
 			continue
 		}
 		if _, ok := batch.Draft(sha); ok {
-			return true
-		}
-		// A record from before the draft heads were kept holds its head.
-		if len(batch.Drafts) != 0 || batch.Head != sha {
-			continue
-		}
-		// Queued is left out: a server-side publication moves the branch
-		// before the batch leaves the queue, and its commit is final.
-		switch batch.State {
-		case domain.DepsDrafted, domain.DepsApplying:
 			return true
 		}
 	}
@@ -838,10 +828,26 @@ func (b *Bernard) moveBranch(ctx context.Context, name domain.RepoName, key doma
 		return domain.ObjectID{}, err
 	}
 	if err := cfg.Git.UpdateBranch(ctx, name, branch, old, head); err != nil {
-		if serr := settle(false); serr != nil {
-			ctxLog(ctx).Error().Err(serr).Str("repo", name.String()).Msg("bernard: clear the pending head")
+		// The move may have happened despite the error (a cancelled context
+		// after update-ref): the branch tells. Unread, the pending head stays
+		// for settlePending.
+		tip, rerr := cfg.Git.BranchHead(context.WithoutCancel(ctx), name, branch)
+		if errors.Is(rerr, domain.ErrNotFound) {
+			tip, rerr = domain.ObjectID{}, nil
 		}
-		return domain.ObjectID{}, fmt.Errorf("move %s: %w", branch, err)
+		switch {
+		case rerr != nil:
+			return domain.ObjectID{}, fmt.Errorf("move %s: %w", branch, err)
+		case tip == head:
+			// Moved: go on as a success.
+		case tip == old:
+			if serr := settle(false); serr != nil {
+				ctxLog(ctx).Error().Err(serr).Str("repo", name.String()).Msg("bernard: clear the pending head")
+			}
+			return domain.ObjectID{}, fmt.Errorf("move %s: %w", branch, err)
+		default:
+			return domain.ObjectID{}, errBranchAdopted // markAdopted clears the pending head
+		}
 	}
 	// Recorded before CI hears of the push. Should it fail, the record keeps
 	// the pending head, which settlePending promotes.
@@ -1000,15 +1006,13 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 	}
 	// An open request from the branch may exist without being stored (a
 	// lost record, a request opened by hand): adopt it.
-	if n, err := b.findOpenMR(ctx, name, target, branch); err != nil || n != 0 {
-		if err == nil {
-			if mr, gerr := b.cfg.MRStore.Get(ctx, name, n); gerr == nil {
-				if err := b.refreshMR(ctx, name, n, mr, batch, effects, draft); err != nil {
-					return 0, err
-				}
-			}
+	if mr, err := b.findOpenMRRecord(ctx, name, target, branch); err != nil {
+		return 0, err
+	} else if mr.Number != 0 {
+		if err := b.refreshMR(ctx, name, mr.Number, mr, batch, effects, draft); err != nil {
+			return 0, err
 		}
-		return n, err
+		return mr.Number, nil
 	}
 	title := domain.BotSubject(batch)
 	if draft {
@@ -1069,9 +1073,16 @@ func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number in
 // findOpenMR returns the number of the open merge request from bernard/deps
 // into target, zero when there is none.
 func (b *Bernard) findOpenMR(ctx context.Context, name domain.RepoName, target, branch string) (int64, error) {
+	mr, err := b.findOpenMRRecord(ctx, name, target, branch)
+	return mr.Number, err
+}
+
+// findOpenMRRecord is findOpenMR returning the merge request read, zero when
+// there is none.
+func (b *Bernard) findOpenMRRecord(ctx context.Context, name domain.RepoName, target, branch string) (domain.MergeRequest, error) {
 	nums, _, err := b.cfg.MRStore.OpenBySource(ctx, name, []string{branch}, 16)
 	if err != nil {
-		return 0, fmt.Errorf("look for an open merge request: %w", err)
+		return domain.MergeRequest{}, fmt.Errorf("look for an open merge request: %w", err)
 	}
 	for _, n := range nums {
 		mr, err := b.cfg.MRStore.Get(ctx, name, n)
@@ -1079,13 +1090,14 @@ func (b *Bernard) findOpenMR(ctx context.Context, name domain.RepoName, target, 
 			continue
 		}
 		if err != nil {
-			return 0, fmt.Errorf("read !%d: %w", n, err)
+			return domain.MergeRequest{}, fmt.Errorf("read !%d: %w", n, err)
 		}
 		if mr.IsOpen() && mr.Source == branch && mr.Target == target {
-			return n, nil
+			mr.Number = n
+			return mr, nil
 		}
 	}
-	return 0, nil
+	return domain.MergeRequest{}, nil
 }
 
 // watchMergeRequests applies the close and the merge of Bernard's merge
