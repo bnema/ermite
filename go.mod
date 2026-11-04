@@ -190,3 +190,5 @@ require (
 	mvdan.cc/xurls/v2 v2.6.0 // indirect
 	pluginrpc.com/pluginrpc v0.6.0 // indirect
 )
+
+replace bnema.dev/ermite-api => ../../../ermite-api/.worktrees/deps-auto-families

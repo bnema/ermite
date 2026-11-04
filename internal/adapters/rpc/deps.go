@@ -39,6 +39,10 @@ func depsStateToPB(s domain.DepsState) pb.RepoDependencyUpdates_State {
 		return pb.RepoDependencyUpdates_STATE_APPLYING
 	case domain.DepsFailed:
 		return pb.RepoDependencyUpdates_STATE_FAILED
+	case domain.DepsQueued:
+		return pb.RepoDependencyUpdates_STATE_QUEUED
+	case domain.DepsDrafted:
+		return pb.RepoDependencyUpdates_STATE_DRAFTED
 	}
 	return pb.RepoDependencyUpdates_STATE_UNSPECIFIED
 }
@@ -49,12 +53,19 @@ func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
 	out := &pb.RepoDependencyUpdates{
 		Repo: d.Repo.String(), CheckedAt: timestamp(d.CheckedAt), SnoozedUntil: timestamp(d.SnoozedUntil),
 		MergeRequestNumber: base.MR, State: depsStateToPB(base.State), Error: base.Error, RunId: base.RunID,
-		Updates: repoDepsToPBUpdates(base.Updates),
+		Updates: repoDepsToPBUpdates(base.Updates), AutoOpen: !d.AutoOpenDisabled,
+	}
+
+	for _, n := range d.SplitOut {
+		out.SplitOut = append(out.SplitOut, &pb.DependencyName{Ecosystem: string(n.Ecosystem), Name: n.Name})
 	}
 
 	for _, batch := range d.Batches {
 		updates := repoDepsToPBUpdates(batch.Updates)
-		out.Batches = append(out.Batches, &pb.DependencyBatch{Key: string(batch.Key), Updates: updates, State: depsStateToPB(batch.State), Error: batch.Error, RunId: batch.RunID, MergeRequestNumber: batch.MR, Outdated: batch.Outdated()})
+		out.Batches = append(out.Batches, &pb.DependencyBatch{
+			Key: string(batch.Key), Updates: updates, State: depsStateToPB(batch.State), Error: batch.Error, RunId: batch.RunID,
+			MergeRequestNumber: batch.MR, Outdated: batch.Outdated(), Adopted: batch.Adopted, Branch: batch.BranchName(), Repro: batch.Repro,
+		})
 	}
 
 	return out
@@ -133,6 +144,31 @@ func (s *depsService) SnoozeDependencyUpdates(ctx context.Context, req *pb.Snooz
 		return nil, connectError(ctx, err)
 	}
 	return &pb.SnoozeDependencyUpdatesResponse{Updates: repoDepsToPB(d)}, nil
+}
+
+func (s *depsService) SetDependencyAutoOpen(ctx context.Context, req *pb.SetDependencyAutoOpenRequest) (*pb.SetDependencyAutoOpenResponse, error) {
+	repo, err := domain.ParseRepoName(req.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	d, err := s.deps.SetAutoOpen(ctx, caller(ctx), repo, req.GetEnabled())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return &pb.SetDependencyAutoOpenResponse{Updates: repoDepsToPB(d)}, nil
+}
+
+func (s *depsService) SplitDependency(ctx context.Context, req *pb.SplitDependencyRequest) (*pb.SplitDependencyResponse, error) {
+	repo, err := domain.ParseRepoName(req.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	name := domain.DepName{Ecosystem: domain.DepsEcosystem(req.GetEcosystem()), Name: req.GetName()}
+	d, err := s.deps.Split(ctx, caller(ctx), repo, name, req.GetSplit())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return &pb.SplitDependencyResponse{Updates: repoDepsToPB(d)}, nil
 }
 
 func repoDepsToPBUpdates(ups []domain.DepUpdate) []*pb.DependencyUpdate {
