@@ -268,7 +268,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), state: q.Get("state"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
 	if topic == ownerTopic {
-		st.tab, st.rng, st.sort = inboxTab(q.Get("tab")), q.Get("range"), q.Get("sort")
+		st.tab, st.rng, st.sort, st.filter = inboxTab(q.Get("tab")), q.Get("range"), q.Get("sort"), q.Get("filter")
 	}
 	handle := func(m recvd) bool {
 		if m.err != nil {

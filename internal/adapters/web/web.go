@@ -214,6 +214,9 @@ func (s *Server) routes() *http.ServeMux {
 			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/open", s.action(depsBack, s.depsAction(depsOpen)))
 			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/ignore", s.action(depsBack, s.depsAction(depsIgnore)))
 			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/snooze", s.action(depsBack, s.depsAction(depsSnooze)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/recheck", s.action(depsBack, s.depsAction(depsRecheck)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/auto", s.action(depsBack, s.depsAction(depsAuto)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/split", s.action(depsBack, s.depsAction(depsSplit)))
 		}
 		if s.cfg.Moderation != nil {
 			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.action(pendingBack, s.pendingApprove))
