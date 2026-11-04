@@ -13,7 +13,7 @@ tool (
 
 require (
 	bnema.dev/ermite-actions v0.2.1
-	bnema.dev/ermite-api v0.25.0
+	bnema.dev/ermite-api v0.26.0
 	bnema.dev/ermite-git v0.1.1
 	bnema.dev/ermite-kv v0.1.2
 	bnema.dev/kvconf v0.2.0
@@ -190,5 +190,3 @@ require (
 	mvdan.cc/xurls/v2 v2.6.0 // indirect
 	pluginrpc.com/pluginrpc v0.6.0 // indirect
 )
-
-replace bnema.dev/ermite-api => ../../../ermite-api/.worktrees/deps-auto-families

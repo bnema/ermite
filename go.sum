@@ -1,7 +1,7 @@
 bnema.dev/ermite-actions v0.2.1 h1:VB73C9hZctmMECmS6yLEndb4EZGXaOj7QsuqEg5TkZM=
 bnema.dev/ermite-actions v0.2.1/go.mod h1:A7IjydJ/mRNdbaaSxypIrrprjpVukCw7v+1nHZykv5M=
-bnema.dev/ermite-api v0.25.0 h1:dMuSSRXwkSParpcHuymCSjId4WM/DtmlBqN5Gltxj+0=
-bnema.dev/ermite-api v0.25.0/go.mod h1:sJvlhDSJyy9EwK9YCug4+dSaO8p3xj7TDGZOcQaC7KU=
+bnema.dev/ermite-api v0.26.0 h1:jrH72whs3mAFXpKROZWxO9zeGuLjTGGsNUEtCl+Rymo=
+bnema.dev/ermite-api v0.26.0/go.mod h1:sJvlhDSJyy9EwK9YCug4+dSaO8p3xj7TDGZOcQaC7KU=
 bnema.dev/ermite-git v0.1.1 h1:kfmkiVrIJhCOAMwscOBwcM2YlwlFOFbP29SC40yUFN8=
 bnema.dev/ermite-git v0.1.1/go.mod h1:L/peySUgj6amt2i90rtpKbvFJ7X9TMH4TDq+P1oMIl8=
 bnema.dev/ermite-kv v0.1.2 h1:DJM+A7Ups0YDvwKapLifC2cfvnRiEslei57fWyu52hE=
