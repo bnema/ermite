@@ -491,14 +491,17 @@ func TestMRCommentMenuIsJSOnly(t *testing.T) {
 func TestMRZeroFilesPresentation(t *testing.T) {
 	p := MRPage{Verdicts: []VerdictView{{Author: "owner", Label: "approve", Href: "#c1"}, {Author: "reviewer", Label: "changes_requested", Href: "#c2"}}}
 	assert.Nil(t, mrPageRail(p))
+	assert.Contains(t, renderToString(t, MergeRequest(Layout{}, p)), `class="mr-card narrow"`)
 	bar := renderToString(t, mrBar(p))
 	assert.Contains(t, bar, "0 files")
 	assert.NotContains(t, bar, `class="plus"`)
 	assert.NotContains(t, bar, `class="minus"`)
 	fact := renderToString(t, mrVerdictFact(p, false))
-	assert.Contains(t, fact, "✓ approved by owner")
-	assert.Contains(t, fact, "✕ changes requested by reviewer")
+	assert.Contains(t, fact, "approved by owner")
+	assert.Contains(t, fact, "changes requested by reviewer")
 	assert.Contains(t, fact, ", ")
+	assert.Contains(t, fact, `class="c-verdict" data-verdict="approve"`)
+	assert.Contains(t, fact, `class="c-verdict" data-verdict="changes_requested"`)
 	assert.NotContains(t, fact, " hidden")
 	assert.Contains(t, renderToString(t, MRStateFragment(p)), `id="mr-verdict-fact" data-k="verdicts" hx-swap-oob`)
 	p.NFiles = 1

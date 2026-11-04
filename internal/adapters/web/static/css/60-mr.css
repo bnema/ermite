@@ -9,9 +9,9 @@
     & > .mr-h { background: var(--bg-surface); border: 0; border-radius: 0; padding: var(--s4) var(--s5); }
     & > .mr-desc.prose { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
   }
-  /* No-rail issue content shares the notes' border-box width, including
-     the card's existing internal padding. MR pages never have issue-card. */
-  .work:not(.has-rail) > main:has(> .issue-card) { max-width: var(--note-w); }
+  /* Only no-rail issues and explicitly narrow (zero-file) MRs share
+     the notes' border-box width. A hidden rail must not narrow other MRs. */
+  .work:not(.has-rail) > main:has(> :is(.issue-card, .mr-card.narrow)) { max-width: var(--note-w); }
   /* the facts of a merge request or an issue: one line under the title,
      "open · feat/x → main · opened by owner 2 min ago", not a table */
   .mr-h {
@@ -19,7 +19,7 @@
     /* the title with its actions on the right (close or reopen an issue) */
     & .mr-title { display: flex; align-items: flex-start; gap: var(--s4); }
     & .mr-title h1 { flex: 1; min-width: 0; text-wrap: pretty; }
-    & .mr-title-acts { flex: none; display: flex; gap: var(--s2); }
+    & .mr-title-acts { flex: none; display: flex; gap: var(--s2); margin-left: auto; }
     & .mr-title-acts form { margin: 0; }
     & .mr-title-acts:empty { display: none; }
     & .show-kv {
@@ -280,15 +280,6 @@
     & .c-when:hover { color: var(--ink-hi); text-decoration: underline; }
     & .c-where { font-family: var(--mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
     & .c-tag { font-size: var(--fs-xs); }
-    & .c-state, & .c-verdict {
-      display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); gap: 4px;
-      font-size: var(--fs-xs); font-weight: 600; border-radius: 999px; white-space: nowrap;
-      color: var(--ink-dim); border: 1px solid var(--border-strong);
-    }
-    & .c-verdict[data-verdict="approve"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 55%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
-    & .c-verdict[data-verdict="changes_requested"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
-    & .c-verdict[data-verdict="approve"]::before { content: "✓"; }
-    & .c-verdict[data-verdict="changes_requested"]::before { content: "✕"; }
     & .c-state[data-state="resolved"] { color: var(--teal); border-color: transparent; padding-inline: 0; }
     & .c-state[data-state="resolved"]::before { content: "✓"; }
 
@@ -374,6 +365,20 @@
   .i-quote { --i: url(icons/quote.svg); }
   .i-pencil { --i: url(icons/pencil.svg); }
   .i-trash { --i: url(icons/trash.svg); }
+
+  .cmt .c-state, .c-verdict {
+    display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); gap: 4px;
+    font-size: var(--fs-xs); font-weight: 600; border-radius: 999px; white-space: nowrap;
+    color: var(--ink-dim); border: 1px solid var(--border-strong);
+  }
+  .c-verdict[data-verdict="approve"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 55%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
+  .c-verdict[data-verdict="changes_requested"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
+  .c-verdict[data-verdict="approve"]::before { content: "✓"; }
+  .c-verdict[data-verdict="changes_requested"]::before { content: "✕"; }
+
+  #mr-verdict-fact .c-verdict { text-decoration: none; }
+  #mr-verdict-fact .c-verdict[data-verdict="approve"] { color: var(--teal); }
+  #mr-verdict-fact .c-verdict[data-verdict="changes_requested"] { color: var(--red); }
 
   /* the forms: a comment, a new merge request */
   .cform {

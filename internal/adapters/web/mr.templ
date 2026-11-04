@@ -128,7 +128,7 @@ templ mrRows(rows []MRRow, label string) {
 // holds the files and verdicts.
 templ MergeRequest(l Layout, p MRPage) {
 	@Shell(l, mrPageRail(p)) {
-		<section class="mr-card">
+		<section class={ "mr-card", templ.KV("narrow", p.NFiles == 0) }>
 			<header class="show mr-h">
 				<h1 id="mr-title"><span class="mute">{ p.Number }</span> { p.Title }</h1>
 				<dl class="kv show-kv">
@@ -988,11 +988,11 @@ templ mrVerdictFact(p MRPage, oob bool) {
 			if i > 0 {
 				{ ", " }
 			}
-			<a href={ templ.SafeURL(v.Href) }>
+			<a class="c-verdict" data-verdict={ v.Label } href={ templ.SafeURL(v.Href) }>
 				if v.Label == "approve" {
-					{ "✓ approved by " + v.Author }
+					{ "approved by " + v.Author }
 				} else {
-					{ "✕ changes requested by " + v.Author }
+					{ "changes requested by " + v.Author }
 				}
 			</a>
 			if v.Stale {

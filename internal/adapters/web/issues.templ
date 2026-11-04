@@ -137,7 +137,6 @@ templ IssueShow(l Layout, p IssuePage) {
 			<header class="show mr-h">
 				<div class="mr-title">
 					<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
-					@issueActions(p, false)
 				</div>
 				<dl class="kv show-kv">
 					<dt>state</dt>
@@ -157,6 +156,7 @@ templ IssueShow(l Layout, p IssuePage) {
 						<dt>updated</dt>
 						<dd data-k="updated"><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
+					@issueActions(p, false)
 				</dl>
 			</header>
 			if p.Desc != "" {
