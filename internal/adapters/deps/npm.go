@@ -31,9 +31,54 @@ func (NPM) Apply(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.Tre
 	return nil, fmt.Errorf("%w: npm updates require a runner", domain.ErrPreconditionFailed)
 }
 
-// Bump is not implemented yet.
-func (NPM) Bump(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
-	return nil, fmt.Errorf("%w: npm manifest bump not implemented", domain.ErrPreconditionFailed)
+// Bump rewrites only the requested specs in each update's package.json,
+// keeping the range operator and every other byte; lockfiles are left for the
+// runner. It returns only changed files and never mutates files. A missing
+// manifest or package, a spec that is not a plain semver range, or a current
+// version that differs from the update wraps domain.ErrPreconditionFailed.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter applies the DepsEcosystem.Bump port contract with npm manifest syntax; nothing is chosen here
+func (NPM) Bump(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
+	out := map[domain.TreePath][]byte{}
+	for _, u := range ups {
+		p, err := domain.ParseTreePath(path.Join(u.Directory, "package.json"))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", domain.ErrPreconditionFailed, err)
+		}
+		content, ok := out[p]
+		if !ok {
+			content = files[p]
+		}
+		if content == nil {
+			return nil, fmt.Errorf("%w: npm manifest %s missing", domain.ErrPreconditionFailed, p)
+		}
+		deps, err := npmDependencies(content)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", domain.ErrPreconditionFailed, p, err)
+		}
+		spec, ok := deps[u.Name]
+		if !ok {
+			return nil, fmt.Errorf("%w: npm dependency %q missing in %s", domain.ErrPreconditionFailed, u.Name, p)
+		}
+		if _, current, ok := npmSpec(spec); !ok || current != u.Current {
+			return nil, fmt.Errorf("%w: npm dependency %q changed in %s", domain.ErrPreconditionFailed, u.Name, p)
+		}
+		newSpec, err := npmRange(spec, u.Version)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", domain.ErrPreconditionFailed, p, err)
+		}
+		content, err = npmEditSpec(content, u.Name, spec, newSpec)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", domain.ErrPreconditionFailed, p, err)
+		}
+		out[p] = content
+	}
+	for p, content := range out {
+		if bytes.Equal(content, files[p]) {
+			delete(out, p)
+		}
+	}
+	return out, nil
 }
 
 var npmLockfiles = map[string]bool{"package-lock.json": true, "npm-shrinkwrap.json": true, "pnpm-lock.yaml": true, "yarn.lock": true, "bun.lock": true, "bun.lockb": true}
