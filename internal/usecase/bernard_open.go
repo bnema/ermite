@@ -826,7 +826,9 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 	if stored != 0 {
 		mr, err := b.cfg.MRStore.Get(ctx, name, stored)
 		if err == nil && mr.IsOpen() {
-			b.refreshMR(ctx, name, stored, mr, batch, effects, draft)
+			if err := b.refreshMR(ctx, name, stored, mr, batch, effects, draft); err != nil {
+				return 0, err
+			}
 			return stored, nil
 		}
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -838,7 +840,9 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 	if n, err := b.findOpenMR(ctx, name, target, branch); err != nil || n != 0 {
 		if err == nil {
 			if mr, gerr := b.cfg.MRStore.Get(ctx, name, n); gerr == nil {
-				b.refreshMR(ctx, name, n, mr, batch, effects, draft)
+				if err := b.refreshMR(ctx, name, n, mr, batch, effects, draft); err != nil {
+					return 0, err
+				}
 			}
 		}
 		return n, err
@@ -870,10 +874,9 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 // refreshMR sets the title and the description of the kept merge request to
 // those generated for the batch, as the bot (which holds mr:write on its
 // repository): the draft title while draft, otherwise a draft is marked ready
-// and gets the plain subject. A failure is logged: the branch is already
-// updated.
-func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, batch domain.DepBatch, effects []domain.DepSideEffect, draft bool) {
-	log := ctxLog(ctx)
+// and gets the plain subject. A failure is returned: the caller does not
+// record the merge request as holding the batch, so the step is retried.
+func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, batch domain.DepBatch, effects []domain.DepSideEffect, draft bool) error {
 	title, desc := domain.BotSubject(batch), domain.BotMRBodyFor(batch, batch.Updates, effects)
 	if draft {
 		title = domain.BotDraftTitle(batch)
@@ -884,19 +887,20 @@ func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number in
 			mr.Title = ready.Title
 		case errors.Is(err, domain.ErrPreconditionFailed): // ready already
 		default:
-			log.Error().Err(err).Str("repo", name.String()).Int64("mr", number).Msg("bernard: mark the merge request ready")
+			return fmt.Errorf("mark !%d ready: %w", number, err)
 		}
 	}
 	if mr.Title.String() == title && mr.Description.String() == desc {
-		return
+		return nil
 	}
 	params := ports.EditMergeRequestParams{Description: &desc}
 	if mr.Title.String() != title {
 		params.Title = &title
 	}
 	if _, err := b.cfg.MRs.Edit(ctx, domain.Bot(name), name, number, params); err != nil {
-		log.Error().Err(err).Str("repo", name.String()).Int64("mr", number).Msg("bernard: refresh the merge request")
+		return fmt.Errorf("refresh !%d: %w", number, err)
 	}
+	return nil
 }
 
 // findOpenMR returns the number of the open merge request from bernard/deps

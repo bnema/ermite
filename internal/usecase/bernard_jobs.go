@@ -120,7 +120,9 @@ func (b *Bernard) refreshDraft(ctx context.Context, repo domain.RepoName, batch 
 	}
 	shown := batch
 	shown.Updates = ups
-	b.refreshMR(ctx, repo, batch.MR, mr, shown, nil, true)
+	if err := b.refreshMR(ctx, repo, batch.MR, mr, shown, nil, true); err != nil {
+		ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Msg("bernard: show the failure on the draft") // the record holds it
+	}
 }
 
 // adoptedRunEnded ends the run of a batch whose branch a human took: nothing is

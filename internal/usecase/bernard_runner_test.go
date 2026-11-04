@@ -989,3 +989,19 @@ func TestBernardFailureOfAnAdoptedBatchEditsOnlyTheDescription(t *testing.T) {
 	assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
 	assert.Contains(t, rr.mr(7).Description.String(), "tidy failed")
 }
+
+// When the draft cannot be marked ready, the record does not say the merge
+// request holds the versions: the batch fails and can be retried.
+func TestBernardMarkReadyFailureIsRetryable(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	rr.openRig.mrs.ExpectedCalls = slices.DeleteFunc(rr.openRig.mrs.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "MarkReady" })
+	rr.openRig.mrs.EXPECT().MarkReady(mock.Anything, mock.Anything, rr.repo, int64(7)).Return(domain.MergeRequest{}, errors.New("store down"))
+	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
+	rr.end(goReport(goMod, goSum), domain.CISuccess)
+	snap := rr.snapshot()
+	assert.Equal(t, domain.DepsFailed, snap.Base().State)
+	assert.Contains(t, snap.Base().Error, "mark !7 ready: store down")
+	assert.True(t, rr.mr(7).IsDraft())
+	assert.Equal(t, oid("d"), rr.branches["bernard/deps"], "the branch did not move")
+}
