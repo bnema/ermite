@@ -55,6 +55,7 @@ func testBernardPNPM(t *testing.T, lock string) {
 	require.Len(t, checked.Base().Updates, 1)
 	r.repos.EXPECT().DefaultBranch(mock.Anything, r.repo).Return("main", true, nil)
 	r.git.EXPECT().BranchHead(mock.Anything, r.repo, "main").Return(oid("a"), nil)
+	(&runnerRig{openRig: r}).fakeForge() // the draft merge request with the manifest bump
 	var job domain.CIDepsJob
 	r.runs.EXPECT().StartDepsRun(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p ports.DepsRunParams) (domain.CIRun, error) {
 		job = p.Job

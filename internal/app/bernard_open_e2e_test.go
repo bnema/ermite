@@ -270,9 +270,17 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 
 	got := rig.open()
 	assert.Equal(t, pb.RepoDependencyUpdates_STATE_APPLYING, depsBase(got).GetState())
-	assert.Zero(t, depsBase(got).GetMergeRequestNumber())
-	_, gitErr := c.git(c.repoDir("proj"), "rev-parse", "--verify", "-q", "refs/heads/bernard/deps")
-	assert.Error(t, gitErr, "nothing is committed before the report")
+	// The draft is open at once: one signed commit with the manifest bump and
+	// the action update, before the runner reports.
+	draftNumber := depsBase(got).GetMergeRequestNumber()
+	require.NotZero(t, draftNumber)
+	draftMR, err := c.root.mr.GetMergeRequest(c.ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: draftNumber})
+	require.NoError(t, err)
+	assert.Equal(t, "WIP: build(deps): update 2 dependencies", draftMR.GetMergeRequest().GetTitle())
+	draft := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
+	assert.Equal(t, main, c.bareGit("proj", "rev-parse", draft+"^"))
+	assert.Equal(t, bernardGoMod("v0.21.0"), c.mustGit(c.repoDir("proj"), "show", draft+":go.mod"))
+	assert.Equal(t, rig.oldSum, c.mustGit(c.repoDir("proj"), "show", draft+":go.sum"), "the bump leaves go.sum to the runner")
 
 	// A queued run, visible in Actions, with no check on the commit.
 	run := rig.depsRun()
@@ -286,10 +294,11 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	assert.False(t, run.GetTrusted())
 	assert.Empty(t, c.checks(main), "a dependency run posts no check")
 
-	// A runner that did not ask for the deps kind never gets the job.
+	// A runner that did not ask for the deps kind never gets the job (it may
+	// get the workflow job of the draft push).
 	old, err := runner.fetch("")
 	require.NoError(t, err)
-	assert.Nil(t, old)
+	assert.Nil(t, old.GetDeps())
 
 	fetch, err := runner.api.runner.FetchJob(c.ctx, &pb.FetchJobRequest{Kinds: []string{"workflow", "deps"}})
 	require.NoError(t, err)
@@ -349,10 +358,11 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 		return depsBase(rec).GetState() == pb.RepoDependencyUpdates_STATE_IDLE && depsBase(rec).GetMergeRequestNumber() != 0
 	})
 
-	// One signed commit on the run's commit: go.mod, go.sum and the workflow.
-	assert.Equal(t, "1", c.bareGit("proj", "rev-list", "--count", main+"..refs/heads/bernard/deps"))
+	// The final signed commit follows the draft: go.mod, go.sum and the
+	// workflow against the run's commit.
+	assert.Equal(t, "2", c.bareGit("proj", "rev-list", "--count", main+"..refs/heads/bernard/deps"))
 	head := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
-	assert.Equal(t, main, c.bareGit("proj", "rev-parse", head+"^"))
+	assert.Equal(t, draft, c.bareGit("proj", "rev-parse", head+"^"))
 	assert.Equal(t, "Bernard", c.bareGit("proj", "log", "-1", "--format=%an", head))
 	assert.Equal(t, "build(deps): update 2 dependencies", c.bareGit("proj", "log", "-1", "--format=%s", head))
 	changed := strings.Fields(c.bareGit("proj", "diff", "--name-only", main, head))
@@ -369,6 +379,8 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "bernard", mr.GetMergeRequest().GetAuthor())
 	assert.Equal(t, "bernard/deps", mr.GetMergeRequest().GetSourceBranch())
+	assert.Equal(t, draftNumber, mr.GetMergeRequest().GetNumber(), "the draft became the merge request")
+	assert.Equal(t, "build(deps): update 2 dependencies", mr.GetMergeRequest().GetTitle(), "marked ready")
 
 	// The run completed, with its steps and its log, and no check.
 	detail := c.getRun(run.GetId())
@@ -461,9 +473,13 @@ func TestBernardCancelingTheRunFailsTheCard(t *testing.T) {
 	})
 	assert.Contains(t, depsBase(rec).GetError(), "the run ended: cancelled")
 	assert.NotContains(t, depsBase(rec).GetError(), "\n")
-	assert.Zero(t, depsBase(rec).GetMergeRequestNumber())
-	_, gitErr := c.git(c.repoDir("proj"), "rev-parse", "--verify", "-q", "refs/heads/bernard/deps")
-	assert.Error(t, gitErr, "nothing was committed")
+	// The draft stays, with the failure in its description.
+	require.NotZero(t, depsBase(rec).GetMergeRequestNumber())
+	mr, err := c.root.mr.GetMergeRequest(c.ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: depsBase(rec).GetMergeRequestNumber()})
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(mr.GetMergeRequest().GetTitle(), "WIP: "))
+	assert.Contains(t, mr.GetMergeRequest().GetDescription(), "the run ended: cancelled")
+	assert.Equal(t, "1", c.bareGit("proj", "rev-list", "--count", "refs/heads/main..refs/heads/bernard/deps"), "only the draft commit")
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.getRun(run.GetId()).GetRun().GetConclusion())
 }
 

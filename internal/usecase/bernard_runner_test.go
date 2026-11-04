@@ -42,6 +42,117 @@ type runnerRig struct {
 	files   map[string]string // the files at the tip
 	started ports.DepsRunParams
 	starts  int
+
+	// A small forge: branches, commits and merge requests.
+	branches map[string]domain.ObjectID
+	trees    []map[domain.TreePath][]byte // the changes of each written tree
+	commits  []string                     // the commit objects, in order
+	mrs      map[int64]domain.MergeRequest
+	nextMR   int64
+	readied  []int64
+	edits    []ports.EditMergeRequestParams
+}
+
+// commitIDs are the ids WriteCommit hands out, in order.
+var commitIDs = []string{"d", "e", "f", "1", "2", "3"}
+
+// fakeForge backs git and the merge requests of rr with a stateful fake.
+func (rr *runnerRig) fakeForge() {
+	t := rr.t
+	rr.branches, rr.mrs, rr.nextMR = map[string]domain.ObjectID{}, map[int64]domain.MergeRequest{}, 7
+	rr.git.EXPECT().BranchHead(mock.Anything, rr.repo, mock.MatchedBy(func(b string) bool { return b != "main" })).RunAndReturn(
+		func(_ context.Context, _ domain.RepoName, b string) (domain.ObjectID, error) {
+			rr.mu.Lock()
+			defer rr.mu.Unlock()
+			if h, ok := rr.branches[b]; ok {
+				return h, nil
+			}
+			return domain.ObjectID{}, domain.ErrNotFound
+		}).Maybe()
+	rr.git.EXPECT().WriteTree(mock.Anything, rr.repo, oid("a"), mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.RepoName, _ domain.ObjectID, ch map[domain.TreePath][]byte) (domain.ObjectID, error) {
+			rr.mu.Lock()
+			defer rr.mu.Unlock()
+			rr.trees = append(rr.trees, ch)
+			return oid("b"), nil
+		}).Maybe()
+	rr.signer.EXPECT().Sign(mock.Anything).Return("-----BEGIN SSH SIGNATURE-----\nAAAA\n-----END SSH SIGNATURE-----\n", nil).Maybe()
+	rr.git.EXPECT().WriteCommit(mock.Anything, rr.repo, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, obj []byte) (domain.ObjectID, error) {
+		rr.mu.Lock()
+		defer rr.mu.Unlock()
+		rr.commits = append(rr.commits, string(obj))
+		return oid(commitIDs[len(rr.commits)-1]), nil
+	}).Maybe()
+	rr.tips.EXPECT().PutRefTip(mock.Anything, mock.Anything).Return(nil).Maybe()
+	rr.git.EXPECT().UpdateBranch(mock.Anything, rr.repo, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.RepoName, b string, old, next domain.ObjectID) error {
+			rr.mu.Lock()
+			defer rr.mu.Unlock()
+			if rr.branches[b] != old {
+				return domain.ErrConflict
+			}
+			rr.branches[b] = next
+			return nil
+		}).Maybe()
+	rr.ci.EXPECT().OnPush(mock.Anything, rr.repo, mock.Anything, mock.Anything).Maybe()
+	rr.mrst.EXPECT().OpenBySource(mock.Anything, rr.repo, mock.Anything, mock.Anything).Return(nil, false, nil).Maybe()
+	rr.mrst.EXPECT().Get(mock.Anything, rr.repo, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, n int64) (domain.MergeRequest, error) {
+		rr.mu.Lock()
+		defer rr.mu.Unlock()
+		mr, ok := rr.mrs[n]
+		if !ok {
+			return domain.MergeRequest{}, domain.ErrNotFound
+		}
+		return mr, nil
+	}).Maybe()
+	rr.openRig.mrs.EXPECT().Create(mock.Anything, mock.Anything, rr.repo, mock.Anything).RunAndReturn(
+		func(_ context.Context, p domain.Principal, _ domain.RepoName, params ports.CreateMergeRequestParams) (domain.MergeRequest, error) {
+			rr.mu.Lock()
+			defer rr.mu.Unlock()
+			rr.creator, rr.created = p, params
+			title, err := domain.ParseMRTitle(params.Title)
+			require.NoError(t, err)
+			desc, err := domain.ParsePlainText(params.Description)
+			require.NoError(t, err)
+			mr := domain.MergeRequest{Repo: rr.repo, Number: rr.nextMR, State: domain.MRStateOpen, Title: title, Description: desc, Source: params.Source, Target: params.Target}
+			rr.mrs[mr.Number] = mr
+			rr.nextMR++
+			return mr, nil
+		}).Maybe()
+	rr.openRig.mrs.EXPECT().Edit(mock.Anything, mock.Anything, rr.repo, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.Principal, _ domain.RepoName, n int64, params ports.EditMergeRequestParams) (domain.MergeRequest, error) {
+			rr.mu.Lock()
+			defer rr.mu.Unlock()
+			mr := rr.mrs[n]
+			if params.Title != nil {
+				mr.Title, _ = domain.ParseMRTitle(*params.Title)
+			}
+			if params.Description != nil {
+				mr.Description, _ = domain.ParsePlainText(*params.Description)
+			}
+			rr.mrs[n], rr.edits = mr, append(rr.edits, params)
+			return mr, nil
+		}).Maybe()
+	rr.openRig.mrs.EXPECT().MarkReady(mock.Anything, mock.Anything, rr.repo, mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.Principal, _ domain.RepoName, n int64) (domain.MergeRequest, error) {
+			rr.mu.Lock()
+			defer rr.mu.Unlock()
+			mr := rr.mrs[n]
+			title, ok := domain.ReadyTitle(mr.Title)
+			if !ok {
+				return domain.MergeRequest{}, domain.ErrPreconditionFailed
+			}
+			mr.Title = title
+			rr.mrs[n], rr.readied = mr, append(rr.readied, n)
+			return mr, nil
+		}).Maybe()
+}
+
+// mr returns the merge request number n of the fake forge.
+func (rr *runnerRig) mr(n int64) domain.MergeRequest {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	return rr.mrs[n]
 }
 
 const runnerRunID = 77
@@ -49,14 +160,20 @@ const runnerRunID = 77
 func newRunnerRig(t *testing.T, goMod string) *runnerRig {
 	t.Helper()
 	rr := &runnerRig{files: map[string]string{
-		"go.mod": goMod,
-		"go.sum": sumLine("golang.org/x/text", "v0.20.0"),
+		"go.mod":    goMod,
+		"go.sum":    sumLine("golang.org/x/text", "v0.20.0"),
+		botWorkflow: "old",
 	}}
 	rr.openRig = newOpenRigWith(t, func(r *openRig) []ports.DepsEcosystem {
 		r.eco.EXPECT().Name().Return(domain.EcosystemActions).Maybe()
 		r.eco.EXPECT().ApplyInServer().Return(true).Maybe()
+		wf, err := domain.ParseTreePath(botWorkflow)
+		require.NoError(t, err)
+		r.eco.EXPECT().Apply(mock.Anything, mock.Anything).Return(map[domain.TreePath][]byte{wf: []byte("new")}, nil).Maybe()
+		r.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 		return []ports.DepsEcosystem{deps.GoMod{}, r.eco}
 	})
+	rr.fakeForge()
 	rr.reader.EXPECT().ListPaths(mock.Anything, rr.repo, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).RunAndReturn(func(context.Context, domain.RepoName, domain.Revision, int, int) (domain.PathList, error) {
 		var paths []string
 		for p := range rr.files {
@@ -191,7 +308,7 @@ func TestBernardOpenCancelsTheRunWhenTheRecordMoved(t *testing.T) {
 	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	got := rr.snapshot()
-	assert.Equal(t, domain.DepsIdle, got.Base().State)
+	assert.Equal(t, domain.DepsDrafted, got.Base().State, "the draft is open, waiting for a run")
 	assert.Zero(t, got.Base().RunID)
 }
 
@@ -243,7 +360,8 @@ func TestBernardRunnerReportIsRejected(t *testing.T) {
 			assert.Contains(t, rr.rec.Base().Error, c.want)
 			assert.NotContains(t, rr.rec.Base().Error, "\n", "one line")
 			assert.EqualValues(t, runnerRunID, rr.rec.Base().RunID, "the record keeps the link to the run")
-			assert.Zero(t, rr.rec.Base().MR)
+			assert.EqualValues(t, 7, rr.rec.Base().MR, "the draft stays")
+			assert.True(t, rr.mr(7).IsDraft())
 		})
 	}
 }
@@ -262,18 +380,11 @@ func TestBernardRunnerReportOversizeTotal(t *testing.T) {
 func TestBernardRunnerReportSuccessPublishesFromTheJobCommit(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
-	wf, err := domain.ParseTreePath(botWorkflow)
-	require.NoError(t, err)
-	rr.files[botWorkflow] = "old"
-	rr.eco.EXPECT().Apply(mock.Anything, mock.Anything).Return(map[domain.TreePath][]byte{wf: []byte("new")}, nil)
-	rr.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
+	wf := mustPath(t, botWorkflow)
 	mod, sum := mustPath(t, "go.mod"), mustPath(t, "go.sum")
-	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mod: []byte(goMod), sum: []byte(goSum), wf: []byte("new")})
-	rr.expectCreate(7)
 
 	got := rr.open(goUpdate(), actionUpdate())
 	require.Equal(t, domain.DepsApplying, got.Base().State)
-	// The target moves while the runner works: the commit is still built on the run's.
 	rr.end(goReport(goMod, goSum), domain.CISuccess)
 
 	assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
@@ -282,23 +393,27 @@ func TestBernardRunnerReportSuccessPublishesFromTheJobCommit(t *testing.T) {
 	assert.Empty(t, rr.rec.Base().RunUpdates)
 	assert.EqualValues(t, 7, rr.rec.Base().MR)
 	assert.ElementsMatch(t, []domain.DepRef{goUpdate().DepRef, actionUpdate().DepRef}, rr.rec.Base().MRVersions)
-	assert.Equal(t, []string{"sign", "commit", "tip", "branch", "ci", "mr"}, rr.ops)
-	assert.Contains(t, rr.created.Description, "golang.org/x/text v0.20.0 \u2192 v0.21.0")
-	assert.Contains(t, rr.created.Description, "actions/checkout")
-	assert.Equal(t, "build(deps): update 2 dependencies", rr.created.Title)
+	require.Len(t, rr.trees, 2)
+	assert.Equal(t, map[domain.TreePath][]byte{mod: []byte(goMod), sum: []byte(goSum), wf: []byte("new")}, rr.trees[1], "the final tree is the run's commit with the report and the server changes")
+	assert.Equal(t, oid("e"), rr.branches["bernard/deps"])
+	assert.Equal(t, oid("e"), rr.rec.Base().Head)
+	assert.Contains(t, rr.commits[1], "\nparent "+oid("d").String()+"\n", "the final commit follows the draft")
+	mr := rr.mr(7)
+	assert.Equal(t, "build(deps): update 2 dependencies", mr.Title.String())
+	assert.Contains(t, mr.Description.String(), "golang.org/x/text v0.20.0 \u2192 v0.21.0")
+	assert.Contains(t, mr.Description.String(), "actions/checkout")
 }
 
 func TestBernardRunnerReportGoOnlyWithNoActions(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	goMod := goModText("go 1.24", "", textNew)
 	mod := mustPath(t, "go.mod")
-	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mod: []byte(goMod)})
-	rr.expectCreate(3)
 	rr.open(goUpdate())
 	// An unchanged go.sum is not part of the commit.
 	rr.end(goReport(goMod, rr.files["go.sum"]), domain.CISuccess)
 	assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
-	assert.EqualValues(t, 3, rr.rec.Base().MR)
+	assert.EqualValues(t, 7, rr.rec.Base().MR)
+	assert.Equal(t, map[domain.TreePath][]byte{mod: []byte(goMod)}, rr.trees[1])
 }
 
 func TestBernardRunnerFailureKeepsOutput(t *testing.T) {
@@ -315,17 +430,16 @@ func TestBernardRunnerFailureKeepsOutput(t *testing.T) {
 func TestBernardClosingTheMRCancelsTheRun(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	other := actionUpdate()
-	rr.rec.Base().MR = 4
-	rr.rec.Base().MRVersions = []domain.DepRef{goUpdate().DepRef}
 	got := rr.open(goUpdate(), other)
 	require.Equal(t, domain.DepsApplying, got.Base().State)
+	require.EqualValues(t, 7, got.Base().MR, "the draft is open")
 	rr.mu.Lock()
-	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate(), other}
+	rr.rec.Base().MRVersions = []domain.DepRef{goUpdate().DepRef} // the draft holds only the Go update
 	rr.mu.Unlock()
 	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(runnerRunID)).Return(nil).Once()
 
 	rr.startWatch()
-	rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 4}}
+	rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 7}}
 	require.Eventually(t, func() bool { return rr.snapshot().Batches[0].State == domain.DepsIdle }, 5*time.Second, 5*time.Millisecond)
 
 	snap := rr.snapshot()
@@ -382,9 +496,6 @@ func TestBernardReportDroppedWhenRecordLeftTheRun(t *testing.T) {
 func TestBernardCommitsTheUpdatesTheRunStartedWith(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
-	mod, sum := mustPath(t, "go.mod"), mustPath(t, "go.sum")
-	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mod: []byte(goMod), sum: []byte(goSum)})
-	rr.expectCreate(8)
 	rr.open(goUpdate())
 	rr.mu.Lock()
 	rr.rec.Base().Updates = []domain.DepUpdate{{DepRef: depRef("other/mod", "v1.0.0"), Current: "v0.9.0", Kind: domain.DepMajor, New: true}}
@@ -394,9 +505,10 @@ func TestBernardCommitsTheUpdatesTheRunStartedWith(t *testing.T) {
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsIdle, got.Base().State)
 	assert.Equal(t, []domain.DepRef{goUpdate().DepRef}, got.Base().MRVersions)
-	assert.Contains(t, rr.created.Description, "golang.org/x/text")
-	assert.NotContains(t, rr.created.Description, "other/mod")
-	assert.Equal(t, "build(deps): update 1 dependency", rr.created.Title)
+	mr := rr.mr(7)
+	assert.Contains(t, mr.Description.String(), "golang.org/x/text")
+	assert.NotContains(t, mr.Description.String(), "other/mod")
+	assert.Equal(t, "build(deps): update 1 dependency", mr.Title.String())
 }
 
 func TestBernardGoVersionComesFromTheUpdatedModules(t *testing.T) {
@@ -432,13 +544,11 @@ func TestBernardRunnerReportListsGoSideEffects(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	mod := strings.Replace(goModText("go 1.24", "", textNew), "x/net v0.30.0", "x/net v0.31.0", 1)
 	sum := sumLine("golang.org/x/text", textNew)
-	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mustPath(t, "go.mod"): []byte(mod), mustPath(t, "go.sum"): []byte(sum)})
-	rr.expectCreate(7)
 	rr.open(goUpdate())
 	rr.end(goReport(mod, sum), domain.CISuccess)
 	assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
-	assert.Contains(t, rr.created.Description, "## Also changed by Go")
-	assert.Contains(t, rr.created.Description, "- `golang.org/x/net` v0.30.0 → v0.31.0")
+	assert.Contains(t, rr.mr(7).Description.String(), "## Also changed by Go")
+	assert.Contains(t, rr.mr(7).Description.String(), "- `golang.org/x/net` v0.30.0 → v0.31.0")
 }
 
 func TestBernardCheckDepsReportDoesNotPublishAndDropsSupersededRuns(t *testing.T) {
@@ -448,7 +558,8 @@ func TestBernardCheckDepsReportDoesNotPublishAndDropsSupersededRuns(t *testing.T
 	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
 	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, *report))
 	assert.Equal(t, domain.DepsApplying, rr.rec.Base().State)
-	assert.Zero(t, rr.rec.Base().MR)
+	assert.True(t, rr.mr(rr.rec.Base().MR).IsDraft(), "the merge request is still the draft")
+	assert.Len(t, rr.commits, 1, "nothing published")
 	rr.rec.Base().RunID++
 	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, ports.DepsReport{Files: []ports.DepsFile{{Path: "evil.sh"}}}))
 }
@@ -639,4 +750,68 @@ func TestBernardCheckDepsReportIgnoresUnchangedGoSum(t *testing.T) {
 	run, job := rr.endedRun(domain.CISuccess)
 	report := ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte(goModText("go 1.24", "", textNew))}}}
 	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, report))
+}
+
+// Open pushes the manifest bump (and the server-side updates) on the batch
+// branch at the tip and opens a draft merge request before the runner job.
+func TestBernardOpenPushesDraftBump(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	got := rr.open(goUpdate(), actionUpdate())
+
+	b := got.Base()
+	assert.Equal(t, domain.DepsApplying, b.State)
+	assert.Equal(t, "bernard/deps", b.Branch)
+	assert.Equal(t, oid("d"), b.Head)
+	assert.Equal(t, oid("d"), rr.branches["bernard/deps"])
+	require.Len(t, rr.trees, 1)
+	assert.Equal(t, map[domain.TreePath][]byte{
+		mustPath(t, "go.mod"): []byte(goModText("go 1.24", "", textNew)), mustPath(t, botWorkflow): []byte("new"),
+	}, rr.trees[0], "the go.mod bump and the action update, no go.sum")
+	assert.Contains(t, rr.commits[0], "\nparent "+oid("a").String()+"\n")
+
+	assert.EqualValues(t, 7, b.MR)
+	mr := rr.mr(7)
+	assert.Equal(t, "WIP: build(deps): update 2 dependencies", mr.Title.String())
+	assert.True(t, mr.IsDraft())
+	assert.Equal(t, "bernard/deps", mr.Source)
+	assert.Equal(t, "bernard", domain.AuthorName(rr.creator))
+	assert.Equal(t, oid("a").String(), rr.started.Sha, "the job runs on the tip, not the draft")
+}
+
+func TestBernardRunSuccessMarksReady(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	goMod, goSum := goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", "v0.20.0")+sumLine("golang.org/x/text", "v0.21.0")
+	rr.end(goReport(goMod, goSum), domain.CISuccess)
+
+	snap := rr.snapshot()
+	b := snap.Base()
+	assert.Equal(t, domain.DepsIdle, b.State)
+	assert.Equal(t, oid("e"), b.Head)
+	assert.Equal(t, oid("e"), rr.branches["bernard/deps"], "moved from the draft head")
+	assert.Contains(t, rr.commits[1], "\nparent "+oid("d").String()+"\n")
+	assert.Equal(t, []int64{7}, rr.readied)
+	mr := rr.mr(7)
+	assert.False(t, mr.IsDraft())
+	assert.Equal(t, "build(deps): update 1 dependency", mr.Title.String())
+	assert.Contains(t, mr.Description.String(), "golang.org/x/text v0.20.0 \u2192 v0.21.0")
+}
+
+func TestBernardRunFailureKeepsDraft(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	rr.end(&ports.DepsReport{Error: "go mod tidy failed\ngo: missing go.sum entry"}, domain.CIFailure)
+
+	snap := rr.snapshot()
+	b := snap.Base()
+	assert.Equal(t, domain.DepsFailed, b.State)
+	assert.Equal(t, "go mod tidy failed\ngo: missing go.sum entry", b.Error)
+	assert.Equal(t, []string{"go get golang.org/x/text@v0.21.0", "go mod tidy"}, b.Repro)
+	assert.Equal(t, oid("d"), rr.branches["bernard/deps"], "the draft commit stays")
+	assert.Empty(t, rr.readied)
+	mr := rr.mr(7)
+	assert.True(t, mr.IsDraft())
+	assert.Contains(t, mr.Description.String(), "Bernard: update failed")
+	assert.Contains(t, mr.Description.String(), "go: missing go.sum entry")
+	assert.Contains(t, mr.Description.String(), "go get golang.org/x/text@v0.21.0")
 }

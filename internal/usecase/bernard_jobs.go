@@ -69,24 +69,52 @@ func keepDepsError(s string) string {
 // applying that run. The log is on the run, which the record keeps linking.
 func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64, reason string) {
 	defer b.repoLock(repo)()
-	wrote := false
-	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), repo, func(d *domain.RepoDeps) (bool, error) {
-		wrote = false
+	var failed *domain.DepBatch
+	rec, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), repo, func(d *domain.RepoDeps) (bool, error) {
+		failed = nil
 		batch := applyingBatch(d, runID)
 		if batch == nil {
 			return false, nil // the record left this run: the owner closed the merge request, say
 		}
-		wrote = true
-		batch.State, batch.Error, batch.RunUpdates = domain.DepsFailed, keepDepsError(reason), nil
+		failed = batch
+		batch.State, batch.Error, batch.Repro, batch.RunUpdates = domain.DepsFailed, keepDepsError(reason), domain.DepsRepro(batch.RunUpdates), nil
 		return true, nil
 	})
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Msg("bernard: record the failure of a dependency run")
 		return
 	}
-	if wrote {
+	if failed != nil {
+		if batch, _, ok := rec.Batch(failed.Key); ok {
+			b.refreshDraft(context.WithoutCancel(ctx), repo, batch)
+		}
 		b.changed(ctx, repo)
 	}
+}
+
+// refreshDraft refreshes the body of the draft merge request of a batch that
+// failed, which keeps its draft title. A batch without a draft has none.
+func (b *Bernard) refreshDraft(ctx context.Context, repo domain.RepoName, batch domain.DepBatch) {
+	if batch.MR == 0 || batch.Head.IsZero() || !b.canOpen() {
+		return
+	}
+	mr, err := b.cfg.MRStore.Get(ctx, repo, batch.MR)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Int64("mr", batch.MR).Msg("bernard: read the draft merge request")
+		}
+		return
+	}
+	if !mr.IsOpen() {
+		return
+	}
+	ups := batch.MRUpdates
+	if len(ups) == 0 {
+		ups = batch.Updates
+	}
+	shown := batch
+	shown.Updates = ups
+	b.refreshMR(ctx, repo, batch.MR, mr, shown, nil, true)
 }
 
 // depsReconcileGrace is how long the daily pass leaves a run that just ended to
@@ -238,7 +266,14 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !exists {
 		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, run.Repo, target, base, changes, domain.DepBatch{Key: started.Key, Updates: started.RunUpdates, MR: current.MR}, jobGuard, effects)
+	// The final commit follows the draft one, from which the branch moves; a
+	// record without a draft head (an older run) builds on the job's commit.
+	parent, old := base, domain.ObjectID{}
+	if !current.Head.IsZero() {
+		parent, old = current.Head, current.Head
+	}
+	final := domain.DepBatch{Key: started.Key, Updates: started.RunUpdates, MR: current.MR, Branch: current.Branch}
+	_, err = b.publish(ctx, run.Repo, target, base, parent, old, changes, final, jobGuard, effects)
 	return err
 }
 
