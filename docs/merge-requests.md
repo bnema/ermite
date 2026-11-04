@@ -18,7 +18,7 @@ A draft cannot merge. `ermite mr ready <repo> <n>` removes the `WIP:` or `[WIP]`
 
 ## Linked issues and history
 
-The web Issues rail lists current linked issues with their state and a **resolves** marker for closing references. Links lead to the issue. The conversation includes timestamped system rows for references and resolutions, interleaved with general comments. Removing a reference removes its current link, not its history; historical rows may name issues no longer in the rail.
+For merge requests with changed files, the web Issues rail lists current linked issues with their state and a **resolves** marker for closing references. Links lead to the issue. The conversation includes timestamped system rows for references and resolutions, interleaved with general comments. Removing a reference removes its current link, not its history; historical rows may name issues no longer in the current links. Zero-file merge requests have no rail; current linked issues and verdicts appear in the header.
 
 ## Merge modes
 
@@ -147,7 +147,7 @@ the diff opens the Checks panel and continues to update live. Commit totals use
 `N+` when the branch list is capped: the reader's existing count operation counts all reachable
 ancestors, not the source-minus-target range.
 
-The rail keeps Files (including its `l` shortcut) and Verdicts. Merge settings
+For merge requests with changed files, the rail keeps linked Issues, Files (including its `l` shortcut) and Verdicts. Zero-file merge requests show linked issues and verdicts in the header instead. Merge settings
 are read-only information in the More (⋯) menu, available to every viewer.
 Signing-key information is also there when a merge box offers signed modes;
 merge actions remain restricted to their existing permissions.

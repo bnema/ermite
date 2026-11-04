@@ -772,9 +772,7 @@ func (s *Server) mrFacts(ctx context.Context, r *http.Request, d *repoData, p *M
 		}
 		p.Desc = h
 	}
-	for _, v := range res.Verdicts {
-		p.Verdicts = append(p.Verdicts, VerdictView{Author: s.who(v.Author), Label: v.Verdict.String(), Stale: v.Stale, Href: "#c" + strconv.FormatInt(v.CommentID, 10), Short: short(v.CommitID.String())})
-	}
+	s.mrVerdicts(p, res.Verdicts)
 	p.Opened.Name = p.Author
 	p.Opened.When, p.Opened.WhenAt = whenOf(now, m.CreatedAt)
 	if !m.CreatedAt.IsZero() {
@@ -1209,4 +1207,10 @@ func commentThread(f CommentForm) string {
 		return "mr-line-thread"
 	}
 	return "mr-comment-thread"
+}
+
+func (s *Server) mrVerdicts(p *MRPage, verdicts []domain.AuthorVerdict) {
+	for _, v := range verdicts {
+		p.Verdicts = append(p.Verdicts, VerdictView{Author: s.who(v.Author), Label: v.Verdict.String(), Stale: v.Stale, Href: "#c" + strconv.FormatInt(v.CommentID, 10), Short: short(v.CommitID.String())})
+	}
 }

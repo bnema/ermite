@@ -84,7 +84,7 @@ test('reset and pageshow restore labels from the actual selected verdict', async
 test('Quote reply closes its menu after opening and filling the reply', async () => {
   const { readFileSync } = await import('node:fs');
   const { runInNewContext } = await import('node:vm');
-  const window = { ermiteLazy: { onSwap() {} } };
+  const window = { ermiteLazy: { onSwap() {} }, ermiteComments: { reveal() {} } };
   const document = { readyState: 'loading', addEventListener() {} };
   runInNewContext(readFileSync(new URL('../static/js/mr.js', import.meta.url), 'utf8'), { window, document, Event });
   const menu = { open: true };
@@ -160,4 +160,39 @@ test('htmx note replacement keeps unfolded state and accessible labels in both s
     listeners['htmx:after:swap']({ detail: { ctx } });
     assert.equal(button.textContent, 'unchanged', 'completed contexts do not retain state');
   }
+});
+
+test('edit and delete unfold the resolved root before focusing their forms', () => {
+  const saved = globalThis.document;
+  for (const action of ['edit', 'delete']) {
+    let expanded = false;
+    const root = { setAttribute() { expanded = true; }, querySelector: () => null };
+    const field = { focus() { assert.equal(expanded, true); }, tagName: 'BUTTON' };
+    const disclosure = { closest: () => root, querySelector: () => field, open: false };
+    globalThis.document = { getElementById: () => disclosure };
+    assert.equal(window.ermiteComments.open({ dataset: { cOpen: action }, closest: () => null }), true);
+    assert.equal(disclosure.open, true);
+  }
+  globalThis.document = saved;
+});
+
+test('malformed hash does not interrupt listener registration', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { runInNewContext } = await import('node:vm');
+  const listeners = {};
+  runInNewContext(readFileSync(new URL('../static/js/comments.js', import.meta.url), 'utf8'), {
+    window: {}, document: { getElementById(id) { assert.equal(id, 'bad%'); return null; } },
+    location: { hash: '#bad%' }, addEventListener: (name, fn) => { listeners[name] = fn; },
+  });
+  for (const event of ['change', 'reset', 'pageshow', 'keydown']) assert.equal(typeof listeners[event], 'function');
+});
+
+test('reveal unfolds the actual split note root and synchronizes its button', () => {
+  const button = { setAttribute(k, v) { this[k] = v; } };
+  let unfolded = false;
+  const root = { setAttribute() { unfolded = true; }, querySelector: () => button };
+  window.ermiteComments.reveal({ closest: () => root });
+  assert.equal(unfolded, true);
+  assert.equal(button['aria-expanded'], 'true');
+  assert.equal(button.textContent, 'hide thread');
 });

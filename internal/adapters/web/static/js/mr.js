@@ -46,6 +46,7 @@ window.ermiteMR = (() => {
       const details = thread?.querySelector(':scope > details[data-reply]');
       const field = details?.querySelector('textarea');
       if (!field) return false;
+      window.ermiteComments.reveal(thread);
       details.open = true;
       field.value = button.dataset.quote;
       field.dispatchEvent(new Event('input', { bubbles: true }));
@@ -135,6 +136,7 @@ window.ermiteMR = (() => {
     }
     if (!ph) {
       const el = target();
+      window.ermiteComments.reveal(el);
       if (el && el.id !== id) {
         const d = el.closest('details');
         if (d) d.open = true;
@@ -147,6 +149,7 @@ window.ermiteMR = (() => {
       if (gen !== revealGen) return;
       const el = target();
       if (!el) return;
+      window.ermiteComments.reveal(el);
       const d = el.closest('details');
       if (d) d.open = true;
       if (!scroll) return;
@@ -552,7 +555,7 @@ window.ermiteMR = (() => {
   }
 
   async function refreshPage(page, current = () => true) {
-    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '#mr-verdict-fact', '.hint-live'];
+    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '#mr-verdict-fact', '#mr-issue-fact', '.hint-live'];
     for (const sel of regions) if (!$(sel) || !$(sel, page)) throw new Error('missing MR region');
     let anchor = scrollAnchor();
     const nextDiffs = $('#diffs', page);
@@ -615,6 +618,7 @@ window.ermiteMR = (() => {
       window.htmx.process(rail);
     }
     $('.work')?.classList.toggle('has-rail', !!freshRail);
+    $('.mr-card')?.classList.toggle('narrow', !!$('.mr-card', page)?.classList.contains('narrow'));
     for (const key of ['ref', 'sha', 'paths', 'blob']) {
       if (page.body.dataset[key] !== undefined) document.body.dataset[key] = page.body.dataset[key];
     }
@@ -719,7 +723,7 @@ window.ermiteMR = (() => {
     if (canonical && location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.hash);
     // A link to a file or a comment that is not loaded yet.
     const hash = () => {
-      const id = decodeURIComponent(location.hash.slice(1));
+      const id = window.ermiteComments.fragmentID(location.hash);
       if (id) reveal(id);
     };
     addEventListener('hashchange', hash);

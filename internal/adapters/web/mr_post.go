@@ -588,7 +588,8 @@ func (s *Server) mrCommentResult(ctx context.Context, r *http.Request, changed d
 	if err != nil {
 		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
-	p := MRPage{NoteAuthor: domain.AuthorName(principal(ctx))}
+	p := MRPage{NoteAuthor: domain.AuthorName(principal(ctx)), NFiles: detail.Stats.FilesChanged}
+	s.mrVerdicts(&p, detail.Verdicts)
 	s.placeComments(ctx, &p, name.String(), n, detail.Comments, detail.MergeRequest.HeadID.String(), false, true, nil)
 	var find func([]CommentView) *CommentView
 	find = func(cs []CommentView) *CommentView {
@@ -659,6 +660,6 @@ func (s *Server) mrCommentResult(ctx context.Context, r *http.Request, changed d
 	if thread != commentThread(f) {
 		return ActionResult{}, formError("invalid comment thread")
 	}
-	result.Fragment = mrCommentCreated(*v, thread, f, p.NComments, p.NUnresolved, line)
+	result.Fragment = mrCommentCreated(*v, thread, f, p.NComments, p.NUnresolved, line, p)
 	return result, nil
 }

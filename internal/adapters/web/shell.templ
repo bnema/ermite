@@ -27,7 +27,7 @@ templ Shell(l Layout, rail templ.Component) {
 			<script src={ l.Assets.SSE } defer></script>
 			<script src={ l.Assets.Store }></script>
 			<script src={ l.Assets.App } defer></script>
-			if l.HasRail && rail != nil {
+			if l.MR || (l.HasRail && rail != nil) {
 				<script src={ l.Assets.Rail } defer></script>
 			}
 			if l.MDEditor {
@@ -64,7 +64,7 @@ templ Shell(l Layout, rail templ.Component) {
 					<section class="work-lede" aria-label="Description"><p class="lede">{ l.Lede }</p></section>
 				}
 				<main id="main" tabindex="-1">
-<div id="action-status" aria-live="polite"></div>
+					<div id="action-status" aria-live="polite"></div>
 					{ children... }
 				</main>
 				if l.HasRail && rail != nil {
@@ -222,8 +222,10 @@ templ Footer(l Layout) {
 templ Hint(l Layout) {
 	<div class="hint">
 		<span aria-hidden="true" class="hint-nav" :text="document.body.dataset.nav || ''"></span>
-		<span role="status" aria-live="polite"><span class="hint-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : ''"></span>
-		<span class="hint-flash" :text="document.body.dataset.flash || ''"></span></span>
+		<span role="status" aria-live="polite">
+			<span class="hint-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : ''"></span>
+			<span class="hint-flash" :text="document.body.dataset.flash || ''"></span>
+		</span>
 		@Live(l)
 	</div>
 }

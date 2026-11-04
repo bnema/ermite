@@ -329,7 +329,6 @@
     }
     & > .c-reply > summary::-webkit-details-marker { display: none; }
     & > .c-reply > summary:hover { color: var(--ink-hi); background: var(--bg-raised); }
-    & > .c-reply[open] > summary { display: none; }
     & > .c-reply > div { padding: var(--s3) var(--c-x); }
     & > .c-reply .cform { margin: 0; max-width: none; }
 

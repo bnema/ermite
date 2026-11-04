@@ -6,6 +6,7 @@ import { test } from 'node:test';
 globalThis.window = globalThis;
 globalThis.document = { readyState: 'complete', querySelector: () => null, querySelectorAll: () => [] };
 await import('../static/js/lazy.js');
+await import('../static/js/comments.js');
 await import('../static/js/mr.js');
 const C = window.ermiteMR.core;
 const railPrefs = new Map();
@@ -69,7 +70,7 @@ test('quote opens the thread reply and prefills and focuses its textarea', () =>
  let focused=false, input=false;
  const field={value:'',focus(){focused=true;},dispatchEvent(e){input=e.type==='input' && e.bubbles;}};
  const details={open:false,querySelector(){return field;}};
- const thread={querySelector(){return details;}};
+ const thread={querySelector(){return details;}, closest(){return null;}};
  const button={dataset:{quote:'> source\n\n^2 '},closest(selector){return selector === 'details.menu' ? null : {closest(){return thread;}};}};
  assert.equal(C.quote(button),true);
  assert.equal(details.open,true);
@@ -82,8 +83,11 @@ for (const dataset of [{diff:'split'}, {view:'split'}]) test(`reveal selects the
  const saved = globalThis.document;
  const savedRAF = globalThis.requestAnimationFrame;
  let scrolled = '';
+ const revealed = [];
+ const savedReveal = window.ermiteComments.reveal;
+ window.ermiteComments.reveal = el => { if (el) revealed.push(el.id); };
  const details = {open:false};
- const node = id => ({id, querySelector(){return null;}, closest(){return details;}, scrollIntoView(){scrolled=id;}});
+ const node = id => ({id, querySelector(){return null;}, closest(selector){return selector === 'details' ? details : null;}, scrollIntoView(){scrolled=id;}});
  const nodes = new Map([['c12',node('c12')],['c12-s',node('c12-s')]]);
  const ph = {dataset:{notes:'c12'}};
  globalThis.document = {
@@ -102,7 +106,9 @@ for (const dataset of [{diff:'split'}, {view:'split'}]) test(`reveal selects the
    await Promise.resolve();
    assert.equal(scrolled,'c12-s');
    assert.equal(details.open,true);
+   assert.deepEqual(revealed, ['c12-s', 'c12-s']);
  } finally {
+   window.ermiteComments.reveal = savedReveal;
    globalThis.document=saved;
    globalThis.requestAnimationFrame=savedRAF;
  }
@@ -567,7 +573,7 @@ test('live refresh preserves the open button panel even when the hash points els
     diffs.dataset.diff = 'unified';
     const fresh = el('footer', {}, el('section', { attrs: { 'data-mr-panel': '' } }), el('section', { attrs: { 'data-mr-panel': '' } }));
     const page = { body: { dataset: {} } };
-    const $ = (s, root) => s === '.rail' ? null : s === '.work' ? { classList: { toggle() {} } } : s === '#diffs' ? diffs : s === '.mr-footer' ? (root === page ? fresh : h.footer) : el('div');
+    const $ = (s, root) => s === '.rail' || s === '.mr-card' ? null : s === '.work' ? { classList: { toggle() {} } } : s === '#diffs' ? diffs : s === '.mr-footer' ? (root === page ? fresh : h.footer) : el('div');
     const $$ = (s, root) => s === '[data-mr-tabs] button' ? h.tabs : s === '[data-mr-panel]' ? fresh.children : [];
     let selected;
     const lazy = { reset() {}, watch() {} };

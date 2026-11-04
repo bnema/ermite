@@ -152,6 +152,7 @@ templ MergeRequest(l Layout, p MRPage) {
 						<dd data-k="updated"><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
 					@mrVerdictFact(p, false)
+					@mrIssueFact(p, false)
 				</dl>
 			</header>
 			if p.Desc != "" {
@@ -903,6 +904,7 @@ templ MRStateFragment(p MRPage) {
 	@mrState(p)
 	@mrActions(p, true)
 	@mrVerdictFact(p, true)
+	@mrIssueFact(p, true)
 }
 
 templ mrState(p MRPage) {
@@ -933,7 +935,8 @@ templ mrActions(p MRPage, fragment bool) {
 }
 
 // mrCommentCreated appends without touching other drafts or the diff.
-templ mrCommentCreated(c CommentView, thread string, f CommentForm, n, unresolved int, line bool) {
+templ mrCommentCreated(c CommentView, thread string, f CommentForm, n, unresolved int, line bool, p MRPage) {
+	@mrVerdictFact(p, true)
 	@CountOOB("mr-comment-count", n)
 	@mrUnresolvedCount(unresolved, true)
 	@RemoveEl("mr-no-comments")
@@ -997,6 +1000,21 @@ templ mrVerdictFact(p MRPage, oob bool) {
 			</a>
 			if v.Stale {
 				{ " (stale)" }
+			}
+		}
+	</dd>
+}
+
+// Always retain the target so a refresh can add or remove current references.
+templ mrIssueFact(p MRPage, oob bool) {
+	<dd id="mr-issue-fact" data-k="issues" hidden?={ p.NFiles > 0 || len(p.Issues) == 0 } hx-swap-oob?={ oob }>
+		for j, i := range p.Issues {
+			if j > 0 {
+				{ ", " }
+			}
+			<a class="ref" href={ templ.SafeURL(i.Href) }>{ i.Number } { i.Title }</a>{ " " }<span class="mr-state" data-state={ i.State }>{ i.State }</span>
+			if i.Closes {
+				{ " · resolves" }
 			}
 		}
 	</dd>

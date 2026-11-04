@@ -206,3 +206,43 @@ func TestUnfoldFollowsNoteMetadata(t *testing.T) {
 	body := renderToString(t, commentView(CommentView{ID: "1", Resolved: true, Edited: true, Where: "a.go:1", Range: "lines 1–2"}, ""))
 	assert.Less(t, strings.Index(body, `>edited</span>`), strings.Index(body, `class="c-unfold"`))
 }
+
+func TestMRVerdictCreateUpdatesHeaderFact(t *testing.T) {
+	for _, replacement := range []bool{false, true} {
+		for _, files := range []int{0, 1} {
+			t.Run("replacement="+boolText(replacement)+"/files="+itoa(files), func(t *testing.T) {
+				s, svc := asyncMergeServer(t, domain.MRStateOpen)
+				verdict := domain.VerdictApprove
+				if replacement {
+					verdict = domain.VerdictChangesRequested
+				}
+				c := domain.Comment{ID: 8, Author: "owner", Verdict: verdict}
+				svc.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything, int64(3), mock.Anything).Return(c, nil).Once()
+				svc.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Unset()
+				comments := []domain.Comment{c}
+				if replacement {
+					comments = append([]domain.Comment{{ID: 7, Author: "owner", Verdict: domain.VerdictApprove}}, comments...)
+				}
+				svc.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything, int64(3), mock.Anything).Return(ports.MergeRequestDetail{
+					Comments: comments, Stats: domain.DiffStats{FilesChanged: files},
+					Verdicts: []domain.AuthorVerdict{{Author: "owner", Verdict: verdict, CommentID: 8}},
+				}, nil).Once()
+				r := autoMergeRequest("/demo/merge-requests/3/comments", url.Values{"thread": {"mr-comment-thread"}, "verdict": {verdict.String()}}.Encode())
+				r.Header.Set("HX-Request", "true")
+				w := httptest.NewRecorder()
+				s.action(mrHrefFromPath, s.mrComment)(w, r)
+				require.Equal(t, http.StatusOK, w.Code)
+				body := w.Body.String()
+				start := strings.Index(body, `<dd id="mr-verdict-fact"`)
+				require.NotEqual(t, -1, start)
+				fact := body[start : start+strings.Index(body[start:], "</dd>")+5]
+				assert.Contains(t, fact, `hx-swap-oob`)
+				assert.Contains(t, fact, `data-verdict="`+verdict.String()+`"`)
+				assert.Equal(t, files > 0, strings.Contains(fact, " hidden"))
+				if replacement {
+					assert.NotContains(t, fact, `data-verdict="approve"`)
+				}
+			})
+		}
+	}
+}

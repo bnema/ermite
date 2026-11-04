@@ -35,6 +35,7 @@ window.ermiteComments = (() => {
     if (!d) return false;
     const menu = button.closest('details.menu');
     if (menu) menu.open = false;
+    reveal(d);
     d.open = true;
     const field = d.querySelector('textarea, button[type="submit"]');
     field?.focus();
@@ -72,6 +73,17 @@ window.ermiteComments = (() => {
     for (const note of fresh.querySelectorAll('.cmt[data-resolved="true"]')) {
       if (opened.has(note.id)) setOpen(note, true);
     }
+  }
+
+  function fragmentID(hash) {
+    const raw = hash.slice(1);
+    try { return decodeURIComponent(raw); } catch { return raw; }
+  }
+
+  // Reveal the resolved root containing the actual selected layout/note.
+  function reveal(target) {
+    const root = target?.closest?.('.cmt[data-resolved="true"]:not(.cmt .cmt)');
+    if (root) setOpen(root, true);
   }
 
   function syncLabel(form) {
@@ -120,14 +132,12 @@ window.ermiteComments = (() => {
       }
     });
     // A link to a note inside a folded thread unfolds it.
-    const reveal = () => {
-      const id = decodeURIComponent(location.hash.slice(1));
-      const note = id && document.getElementById(id);
-      const root = note?.closest?.('.cmt[data-resolved="true"]:not(.cmt .cmt)');
-      if (root) setOpen(root, true);
+    const revealHash = () => {
+      const id = fragmentID(location.hash);
+      reveal(id && document.getElementById(id));
     };
-    addEventListener('hashchange', reveal);
-    reveal();
+    addEventListener('hashchange', revealHash);
+    revealHash();
     // The send button says what it sends: a comment, an approval or a
     // request for changes.
     addEventListener('change', (e) => {
@@ -152,5 +162,5 @@ window.ermiteComments = (() => {
   }
 
   if (typeof addEventListener === 'function' && typeof document !== 'undefined' && document.getElementById) start();
-  return { core, open, close, setOpen, preserveOpen };
+  return { core, open, close, setOpen, preserveOpen, reveal, fragmentID };
 })();
