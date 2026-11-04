@@ -35,9 +35,73 @@ func (GoMod) Name() domain.DepsEcosystem { return domain.EcosystemGoMod }
 // ApplyInServer reports that Go updates require a runner.
 func (GoMod) ApplyInServer() bool { return false }
 
-// Bump is not implemented yet.
-func (GoMod) Bump(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
-	return nil, fmt.Errorf("%w: Go manifest bump not implemented", domain.ErrPreconditionFailed)
+// Bump rewrites, without a runner, the require line of each updated module in
+// the go.mod of its update directory: the version becomes u.Version and, for a
+// path-major update, the module path becomes u.NewName in place (keeping any
+// "// indirect" comment). Imports in .go files, go.sum, replace, exclude, go
+// and toolchain lines are left to the runner. Only changed go.mod files are
+// returned; the input map is not mutated. A module absent from the go.mod, or
+// a missing go.mod, fails with domain.ErrPreconditionFailed.
+func (GoMod) Bump(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
+	parsed := map[domain.TreePath]*modfile.File{}
+	var order []domain.TreePath
+	for _, u := range ups {
+		if u.Ecosystem != domain.EcosystemGoMod {
+			return nil, fmt.Errorf("%w: %s update given to the Go ecosystem", domain.ErrInvalid, u.Ecosystem)
+		}
+		p, err := domain.ParseTreePath(path.Join(u.Directory, "go.mod"))
+		if err != nil {
+			return nil, fmt.Errorf("%w: update directory %q", domain.ErrInvalid, u.Directory)
+		}
+		f := parsed[p]
+		if f == nil {
+			content, ok := files[p]
+			if !ok {
+				return nil, fmt.Errorf("%w: missing %s", domain.ErrPreconditionFailed, p)
+			}
+			if f, err = modfile.Parse(p.String(), content, nil); err != nil {
+				return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+			}
+			parsed[p] = f
+			order = append(order, p)
+		}
+		var found bool
+		for _, r := range f.Require {
+			if r.Mod.Path != u.Name {
+				continue
+			}
+			found = true
+			name := u.Name
+			if u.NewName != "" {
+				name = u.NewName
+			}
+			// The path and version are the last two tokens of both the
+			// single-line ("require path v") and block ("path v") forms.
+			tok := r.Syntax.Token
+			if len(tok) < 2 {
+				return nil, fmt.Errorf("%w: malformed requirement %q in %s", domain.ErrInvalid, u.Name, p)
+			}
+			tok[len(tok)-2] = modfile.AutoQuote(name)
+			tok[len(tok)-1] = modfile.AutoQuote(u.Version)
+			r.Mod.Path, r.Mod.Version = name, u.Version
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: %s does not require %s", domain.ErrPreconditionFailed, p, u.Name)
+		}
+	}
+	out := make(map[domain.TreePath][]byte, len(order))
+	for _, p := range order {
+		f := parsed[p]
+		f.Cleanup()
+		b, err := f.Format()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+		}
+		if !bytes.Equal(b, files[p]) {
+			out[p] = b
+		}
+	}
+	return out, nil
 }
 
 // Apply refuses server-side Go edits.
