@@ -90,6 +90,11 @@ const (
 	EnvDepsJobTimeout = "ERMITE_DEPS_JOB_TIMEOUT"
 	// EnvDepsRunnerLabel is the runner label of the dependency check jobs.
 	EnvDepsRunnerLabel = "ERMITE_DEPS_RUNNER_LABEL"
+	// EnvDepsConcurrency is the number of dependency runs at once (at least
+	// one), EnvDepsAutoOpen turns the automatic merge requests off when "0"
+	// or "false".
+	EnvDepsConcurrency = "ERMITE_DEPS_CONCURRENCY"
+	EnvDepsAutoOpen    = "ERMITE_DEPS_AUTO_OPEN"
 )
 
 // MaxRobotsTxtSize is the largest robots.txt file accepted. Google reads the
@@ -116,6 +121,7 @@ const (
 	DefaultDepsSnooze      = 168 * time.Hour
 	DefaultDepsJobTimeout  = 10 * time.Minute
 	DefaultDepsRunnerLabel = "ubuntu-latest"
+	DefaultDepsConcurrency = 1
 )
 
 // Values of ERMITE_GIT_READER.
@@ -203,6 +209,10 @@ type Config struct {
 	DepsCooldown, DepsSnooze, DepsJobTimeout time.Duration
 	// DepsRunnerLabel is the runner label of the check jobs; never empty.
 	DepsRunnerLabel string
+	// DepsConcurrency is the dependency run limit, at least one.
+	DepsConcurrency int
+	// DepsAutoOpen is false when ERMITE_DEPS_AUTO_OPEN turns it off.
+	DepsAutoOpen bool
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -472,6 +482,23 @@ func loadDeps(get func(string) string, c *Config, bad func(key, format string, a
 	c.DepsRunnerLabel = strings.TrimSpace(get(EnvDepsRunnerLabel))
 	if c.DepsRunnerLabel == "" {
 		c.DepsRunnerLabel = DefaultDepsRunnerLabel
+	}
+
+	c.DepsConcurrency = DefaultDepsConcurrency
+	if raw := strings.TrimSpace(get(EnvDepsConcurrency)); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			bad(EnvDepsConcurrency, "must be an integer of at least 1 (got %q)", raw)
+		} else {
+			c.DepsConcurrency = n
+		}
+	}
+	switch raw := strings.ToLower(strings.TrimSpace(get(EnvDepsAutoOpen))); raw {
+	case "", "1", "true":
+		c.DepsAutoOpen = true
+	case "0", "false":
+	default:
+		bad(EnvDepsAutoOpen, "must be 0, 1, false or true (got %q)", raw)
 	}
 }
 

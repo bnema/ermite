@@ -397,8 +397,11 @@ func TestDeps(t *testing.T) {
 	assert.Equal(t, 168*time.Hour, c.DepsSnooze)
 	assert.Equal(t, 10*time.Minute, c.DepsJobTimeout)
 	assert.Equal(t, "ubuntu-latest", c.DepsRunnerLabel)
+	assert.Equal(t, 1, c.DepsConcurrency)
+	assert.True(t, c.DepsAutoOpen)
 
 	c, err = config.Load(lookup(valid(map[string]string{
+		config.EnvDepsConcurrency: "3", config.EnvDepsAutoOpen: "0",
 		config.EnvDepsEnabled: "false", config.EnvDepsCheckAt: "*/30 1 * * 1",
 		config.EnvDepsCooldown: "24h", config.EnvDepsSnooze: "48h",
 		config.EnvDepsJobTimeout: "90s", config.EnvDepsRunnerLabel: "self-hosted",
@@ -410,14 +413,18 @@ func TestDeps(t *testing.T) {
 	assert.Equal(t, 48*time.Hour, c.DepsSnooze)
 	assert.Equal(t, 90*time.Second, c.DepsJobTimeout)
 	assert.Equal(t, "self-hosted", c.DepsRunnerLabel)
+	assert.Equal(t, 3, c.DepsConcurrency)
+	assert.False(t, c.DepsAutoOpen)
 }
 
 func TestDepsInvalid(t *testing.T) {
 	for env, in := range map[string]string{
-		config.EnvDepsEnabled:    "maybe",
-		config.EnvDepsCooldown:   "soon",
-		config.EnvDepsSnooze:     "0s",
-		config.EnvDepsJobTimeout: "-5m",
+		config.EnvDepsEnabled:     "maybe",
+		config.EnvDepsConcurrency: "0",
+		config.EnvDepsAutoOpen:    "sometimes",
+		config.EnvDepsCooldown:    "soon",
+		config.EnvDepsSnooze:      "0s",
+		config.EnvDepsJobTimeout:  "-5m",
 	} {
 		_, err := config.Load(lookup(valid(map[string]string{env: in})))
 		var ce *config.Error
