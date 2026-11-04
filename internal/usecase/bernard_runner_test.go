@@ -815,14 +815,14 @@ func TestBernardRunFailureKeepsDraft(t *testing.T) {
 	b := snap.Base()
 	assert.Equal(t, domain.DepsFailed, b.State)
 	assert.Equal(t, "go mod tidy failed\ngo: missing go.sum entry", b.Error)
-	assert.Equal(t, []string{"go get golang.org/x/text@v0.21.0", "go mod tidy"}, b.Repro)
+	assert.Equal(t, []string{"go get 'golang.org/x/text@v0.21.0'", "go mod tidy"}, b.Repro)
 	assert.Equal(t, oid("d"), rr.branches["bernard/deps"], "the draft commit stays")
 	assert.Empty(t, rr.readied)
 	mr := rr.mr(7)
 	assert.True(t, mr.IsDraft())
 	assert.Contains(t, mr.Description.String(), "Bernard: update failed")
 	assert.Contains(t, mr.Description.String(), "go: missing go.sum entry")
-	assert.Contains(t, mr.Description.String(), "go get golang.org/x/text@v0.21.0")
+	assert.Contains(t, mr.Description.String(), "go get 'golang.org/x/text@v0.21.0'")
 }
 
 // CI holds the runs of the draft head while the dependency job runs: the

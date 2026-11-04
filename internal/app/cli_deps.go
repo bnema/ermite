@@ -49,7 +49,7 @@ type jsonDepsRepo struct {
 	CheckedAt          jsonInstant      `json:"checked_at"`
 	SnoozedUntil       jsonInstant      `json:"snoozed_until"`
 	MergeRequestNumber int64            `json:"merge_request_number" help:"0 = none"`
-	State              string           `json:"state" help:"idle, applying or failed"`
+	State              string           `json:"state" help:"idle, queued, drafted, applying or failed"`
 	Error              string           `json:"error"`
 	RunID              int64            `json:"run_id" help:"the run applying the updates, or the last one that tried; 0 = none"`
 	Batches            []jsonDepsBatch  `json:"batches"`

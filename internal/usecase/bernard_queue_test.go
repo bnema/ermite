@@ -113,6 +113,7 @@ func newQueueRig(t *testing.T, limit int) *queueRig {
 	clock.EXPECT().Now().Return(time.Date(2026, 11, 4, 8, 0, 0, 0, time.UTC)).Maybe()
 	repos.EXPECT().DefaultBranch(mock.Anything, mock.Anything).Return("main", true, nil).Maybe()
 	git.EXPECT().BranchHead(mock.Anything, mock.Anything, "main").Return(oid("a"), nil).Maybe()
+	git.EXPECT().BranchHead(mock.Anything, mock.Anything, "bernard/deps").Return(oid("d"), nil).Maybe() // the draft head of every batch
 	lister.EXPECT().ListRunners(mock.Anything).Return([]domain.CIRunner{{Labels: []string{"ubuntu-latest"}, Kinds: []string{"deps"}}}, nil).Maybe()
 	jobs.EXPECT().ListReadyJobs(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, int) ([]domain.CIJob, error) {
 		q.mu.Lock()

@@ -351,7 +351,7 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 		}
 		row.Primary = InboxDepsAction{Label: label, Action: base + "open" + query}
 	}
-	if row.Major {
+	if row.Major && !batch.Adopted {
 		var names []domain.DepName
 		for _, u := range batch.Updates {
 			n := domain.DepName{Ecosystem: u.Ecosystem, Name: u.Name}
@@ -521,11 +521,9 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 			}
 		case depsSplit:
 			var split bool
-			dep := domain.DepName{Ecosystem: domain.DepsEcosystem(strings.TrimSpace(r.PostFormValue("ecosystem"))), Name: r.PostFormValue("name")}
-			if split, err = depsFlag(r, "split"); err == nil {
-				if dep.Ecosystem == "" || dep.Name == "" {
-					err = fmt.Errorf("%w: missing dependency", domain.ErrInvalid)
-				} else {
+			var dep domain.DepName
+			if dep, err = depsSplitName(r.PostFormValue("ecosystem"), r.PostFormValue("name")); err == nil {
+				if split, err = depsFlag(r, "split"); err == nil {
 					_, err = deps.Split(ctx, p, name, dep, split)
 				}
 			}
@@ -556,8 +554,10 @@ func depsBack(r *http.Request) string {
 	return back
 }
 
-// depsResult re-renders the row of the repository, open since the owner acted
-// inside it, or removes it when nothing is left to show.
+// depsResult re-renders the whole table: an action can change the header,
+// the chip counts, the order and the filter's empty state. The row the owner
+// acted in comes back open; the page keeps the other disclosures as they were
+// (data-keep-open).
 func (s *Server) depsResult(ctx context.Context, r *http.Request) (ActionResult, error) {
 	result := ActionResult{Redirect: depsBack(r)}
 	if !isHX(r) {
@@ -569,15 +569,28 @@ func (s *Server) depsResult(ctx context.Context, r *http.Request) (ActionResult,
 	}
 	repo := r.PathValue("repo")
 	p := s.inboxPage(ctx, ov, ports.InboxJournal{}, "deps", 0, depsQueryOf(r))
-	for _, row := range p.Deps {
-		if row.Repo == repo {
-			row.Open = true
-			result.Fragment = inboxDepsChanged(p, []InboxDepsRepo{row}, nil)
-			return result, nil
+	for i := range p.Deps {
+		if p.Deps[i].Repo == repo {
+			p.Deps[i].Open = true
 		}
 	}
-	result.Fragment = inboxDepsChanged(p, nil, []string{depsRepoID(repo)})
+	result.Fragment = inboxDepsChanged(p)
 	return result, nil
+}
+
+// depsSplitName checks the dependency of a split: a supported ecosystem and
+// a name that is not blank.
+func depsSplitName(eco, name string) (domain.DepName, error) {
+	e := domain.DepsEcosystem(strings.TrimSpace(eco))
+	switch e {
+	case domain.EcosystemGoMod, domain.EcosystemNPM, domain.EcosystemActions:
+	default:
+		return domain.DepName{}, fmt.Errorf("%w: unsupported ecosystem %q", domain.ErrInvalid, eco)
+	}
+	if strings.TrimSpace(name) == "" {
+		return domain.DepName{}, fmt.Errorf("%w: missing dependency name", domain.ErrInvalid)
+	}
+	return domain.DepName{Ecosystem: e, Name: name}, nil
 }
 
 func boolFlag(b bool) string {

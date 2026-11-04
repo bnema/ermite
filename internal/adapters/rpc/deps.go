@@ -4,6 +4,8 @@ package rpc
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
@@ -173,7 +175,10 @@ func (s *depsService) SplitDependency(ctx context.Context, req *pb.SplitDependen
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	name := domain.DepName{Ecosystem: domain.DepsEcosystem(req.GetEcosystem()), Name: req.GetName()}
+	name, err := splitDepName(req.GetEcosystem(), req.GetName())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
 	d, err := s.deps.Split(ctx, caller(ctx), repo, name, req.GetSplit())
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -187,4 +192,19 @@ func repoDepsToPBUpdates(ups []domain.DepUpdate) []*pb.DependencyUpdate {
 		out = append(out, &pb.DependencyUpdate{Ecosystem: string(u.Ecosystem), Name: u.Name, Directory: u.Directory, Current: u.Current, Latest: u.Version, Kind: depKindToPB(u.Kind), New: u.New, NewName: u.NewName})
 	}
 	return out
+}
+
+// splitDepName checks the dependency of a split: a supported ecosystem and a
+// name that is not blank.
+func splitDepName(eco, name string) (domain.DepName, error) {
+	e := domain.DepsEcosystem(strings.TrimSpace(eco))
+	switch e {
+	case domain.EcosystemGoMod, domain.EcosystemNPM, domain.EcosystemActions:
+	default:
+		return domain.DepName{}, fmt.Errorf("%w: unsupported ecosystem %q", domain.ErrInvalid, eco)
+	}
+	if strings.TrimSpace(name) == "" {
+		return domain.DepName{}, fmt.Errorf("%w: missing dependency name", domain.ErrInvalid)
+	}
+	return domain.DepName{Ecosystem: e, Name: name}, nil
 }

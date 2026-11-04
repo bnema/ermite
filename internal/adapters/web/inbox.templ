@@ -543,14 +543,6 @@ templ inboxModerated(id string, count int) {
 	@CountOOB("inbox-pending-count", count)
 }
 
-templ inboxDepsChanged(p InboxPage, rows []InboxDepsRepo, removed []string) {
-	if p.DepsBatches > 0 {
-		<hx-partial hx-target="#inbox-deps-h" hx-swap="outerMorph">@inboxDepsHeader(p)</hx-partial>
-	}
-	for _, id := range removed {
-		@RemoveEl(id)
-	}
-	for _, row := range rows {
-		<hx-partial hx-target={ "#" + row.ID } hx-swap="outerMorph">@inboxDepsRepo(row)</hx-partial>
-	}
+templ inboxDepsChanged(p InboxPage) {
+	<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph">@InboxDeps(p)</hx-partial>
 }

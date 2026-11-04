@@ -630,27 +630,36 @@ func TestInboxDepsRepoActions(t *testing.T) {
 		{"auto without a flag", "/-/inbox/deps/alpha/auto", url.Values{"on": {"yes"}}},
 		{"split without a name", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"gomod"}, "split": {"1"}}},
 		{"split without a flag", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"gomod"}, "name": {"x"}}},
+		{"split with a blank name", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"gomod"}, "name": {"  "}, "split": {"1"}}},
+		{"split without an ecosystem", "/-/inbox/deps/alpha/split", url.Values{"name": {"x"}, "split": {"1"}}},
+		{"split with an unknown ecosystem", "/-/inbox/deps/alpha/split", url.Values{"ecosystem": {"cargo"}, "name": {"x"}, "split": {"1"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rec := post(depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t)), tc.path, tc.form, false)
-			assert.NotEqual(t, 303, rec.Code, "the service is not called (the mock has no expectation)")
+			assert.Equal(t, http.StatusBadRequest, rec.Code, "the service is not called (the mock has no expectation)")
 		})
 	}
 	t.Run("everyone else", func(t *testing.T) {
 		t.Parallel()
 		srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
-		for _, op := range []string{"recheck", "auto", "split"} {
-			req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op, nil)
+		for _, tc := range []struct {
+			route string
+			op    depsOp
+		}{
+			{"open", depsOpen}, {"ignore", depsIgnore}, {"snooze", depsSnooze},
+			{"recheck", depsRecheck}, {"auto", depsAuto}, {"split", depsSplit},
+		} {
+			req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+tc.route, nil)
 			req.Header.Set("Origin", testPublicURL)
 			rec := httptest.NewRecorder()
 			srv.ServeHTTP(rec, req)
-			assert.Equal(t, 403, rec.Code, op)
-			// past the gate, the handler hides the action from a non-owner
-			r := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op, nil)
+			assert.Equal(t, 403, rec.Code, tc.route)
+			// past the gate, each handler hides the action from a non-owner
+			r := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+tc.route, nil)
 			r.SetPathValue("repo", "alpha")
-			_, err := srv.depsAction(depsRecheck)(r.Context(), r)
-			assert.ErrorIs(t, err, errNotFound)
+			_, err := srv.depsAction(tc.op)(r.Context(), r)
+			assert.ErrorIs(t, err, errNotFound, tc.route)
 		}
 	})
 	t.Run("htmx swaps the repository row, open", func(t *testing.T) {
@@ -662,7 +671,7 @@ func TestInboxDepsRepoActions(t *testing.T) {
 		rec := post(depsServer(t, inbox, deps), "/-/inbox/deps/alpha/recheck", nil, true)
 		assert.Equal(t, 200, rec.Code)
 		body := rec.Body.String()
-		assert.Contains(t, body, `hx-target="#deps-alpha" hx-swap="outerMorph"`)
+		assert.Contains(t, body, `hx-target="#inbox-deps" hx-swap="outerMorph"`)
 		assert.Contains(t, body, `<details class="deps-main" open>`)
 		assert.NotContains(t, body, "<html")
 	})
@@ -701,10 +710,11 @@ func TestInboxAsyncDeps(t *testing.T) {
 				assert.Empty(t, w.Header().Get("Location"))
 				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 				body := w.Body.String()
+				assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph"><section id="inbox-deps" data-keep-open`)
 				if gone {
-					assert.Contains(t, body, `hx-target="#deps-alpha" hx-swap="delete"`)
+					assert.NotContains(t, body, `id="deps-alpha"`)
+					assert.Contains(t, body, `<section id="inbox-deps" data-keep-open hidden>`, "the empty table hides, header included")
 				} else {
-					assert.Contains(t, body, `hx-target="#deps-alpha" hx-swap="outerMorph"`)
 					assert.Contains(t, body, "applying")
 					assert.Contains(t, body, `id="deps-alpha-base"`)
 					assert.Contains(t, body, `/deps/alpha/open?sort=name`, "the swapped row keeps the order")
@@ -803,7 +813,100 @@ func TestInboxDepsActionRefreshesTheHeader(t *testing.T) {
 	depsServer(t, inbox, deps).ServeHTTP(w, req)
 	require.Equal(t, 200, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps-h" hx-swap="outerMorph"><h2 id="inbox-deps-h"`)
+	assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph">`)
+	assert.Contains(t, body, `<h2 id="inbox-deps-h"`)
 	assert.Contains(t, body, `<time datetime="2026-03-05T06:00:00Z">2026-03-05 06:00</time>`)
 	assert.Contains(t, body, "1 batch · 3 updates")
+}
+
+// Adopted majors, whether a family, a lone package or a split-out one, offer
+// only View MR: no Split, no Join, no Ignore.
+func TestInboxDepsAdoptedMajors(t *testing.T) {
+	t.Parallel()
+	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+	bubbles := depsUp(domain.EcosystemGoMod, "github.com/charmbracelet/bubbles", "v0.20.0", "v2.0.0")
+	lipgloss := depsUp(domain.EcosystemGoMod, "github.com/charmbracelet/lipgloss", "v1.0.0", "v2.0.0")
+	lego := depsUp(domain.EcosystemGoMod, "github.com/go-acme/lego", "v4.0.0", "v5.0.0")
+	for _, tc := range []struct {
+		name  string
+		batch domain.DepBatch
+		split []domain.DepName
+	}{
+		{"family", depsMajor("major:gomod:github.com/charmbracelet/", bubbles, lipgloss), nil},
+		{"lone", depsMajor("major:gomod:github.com/go-acme/lego", lego), nil},
+		{"split out", depsMajor("major:gomod:github.com/charmbracelet/bubbles", bubbles), []domain.DepName{{Ecosystem: domain.EcosystemGoMod, Name: bubbles.Name}}},
+	} {
+		for _, st := range []domain.DepsState{domain.DepsIdle, domain.DepsFailed, domain.DepsApplying, domain.DepsQueued, domain.DepsDrafted} {
+			t.Run(fmt.Sprintf("%s/state=%d", tc.name, st), func(t *testing.T) {
+				rec := depsRec(t)
+				rec.SplitOut = tc.split
+				b := tc.batch
+				b.State, b.MR, b.Adopted, b.Error = st, 5, true, "boom"
+				row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b}, "")
+				assert.Equal(t, InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/5"}, row.Primary)
+				assert.Empty(t, row.Ignore)
+				assert.Empty(t, row.Splits)
+				html := renderToString(t, inboxDepsRow(row))
+				assert.NotContains(t, html, "/split")
+				assert.NotContains(t, html, `aria-label="More actions for`)
+			})
+		}
+	}
+}
+
+// After an action the whole table comes back: header, chip counts, order and
+// the filter's empty state, the acted-on repository open.
+func TestInboxDepsActionRefreshesTheTable(t *testing.T) {
+	t.Parallel()
+	after := treeOverview(t)
+	// gordon's failure is retried: no failure left
+	for i := range after.Deps {
+		if after.Deps[i].Rec.Repo.String() == "gordon" && after.Deps[i].Batch.Key == "" {
+			after.Deps[i].Batch.State, after.Deps[i].Batch.Error = domain.DepsApplying, ""
+		}
+	}
+	inbox := mocks.NewInboxService(t)
+	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+	deps := mocks.NewDepsService(t)
+	deps.EXPECT().Open(mock.Anything, mock.Anything, repoName(t, "gordon"), domain.DepBatchKey(""), mock.Anything).Return(domain.RepoDeps{}, nil).Once()
+	req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/gordon/open?filter=failures", strings.NewReader(url.Values{"batch": {""}}.Encode()))
+	req.Header.Set("Origin", testPublicURL)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+	w := httptest.NewRecorder()
+	depsServer(t, inbox, deps).ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code)
+	body := w.Body.String()
+	assert.Equal(t, 1, strings.Count(body, "<hx-partial"), "one swap of the section")
+	assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph"><section id="inbox-deps" data-keep-open`)
+	assert.Contains(t, body, "queue 1/1 running, 12 waiting")
+	assert.Regexp(t, `filter=failures#inbox-deps" aria-current="page">Failures\s+<span class="count">0</span>`, body)
+	assert.Contains(t, body, "no batch matches this filter.")
+
+	// without a filter, the acted-on row comes back open, the others as
+	// the server shows them (the page keeps what the user opened)
+	inbox = mocks.NewInboxService(t)
+	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+	deps = mocks.NewDepsService(t)
+	deps.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "lazy")).Return(domain.RepoDeps{}, nil).Once()
+	req = httptest.NewRequest(http.MethodPost, "/-/inbox/deps/lazy/recheck", nil)
+	req.Header.Set("Origin", testPublicURL)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+	w = httptest.NewRecorder()
+	depsServer(t, inbox, deps).ServeHTTP(w, req)
+	body = w.Body.String()
+	assert.Contains(t, liOf(t, body, "deps-lazy", `<li class="deps-repo-row"`), `<details class="deps-main" open>`)
+	assert.Contains(t, liOf(t, body, "deps-idle", `<li class="deps-repo-row"`), `<details class="deps-main">`)
+}
+
+// The page script keeps the disclosures through an htmx morph of a
+// [data-keep-open] element as it does for the live swap.
+func TestInboxDepsKeepOpenOnActionSwap(t *testing.T) {
+	t.Parallel()
+	js := staticJS(t, "ermite.js")
+	assert.Contains(t, js, "const keepOpen = (old, el) =>")
+	assert.Regexp(t, `addEventListener\('htmx:before:swap'[\s\S]*?\[data-keep-open\][\s\S]*?keepOpen\(target, incoming\)`, js)
+	assert.Contains(t, js, "menuOf = keepOpen(old, el)", "the live swap uses the same logic")
 }

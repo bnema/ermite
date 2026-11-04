@@ -956,6 +956,40 @@ window.ermiteLive = (() => {
   // shown: not inside a hidden element (a filtered row, a folded block); the
   // browser refuses the focus there.
   const shown = (e) => !e.closest('[hidden]') && (!e.checkVisibility || e.checkVisibility());
+  // keepOpen copies the disclosure state of old (a [data-keep-open] element)
+  // onto el, its fresh copy: the rows (li with an id) whose details were open
+  // stay open, those the user closed stay closed. The menus (details.menu) are
+  // not kept; it returns the id of the "more" summary (<li id>-more) of the
+  // row whose open menu held the focus, or ''.
+  const keepOpen = (old, el) => {
+    let menuOf = '';
+    const items = [...el.querySelectorAll('li[id]')];
+    if (el.matches('li[id]')) items.push(el);
+    const twin = (li) => {
+      const fresh = items.find((e) => e.id === li.id);
+      return [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
+    };
+    for (const d of old.querySelectorAll('details:not(.menu)')) {
+      const li = d.parentElement;
+      if (li?.tagName !== 'LI' || !li.id) continue;
+      twin(li)?.toggleAttribute('open', d.open);
+    }
+    for (const open of old.querySelectorAll('details.menu[open]')) {
+      const row = open.closest('li');
+      if (row?.id && open.contains(document.activeElement)) menuOf = row.id + '-more';
+    }
+    return menuOf;
+  };
+  // An action answered with a morph of a [data-keep-open] element keeps its
+  // disclosures as the live swap does.
+  addEventListener('htmx:before:swap', (e) => {
+    for (const task of e.detail.tasks || []) {
+      const target = typeof task.target === 'string' ? document.querySelector(task.target) : task.target;
+      if (!target?.id || !target.matches?.('[data-keep-open]')) continue;
+      const incoming = [...(task.fragment?.children || [])].find((n) => n.id === target.id);
+      if (incoming) keepOpen(target, incoming);
+    }
+  });
   const focusables = (root) => [...root.querySelectorAll(FOCUSABLE)].filter(shown);
   // take focuses e and says whether the focus is there now.
   const take = (e) => { e.focus({ preventScroll: true }); return document.activeElement === e; };
@@ -1074,28 +1108,7 @@ window.ermiteLive = (() => {
         // rowOf: the row (li with an id) holding the focus, for a control that
         // leaves it (the ⋯ of a row whose run starts).
         const rowOf = old.hasAttribute('data-keep-open') && had ? document.activeElement?.closest?.('li')?.id || '' : '';
-        if (old.hasAttribute('data-keep-open')) {
-          const items = [...el.querySelectorAll('li')];
-          for (const open of old.querySelectorAll('details[open]')) {
-            if (open.matches('.menu')) {
-              const row = open.closest('li');
-              if (row?.id && open.contains(document.activeElement)) menuOf = row.id + '-more';
-              continue;
-            }
-            const li = open.parentElement;
-            if (li?.tagName !== 'LI' || !li.id) continue;
-            const fresh = items.find((e) => e.id === li.id);
-            const same = [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
-            if (same) same.setAttribute('open', '');
-          }
-          // A row the server opens (a repository with a failure) stays
-          // closed when the user closed it.
-          for (const shut of old.querySelectorAll('li[id] > details:not(.menu):not([open])')) {
-            const fresh = items.find((e) => e.id === shut.parentElement.id);
-            const same = [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
-            if (same) same.removeAttribute('open');
-          }
-        }
+        if (old.hasAttribute('data-keep-open')) menuOf = keepOpen(old, el);
         old.replaceWith(el);
         const rows = document.getElementById('repo-rows');
         if (rows && el.parentElement === rows && rows.dataset.sort === 'activity' &&

@@ -171,3 +171,16 @@ func TestDepsSetAutoOpenAndSplit(t *testing.T) {
 	_, err = s.SplitDependency(ctx, &pb.SplitDependencyRequest{Repo: "../bad"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
+
+func TestDepsSplitValidatesTheDependency(t *testing.T) {
+	s := &depsService{mocks.NewDepsService(t)} // no call expected
+	for _, req := range []*pb.SplitDependencyRequest{
+		{Repo: "app", Ecosystem: "", Name: "x/y", Split: true},
+		{Repo: "app", Ecosystem: "cargo", Name: "x/y", Split: true},
+		{Repo: "app", Ecosystem: "gomod", Name: "", Split: true},
+		{Repo: "app", Ecosystem: "npm", Name: "   "},
+	} {
+		_, err := s.SplitDependency(context.Background(), req)
+		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%v", req)
+	}
+}
