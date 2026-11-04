@@ -466,3 +466,25 @@ func TestMRListNoticeKeepsDoneTab(t *testing.T) {
 	require.Len(t, fs, 1)
 	assert.Contains(t, fs[0].html, `/proj/merge-requests?state=done`)
 }
+
+func TestMRUnresolvedCountState(t *testing.T) {
+	for _, n := range []int{0, 3} {
+		for _, oob := range []bool{false, true} {
+			var out strings.Builder
+			require.NoError(t, mrUnresolvedCount(n, oob).Render(context.Background(), &out))
+			assert.Contains(t, out.String(), `id="mr-unresolved-count"`)
+			assert.Contains(t, out.String(), `data-count="`+itoa(n)+`"`)
+			assert.Equal(t, oob, strings.Contains(out.String(), `hx-swap-oob`))
+		}
+	}
+}
+
+func TestMRDiffViewMenuNeedsFiles(t *testing.T) {
+	assert.NotContains(t, renderToString(t, mrBar(MRPage{})), `class="menu vmenu"`)
+	assert.Contains(t, renderToString(t, mrBar(MRPage{NFiles: 1})), `class="menu vmenu"`)
+}
+
+func TestMRCommentMenuIsJSOnly(t *testing.T) {
+	body := renderToString(t, commentView(CommentView{ID: "1", Quote: "> quote"}, ""))
+	assert.Contains(t, body, `<details class="menu c-menu" data-js>`)
+}

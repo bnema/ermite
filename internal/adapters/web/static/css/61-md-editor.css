@@ -1,7 +1,7 @@
 @layer components {
   /* one block: the toolbar is the header strip of the field */
   .md-editor {
-    min-width: 0; width: 100%; background: var(--bg-surface);
+    min-width: 0; width: 100%; max-width: var(--note-w); background: var(--bg-surface);
     border: 1px solid var(--border-strong); border-radius: var(--r-s); overflow: clip;
   }
   /* the field's focus ring is drawn around the whole block */

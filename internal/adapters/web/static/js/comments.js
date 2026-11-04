@@ -7,8 +7,8 @@
 //    (data-c-open) and focuses its first field; Cancel (data-c-close) folds
 //    it again and restores the text the note had;
 //  - ctrl+enter (cmd+enter) in a comment field sends its form;
-//  - a resolved root thread folds to its header line; a click on the header
-//    unfolds it (data-open on the note).
+//  - a resolved root thread folds to its header line; its show/hide thread button
+//    toggles it (data-open on the note).
 window.ermiteComments = (() => {
   const core = {
     // target is the disclosure a menu button opens, or null.
@@ -22,7 +22,7 @@ window.ermiteComments = (() => {
     },
     // submitLabel is the label of the send button for a verdict.
     submitLabel(verdict) {
-      return { approve: 'Approve', changes_requested: 'Request changes' }[verdict] || 'Comment';
+      return { approve: 'Approve', changes_requested: 'Request changes' }[verdict] || 'Send';
     },
     // folds says whether a note is a resolved root thread shown folded.
     folds(note) {
@@ -55,19 +55,43 @@ window.ermiteComments = (() => {
     return true;
   }
 
+  function setOpen(note, expanded) {
+    if (expanded) note.setAttribute('data-open', '');
+    else note.removeAttribute('data-open');
+    const button = note.querySelector(':scope > .c-head .c-unfold');
+    if (button) {
+      button.setAttribute('aria-expanded', String(expanded));
+      button.textContent = expanded ? 'hide thread' : 'show thread';
+    }
+  }
+
+  // Preserve only surviving resolved notes, independently for each layout ID.
+  function preserveOpen(old, fresh) {
+    const opened = new Set([...old.querySelectorAll('.cmt[data-resolved="true"][data-open]')]
+      .map((note) => note.id).filter(Boolean));
+    for (const note of fresh.querySelectorAll('.cmt[data-resolved="true"]')) {
+      if (opened.has(note.id)) setOpen(note, true);
+    }
+  }
+
+  function syncLabel(form) {
+    const button = form.querySelector('button[type="submit"][data-label]');
+    if (button) {
+      const verdict = form.querySelector('.f-verdict input[name="verdict"]:checked');
+      button.textContent = core.submitLabel(verdict?.value);
+    }
+  }
+
   function start() {
     addEventListener('click', (e) => {
       const opener = e.target.closest?.('[data-c-open]');
       if (opener) { e.preventDefault(); open(opener); return; }
       const closer = e.target.closest?.('[data-c-close]');
       if (closer) { e.preventDefault(); close(closer); return; }
-      // A folded resolved thread opens from its header, not from its links
-      // or its actions.
-      const head = e.target.closest?.('.cmt[data-resolved="true"] > .c-head');
-      if (head && !e.target.closest('a, button, summary, form, details')) {
-        const note = head.parentElement;
-        if (note.hasAttribute('data-open')) note.removeAttribute('data-open');
-        else note.setAttribute('data-open', '');
+      const unfold = e.target.closest?.('.c-unfold');
+      if (unfold) {
+        const note = unfold.closest('.cmt');
+        setOpen(note, !note.hasAttribute('data-open'));
       }
     });
     // A link to a note inside a folded thread unfolds it.
@@ -75,7 +99,7 @@ window.ermiteComments = (() => {
       const id = decodeURIComponent(location.hash.slice(1));
       const note = id && document.getElementById(id);
       const root = note?.closest?.('.cmt[data-resolved="true"]:not(.cmt .cmt)');
-      if (root) root.setAttribute('data-open', '');
+      if (root) setOpen(root, true);
     };
     addEventListener('hashchange', reveal);
     reveal();
@@ -83,8 +107,14 @@ window.ermiteComments = (() => {
     // request for changes.
     addEventListener('change', (e) => {
       const radio = e.target.closest?.('.f-verdict input[name="verdict"]');
-      const button = radio?.form?.querySelector('button[type="submit"][data-label]');
-      if (button) button.textContent = core.submitLabel(radio.value);
+      if (radio?.form) syncLabel(radio.form);
+    });
+    // Reset events fire before controls return to their defaults.
+    addEventListener('reset', (e) => {
+      queueMicrotask(() => syncLabel(e.target));
+    });
+    addEventListener('pageshow', () => {
+      document.querySelectorAll('form').forEach(syncLabel);
     });
     addEventListener('keydown', (e) => {
       if (!core.submits(e)) return;
@@ -97,5 +127,5 @@ window.ermiteComments = (() => {
   }
 
   if (typeof addEventListener === 'function' && typeof document !== 'undefined' && document.getElementById) start();
-  return { core, open, close };
+  return { core, open, close, setOpen, preserveOpen };
 })();

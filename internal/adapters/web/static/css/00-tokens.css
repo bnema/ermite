@@ -103,6 +103,7 @@
 
     --pad: var(--s5);
     --stick: 0px;     /* top offset of sticky headers inside the content */
+    --note-w: 760px; /* shared width of notes and composers */
     --measure: 80ch;  /* reading width of prose */
     --rail: 340px;
     --page: 1320px;

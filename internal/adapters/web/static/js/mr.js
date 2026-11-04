@@ -50,6 +50,8 @@ window.ermiteMR = (() => {
       field.value = button.dataset.quote;
       field.dispatchEvent(new Event('input', { bubbles: true }));
       field.focus();
+      const menu = button.closest('details.menu');
+      if (menu) menu.open = false;
       return true;
     },
     // windowOf is the start of the window of file i (files are f1, f2, ...).
@@ -597,7 +599,11 @@ window.ermiteMR = (() => {
     }
     for (const sel of regions) {
       const fresh = $(sel, page);
-      await replaceRegion($(sel), fresh);
+      const old = $(sel);
+      if (sel === '#mr-comments' || sel === '#diffs') {
+        window.ermiteComments.preserveOpen(old, fresh);
+      }
+      await replaceRegion(old, fresh);
     }
     for (const key of ['ref', 'sha', 'paths', 'blob']) {
       if (page.body.dataset[key] !== undefined) document.body.dataset[key] = page.body.dataset[key];

@@ -70,7 +70,7 @@ test('quote opens the thread reply and prefills and focuses its textarea', () =>
  const field={value:'',focus(){focused=true;},dispatchEvent(e){input=e.type==='input' && e.bubbles;}};
  const details={open:false,querySelector(){return field;}};
  const thread={querySelector(){return details;}};
- const button={dataset:{quote:'> source\n\n^2 '},closest(){return {closest(){return thread;}};}};
+ const button={dataset:{quote:'> source\n\n^2 '},closest(selector){return selector === 'details.menu' ? null : {closest(){return thread;}};}};
  assert.equal(C.quote(button),true);
  assert.equal(details.open,true);
  assert.equal(field.value,'> source\n\n^2 ');
@@ -572,11 +572,13 @@ test('live refresh preserves the open button panel even when the hash points els
     let selected;
     const lazy = { reset() {}, watch() {} };
     let attached = 0;
+    let preserved = 0;
     const refresh = new Function('$', '$$', 'scrollAnchor', 'hasDraft', 'replaceRegion', 'panels', 'watchBar', 'restoreMergePrefs', 'foldFiles', 'touchComments', 'restoreAnchor', 'window', 'document',
       'let revealGen = 0; ' + src.slice(start, end) + '; return refreshPage;')(
-      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy, ermiteRailPanel: { refresh() { attached++; } } }, doc);
+      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy, ermiteComments: { preserveOpen(old, fresh) { assert.ok(old); assert.ok(fresh); preserved++; } }, ermiteRailPanel: { refresh() { attached++; } } }, doc);
     await refresh(page);
     assert.equal(attached, 1, 'the shared rail controller is refreshed');
+    assert.equal(preserved, 2, 'both diffs and comments preserve unfolded notes');
     assert.equal(selected, 1);
     assert.deepEqual(fresh.children.map((p) => p.hidden), [true, false]);
   } finally { h.restore(); globalThis.document = saved; }

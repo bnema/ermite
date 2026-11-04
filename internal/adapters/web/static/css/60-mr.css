@@ -223,7 +223,7 @@
     & li[data-verdict="approve"] .v-label { color: var(--teal); }
     & li[data-verdict="approve"] .v-label::before { content: "✓ "; }
     & li[data-verdict="changes_requested"] .v-label { color: var(--red); }
-    & li[data-verdict="changes_requested"] .v-label::before { content: "± "; }
+    & li[data-verdict="changes_requested"] .v-label::before { content: "✕ "; }
     & li[data-stale] .v-label { opacity: .6; }
   }
 
@@ -256,11 +256,11 @@
 
   /* a note: one framed thread. A header line (who, when, badges, and the
      actions on the right), the body, the replies under a rule, then one
-     quiet Reply line. The actions stay faint until the note is hovered or
+     quiet Reply line. The actions use muted ink until the note is hovered or
      holds the focus, so that the text reads first. */
   .cmt {
     --c-x: var(--s4);
-    margin-top: var(--s3); max-width: var(--note-w, calc(var(--measure) + 8ch));
+    margin-top: var(--s3); max-width: var(--note-w);
     background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
     white-space: normal; font-family: var(--font); font-size: var(--fs-m); line-height: 1.6;
     & p { white-space: normal; }
@@ -285,16 +285,16 @@
     & .c-verdict[data-verdict="approve"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 55%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
     & .c-verdict[data-verdict="changes_requested"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
     & .c-verdict[data-verdict="approve"]::before { content: "✓"; }
-    & .c-verdict[data-verdict="changes_requested"]::before { content: "±"; }
+    & .c-verdict[data-verdict="changes_requested"]::before { content: "✕"; }
     & .c-state[data-state="resolved"] { color: var(--teal); border-color: transparent; padding-inline: 0; }
     & .c-state[data-state="resolved"]::before { content: "✓"; }
 
     & .c-tools { display: flex; align-items: center; gap: 2px; flex: none; }
     & .c-tools form { margin: 0; }
-    @media (hover: hover) {
-      & > .c-head .c-tools { opacity: .45; transition: opacity .12s ease; }
-      &:is(:hover, :focus-within) > .c-head .c-tools, & > .c-head .c-tools:has(details[open]) { opacity: 1; }
-    }
+    & > .c-head .c-tools { color: var(--ink-mute); }
+    & > .c-head .c-tools > .c-menu > summary,
+    & > .c-head .c-tools .c-resolve .btn { color: inherit; }
+    &:is(:hover, :focus-within) > .c-head .c-tools { color: var(--ink-hi); }
     & .c-menu .menu-pop { width: 190px; gap: 2px; padding: var(--s1); }
     & .c-menu .menu-pop .btn { width: 100%; justify-content: flex-start; border-color: transparent; background: none; font-weight: 500; }
     & .c-menu .menu-pop .btn:hover { background: var(--bg-raised); }
@@ -340,15 +340,14 @@
     & > .c-reply .cform { margin: 0; max-width: none; }
 
     &[data-resolved="true"] .c-body { color: var(--ink-dim); }
+    & .cmt .c-unfold { display: none; }
+    & .c-unfold { font-size: var(--fs-xs); color: var(--ink-mute); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; cursor: pointer; }
     /* a resolved root thread folds to its header line (comments.js); the
-       header unfolds it */
+       button unfolds it */
     html.js &[data-resolved="true"]:not([data-open]):not(.cmt .cmt) {
       background: none;
       & > :not(.c-head) { display: none; }
-      & > .c-head { cursor: pointer; }
-      & > .c-head .c-meta::after { content: "show thread"; font-size: var(--fs-xs); color: var(--ink-mute); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
     }
-    html.js &[data-resolved="true"][data-open]:not(.cmt .cmt) > .c-head { cursor: pointer; }
     &:target, &:has(> .c-head :target) { border-color: var(--ink-mute); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
   }
   /* the notes under a diff line: on the canvas, aligned with the code */
@@ -375,7 +374,7 @@
 
   /* the forms: a comment, a new merge request */
   .cform {
-    display: grid; gap: var(--s2); margin-top: var(--s3); max-width: var(--note-w, calc(var(--measure) + 8ch));
+    display: grid; gap: var(--s2); margin-top: var(--s3); max-width: var(--note-w);
     font-family: var(--font); font-size: var(--fs-s);
     & label { color: var(--ink-dim); font-weight: 600; }
     & .f-title { color: var(--ink-hi); font-size: var(--fs-s); }
@@ -386,6 +385,7 @@
     }
     & textarea::placeholder { color: var(--ink-mute); opacity: 1; }
     & .f-btns { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s1); }
+    & .f-btns:has([value=changes_requested]:checked) .btn.primary { background: var(--red); color: var(--on-ink); }
     & .f-hint { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); color: var(--ink-mute); }
     & .f-hint kbd { font-size: var(--fs-2xs); line-height: 16px; min-width: 0; }
     @media (hover: none) { & .f-hint { display: none; } }
@@ -543,7 +543,9 @@
   /* the counts of the comments heading: the total, then the unresolved */
   .rule-h .c-counts { display: inline-flex; align-items: center; gap: var(--s3); }
   .rule-h .c-open { display: inline-flex; align-items: center; gap: var(--s1); font: 500 var(--fs-xs) / 1 var(--font); color: var(--ink-mute); letter-spacing: 0; }
-  .rule-h .c-open .count { margin-left: 0; }
+  .rule-h .c-open::before { content: "·"; }
+  .rule-h .c-open .count { margin-left: 0; min-width: 0; background: none; box-shadow: none; padding: 0; color: inherit; }
+  .rule-h .c-open:has([data-count="0"]) { opacity: .6; }
   .c-body.prose > * { margin-block: .5em; }
   .c-body .ref { font-variant-numeric: tabular-nums; text-decoration: underline; }
 }

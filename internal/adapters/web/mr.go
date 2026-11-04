@@ -1153,15 +1153,15 @@ func (s *Server) placeComments(ctx context.Context, p *MRPage, repo string, n in
 				ln.Selected = true
 			}
 		}
-		// The title names the whole range a shift + click selected: a.go:21-149.
-		lines := itoa(on.line)
+		// The title names the line or whole range a shift + click selected.
+		title := "line " + itoa(on.line)
 		if start < on.line {
-			lines = itoa(start) + "-" + lines
+			title = "lines " + itoa(start) + "–" + itoa(on.line)
 		}
 		if ln := find(on.path, side, on.line); ln != nil {
 			ln.Form = &CommentForm{
 				StartLine: optionalLine(on.start), ID: "cf-line", Action: mrHref(repo, n, "comments"), Path: on.path, Line: itoa(on.line), Side: on.side,
-				Title:  "comment on " + visibleText(on.path) + ":" + lines + " (" + on.side + ")",
+				Title:  title,
 				Cancel: withFrom(self, windowStart(fileAt[on.path])) + "#" + fileIDs[on.path], Focus: true,
 				From: windowStart(fileAt[on.path]),
 			}

@@ -224,7 +224,7 @@ templ MergeRequest(l Layout, p MRPage) {
 			}
 		</div>
 		<div id="mr-comments">
-			<h2 class="rule-h" id="comments"><span>Comments</span><span class="c-counts"><span id="mr-comment-count" class="count">{ itoa(p.NComments) }</span><span class="c-open"><span id="mr-unresolved-count" class="count">{ itoa(p.NUnresolved) }</span> unresolved</span></span></h2>
+			<h2 class="rule-h" id="comments"><span>Comments</span><span class="c-counts"><span id="mr-comment-count" class="count">{ itoa(p.NComments) }</span><span class="c-open">@mrUnresolvedCount(p.NUnresolved, false) unresolved</span></span></h2>
 			for _, c := range p.Loose {
 				@commentView(c, "")
 			}
@@ -293,6 +293,7 @@ templ commentView(c CommentView, suffix string) {
 				}
 				if c.Resolved {
 					{ " " }<span class="c-state" data-state="resolved">resolved</span>
+					<button type="button" class="c-unfold" data-js aria-expanded="false">show thread</button>
 				}
 				if c.Outdated {
 					{ " " }<span class="c-state" title="written on an earlier head; the line may have moved">outdated</span>
@@ -319,7 +320,7 @@ templ commentView(c CommentView, suffix string) {
 						}
 					}
 					if c.Quote != "" || c.Edit != nil || c.Delete != nil {
-						<details class="menu c-menu">
+						<details class="menu c-menu" data-js>
 							<summary class="btn ghost sm icon" title="more actions"><span class="ico i-more" aria-hidden="true"></span><span class="sr">More actions</span></summary>
 							<div class="menu-pop">
 								if c.Quote != "" {
@@ -445,7 +446,7 @@ templ commentFields(f CommentForm, suffix string) {
 		<input type="hidden" name="path" value={ f.Path }/>
 		<input type="hidden" name="line" value={ f.Line }/>
 		<input type="hidden" name="side" value={ f.Side }/>
-		<label class="f-range">from line <input type="number" name="start_line" min="1" value={ f.StartLine } placeholder={ f.Line }/> to { f.Line }</label>
+		<label class="f-range">from line <input type="number" name="start_line" min="1" value={ f.StartLine }/> to { f.Line }</label>
 	}
 	if f.ReplyTo != "" {
 		<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
@@ -457,7 +458,7 @@ templ commentFields(f CommentForm, suffix string) {
 		if f.Path == "" && f.ReplyTo == "" && !f.Issue {
 			<fieldset class="f-verdict"><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Comment</label><label data-verdict="approve"><input type="radio" name="verdict" value="approve"/>Approve</label><label data-verdict="changes_requested"><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
 		}
-		<button type="submit" class="btn primary" data-label="Comment">Comment</button>
+		<button type="submit" class="btn primary" data-label="Send">Send</button>
 		if f.Cancel != "" {
 			<a class="btn ghost" href={ templ.SafeURL(f.Cancel) }>Cancel</a>
 		}
@@ -568,7 +569,9 @@ templ mrRail(p MRPage) {
 templ mrBar(p MRPage) {
 	<div class="diff-tools mr-bar" role="group" aria-label="Diff view and merge">
 		<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
-		@diffViewMenu(p.DiffView)
+		if p.NFiles > 0 {
+			@diffViewMenu(p.DiffView)
+		}
 		@mrActions(p, false)
 	</div>
 }
@@ -806,7 +809,9 @@ templ Compare(l Layout, p ComparePage) {
 			<div class="diff-tools" role="group" aria-label="Diff view">
 				<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 				<span class="grow"></span>
-				@diffViewMenu(p.DiffView)
+				if p.NFiles > 0 {
+			@diffViewMenu(p.DiffView)
+		}
 			</div>
 			if p.Invisible {
 				<p class="notice">
@@ -918,7 +923,7 @@ templ mrActions(p MRPage, fragment bool) {
 // mrCommentCreated appends without touching other drafts or the diff.
 templ mrCommentCreated(c CommentView, thread string, f CommentForm, n, unresolved int, line bool) {
 	@CountOOB("mr-comment-count", n)
-	@CountOOB("mr-unresolved-count", unresolved)
+	@mrUnresolvedCount(unresolved, true)
 	@RemoveEl("mr-no-comments")
 	for _, suffix := range []string{"", "-s"} {
 		if line || suffix == "" {
@@ -940,7 +945,7 @@ templ mrCommentCreated(c CommentView, thread string, f CommentForm, n, unresolve
 
 templ mrCommentChanged(c CommentView, n, unresolved int, line, remove bool) {
 	@CountOOB("mr-comment-count", n)
-	@CountOOB("mr-unresolved-count", unresolved)
+	@mrUnresolvedCount(unresolved, true)
 	for _, suffix := range []string{"", "-s"} {
 		if line || suffix == "" {
 			if remove {
@@ -950,4 +955,9 @@ templ mrCommentChanged(c CommentView, n, unresolved int, line, remove bool) {
 			}
 		}
 	}
+}
+
+// Keep zero-count styling on the replaced span during comment updates.
+templ mrUnresolvedCount(n int, oob bool) {
+	<span id="mr-unresolved-count" class="count" data-count={ itoa(n) } hx-swap-oob?={ oob }>{ itoa(n) }</span>
 }
