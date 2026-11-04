@@ -254,9 +254,13 @@ func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 		return nil, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
 	}
 	pb := &storagepb.RepoDeps{
-		Repo:         rd.Repo.String(),
-		CheckedAt:    encodeTime(rd.CheckedAt),
-		SnoozedUntil: encodeTime(rd.SnoozedUntil),
+		Repo:             rd.Repo.String(),
+		CheckedAt:        encodeTime(rd.CheckedAt),
+		SnoozedUntil:     encodeTime(rd.SnoozedUntil),
+		AutoOpenDisabled: rd.AutoOpenDisabled,
+	}
+	for _, n := range rd.SplitOut {
+		pb.SplitOut = append(pb.SplitOut, &storagepb.DepName{Ecosystem: string(n.Ecosystem), Name: n.Name})
 	}
 	rd.Base()
 	batches := rd.Batches
@@ -280,19 +284,32 @@ func decodeRepoDeps(val []byte) (domain.RepoDeps, error) {
 		return domain.RepoDeps{}, fmt.Errorf("decode deps record: %w", err)
 	}
 	rd := domain.RepoDeps{
-		Repo:         repo,
-		CheckedAt:    decodeTime(pb.GetCheckedAt()),
-		SnoozedUntil: decodeTime(pb.GetSnoozedUntil()),
+		Repo:             repo,
+		CheckedAt:        decodeTime(pb.GetCheckedAt()),
+		SnoozedUntil:     decodeTime(pb.GetSnoozedUntil()),
+		AutoOpenDisabled: pb.GetAutoOpenDisabled(),
+	}
+	for _, n := range pb.GetSplitOut() {
+		rd.SplitOut = append(rd.SplitOut, domain.DepName{Ecosystem: domain.DepsEcosystem(n.GetEcosystem()), Name: n.GetName()})
 	}
 	for _, batch := range pb.GetBatches() {
-		rd.Batches = append(rd.Batches, decodeDepBatch(batch))
+		b, err := decodeDepBatch(batch)
+		if err != nil {
+			return domain.RepoDeps{}, err
+		}
+		rd.Batches = append(rd.Batches, b)
 	}
 	rd.Base()
 	return rd, nil
 }
 
 func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {
-	pb := &storagepb.DepBatch{Key: string(b.Key), State: int32(b.State), Error: b.Error, RunId: b.RunID, Mr: b.MR}
+	pb := &storagepb.DepBatch{Key: string(b.Key), State: int32(b.State), Error: b.Error, RunId: b.RunID, Mr: b.MR,
+		Branch: b.Branch, Adopted: b.Adopted, QueuedAt: encodeTime(b.QueuedAt), Manual: b.Manual, Repro: b.Repro,
+	}
+	if !b.Head.IsZero() {
+		pb.Head = b.Head.String()
+	}
 	for _, u := range b.Updates {
 		pb.Updates = append(pb.Updates, encodeDepUpdate(u))
 	}
@@ -308,8 +325,16 @@ func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {
 	return pb
 }
 
-func decodeDepBatch(pb *storagepb.DepBatch) domain.DepBatch {
-	b := domain.DepBatch{Key: domain.DepBatchKey(pb.GetKey()), State: domain.DepsState(pb.GetState()), Error: pb.GetError(), RunID: pb.GetRunId(), MR: pb.GetMr()}
+func decodeDepBatch(pb *storagepb.DepBatch) (domain.DepBatch, error) {
+	b := domain.DepBatch{Key: domain.DepBatchKey(pb.GetKey()), State: domain.DepsState(pb.GetState()), Error: pb.GetError(), RunID: pb.GetRunId(), MR: pb.GetMr(),
+		Branch: pb.GetBranch(), Adopted: pb.GetAdopted(), QueuedAt: decodeTime(pb.GetQueuedAt()), Manual: pb.GetManual(), Repro: pb.GetRepro(),
+	}
+	if pb.GetHead() != "" {
+		var err error
+		if b.Head, err = domain.ParseObjectID(pb.GetHead()); err != nil {
+			return domain.DepBatch{}, fmt.Errorf("decode deps batch head: %w", err)
+		}
+	}
 	for _, u := range pb.GetUpdates() {
 		b.Updates = append(b.Updates, decodeDepUpdate(u))
 	}
@@ -322,5 +347,5 @@ func decodeDepBatch(pb *storagepb.DepBatch) domain.DepBatch {
 	for _, u := range pb.GetMrUpdates() {
 		b.MRUpdates = append(b.MRUpdates, decodeDepUpdate(u))
 	}
-	return b
+	return b, nil
 }

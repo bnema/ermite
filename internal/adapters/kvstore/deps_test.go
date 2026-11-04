@@ -49,6 +49,36 @@ func TestDepsRoundTripAndAbsent(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestDepsQueueFieldsRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	d := openStore(t, t.TempDir()).Deps()
+	n := name(t, "queued")
+	for _, tc := range []struct {
+		name  string
+		state domain.DepsState
+	}{
+		{"queued", domain.DepsQueued},
+		{"drafted", domain.DepsDrafted},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := domain.RepoDeps{
+				Repo: n, AutoOpenDisabled: true,
+				SplitOut: []domain.DepName{{Ecosystem: domain.EcosystemGoMod, Name: "example.com/mod"}, {Ecosystem: domain.EcosystemNPM, Name: "@scope/pkg"}},
+				Batches: []domain.DepBatch{{
+					State: tc.state, Branch: "bernard/stored", Head: oid('a'), Adopted: true,
+					QueuedAt: created.Add(time.Minute), Manual: true, Repro: []string{"go mod tidy", "go test ./..."},
+				}},
+			}
+			got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { *r = want; return true, nil })
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+			got, err = d.Get(ctx, n)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		})
+	}
+}
+
 func TestDepsListOrder(t *testing.T) {
 	ctx := t.Context()
 	d := openStore(t, t.TempDir()).Deps()

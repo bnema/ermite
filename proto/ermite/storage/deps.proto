@@ -11,6 +11,10 @@ message DepRef {
   string name = 3;
   string version = 4;
 }
+message DepName {
+  string ecosystem = 1;
+  string name = 2;
+}
 message DepUpdate {
   DepRef ref = 1;
   string current = 2;
@@ -29,6 +33,12 @@ message DepBatch {
   repeated DepRef mr_versions = 8;
   // the updates the merge request holds, with their current versions
   repeated DepUpdate mr_updates = 9;
+  string branch = 10;
+  string head = 11;
+  bool adopted = 12;
+  google.protobuf.Timestamp queued_at = 13;
+  bool manual = 14;
+  repeated string repro = 15;
 }
 // RepoDeps is the whole record under dpend/<repo>.
 message RepoDeps {
@@ -56,6 +66,8 @@ message RepoDeps {
   // moved into batches by the schema 12 upgrade; read only by it
   repeated DepUpdate run_updates = 11 [deprecated = true];
   repeated DepBatch batches = 12;
+  bool auto_open_disabled = 13;
+  repeated DepName split_out = 14;
 }
 // DepFirstSeen is global, under dseen/<ecosystem>/<name>@<version>@<sha>.
 message DepFirstSeen {

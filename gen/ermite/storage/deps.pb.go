@@ -93,6 +93,58 @@ func (x *DepRef) GetVersion() string {
 	return ""
 }
 
+type DepName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ecosystem     string                 `protobuf:"bytes,1,opt,name=ecosystem,proto3" json:"ecosystem,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DepName) Reset() {
+	*x = DepName{}
+	mi := &file_ermite_storage_deps_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DepName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DepName) ProtoMessage() {}
+
+func (x *DepName) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_deps_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DepName.ProtoReflect.Descriptor instead.
+func (*DepName) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DepName) GetEcosystem() string {
+	if x != nil {
+		return x.Ecosystem
+	}
+	return ""
+}
+
+func (x *DepName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 type DepUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ref           *DepRef                `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
@@ -106,7 +158,7 @@ type DepUpdate struct {
 
 func (x *DepUpdate) Reset() {
 	*x = DepUpdate{}
-	mi := &file_ermite_storage_deps_proto_msgTypes[1]
+	mi := &file_ermite_storage_deps_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -118,7 +170,7 @@ func (x *DepUpdate) String() string {
 func (*DepUpdate) ProtoMessage() {}
 
 func (x *DepUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_deps_proto_msgTypes[1]
+	mi := &file_ermite_storage_deps_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -131,7 +183,7 @@ func (x *DepUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepUpdate.ProtoReflect.Descriptor instead.
 func (*DepUpdate) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{1}
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DepUpdate) GetRef() *DepRef {
@@ -180,14 +232,20 @@ type DepBatch struct {
 	Mr         int64                  `protobuf:"varint,7,opt,name=mr,proto3" json:"mr,omitempty"`
 	MrVersions []*DepRef              `protobuf:"bytes,8,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
 	// the updates the merge request holds, with their current versions
-	MrUpdates     []*DepUpdate `protobuf:"bytes,9,rep,name=mr_updates,json=mrUpdates,proto3" json:"mr_updates,omitempty"`
+	MrUpdates     []*DepUpdate           `protobuf:"bytes,9,rep,name=mr_updates,json=mrUpdates,proto3" json:"mr_updates,omitempty"`
+	Branch        string                 `protobuf:"bytes,10,opt,name=branch,proto3" json:"branch,omitempty"`
+	Head          string                 `protobuf:"bytes,11,opt,name=head,proto3" json:"head,omitempty"`
+	Adopted       bool                   `protobuf:"varint,12,opt,name=adopted,proto3" json:"adopted,omitempty"`
+	QueuedAt      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=queued_at,json=queuedAt,proto3" json:"queued_at,omitempty"`
+	Manual        bool                   `protobuf:"varint,14,opt,name=manual,proto3" json:"manual,omitempty"`
+	Repro         []string               `protobuf:"bytes,15,rep,name=repro,proto3" json:"repro,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DepBatch) Reset() {
 	*x = DepBatch{}
-	mi := &file_ermite_storage_deps_proto_msgTypes[2]
+	mi := &file_ermite_storage_deps_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -199,7 +257,7 @@ func (x *DepBatch) String() string {
 func (*DepBatch) ProtoMessage() {}
 
 func (x *DepBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_deps_proto_msgTypes[2]
+	mi := &file_ermite_storage_deps_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -212,7 +270,7 @@ func (x *DepBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepBatch.ProtoReflect.Descriptor instead.
 func (*DepBatch) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{2}
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DepBatch) GetKey() string {
@@ -278,6 +336,48 @@ func (x *DepBatch) GetMrUpdates() []*DepUpdate {
 	return nil
 }
 
+func (x *DepBatch) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *DepBatch) GetHead() string {
+	if x != nil {
+		return x.Head
+	}
+	return ""
+}
+
+func (x *DepBatch) GetAdopted() bool {
+	if x != nil {
+		return x.Adopted
+	}
+	return false
+}
+
+func (x *DepBatch) GetQueuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.QueuedAt
+	}
+	return nil
+}
+
+func (x *DepBatch) GetManual() bool {
+	if x != nil {
+		return x.Manual
+	}
+	return false
+}
+
+func (x *DepBatch) GetRepro() []string {
+	if x != nil {
+		return x.Repro
+	}
+	return nil
+}
+
 // RepoDeps is the whole record under dpend/<repo>.
 type RepoDeps struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -319,15 +419,17 @@ type RepoDeps struct {
 	// moved into batches by the schema 12 upgrade; read only by it
 	//
 	// Deprecated: Marked as deprecated in ermite/storage/deps.proto.
-	RunUpdates    []*DepUpdate `protobuf:"bytes,11,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
-	Batches       []*DepBatch  `protobuf:"bytes,12,rep,name=batches,proto3" json:"batches,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RunUpdates       []*DepUpdate `protobuf:"bytes,11,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
+	Batches          []*DepBatch  `protobuf:"bytes,12,rep,name=batches,proto3" json:"batches,omitempty"`
+	AutoOpenDisabled bool         `protobuf:"varint,13,opt,name=auto_open_disabled,json=autoOpenDisabled,proto3" json:"auto_open_disabled,omitempty"`
+	SplitOut         []*DepName   `protobuf:"bytes,14,rep,name=split_out,json=splitOut,proto3" json:"split_out,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RepoDeps) Reset() {
 	*x = RepoDeps{}
-	mi := &file_ermite_storage_deps_proto_msgTypes[3]
+	mi := &file_ermite_storage_deps_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -339,7 +441,7 @@ func (x *RepoDeps) String() string {
 func (*RepoDeps) ProtoMessage() {}
 
 func (x *RepoDeps) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_deps_proto_msgTypes[3]
+	mi := &file_ermite_storage_deps_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -352,7 +454,7 @@ func (x *RepoDeps) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepoDeps.ProtoReflect.Descriptor instead.
 func (*RepoDeps) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{3}
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RepoDeps) GetRepo() string {
@@ -447,6 +549,20 @@ func (x *RepoDeps) GetBatches() []*DepBatch {
 	return nil
 }
 
+func (x *RepoDeps) GetAutoOpenDisabled() bool {
+	if x != nil {
+		return x.AutoOpenDisabled
+	}
+	return false
+}
+
+func (x *RepoDeps) GetSplitOut() []*DepName {
+	if x != nil {
+		return x.SplitOut
+	}
+	return nil
+}
+
 // DepFirstSeen is global, under dseen/<ecosystem>/<name>@<version>@<sha>.
 type DepFirstSeen struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -457,7 +573,7 @@ type DepFirstSeen struct {
 
 func (x *DepFirstSeen) Reset() {
 	*x = DepFirstSeen{}
-	mi := &file_ermite_storage_deps_proto_msgTypes[4]
+	mi := &file_ermite_storage_deps_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -469,7 +585,7 @@ func (x *DepFirstSeen) String() string {
 func (*DepFirstSeen) ProtoMessage() {}
 
 func (x *DepFirstSeen) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_deps_proto_msgTypes[4]
+	mi := &file_ermite_storage_deps_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -482,7 +598,7 @@ func (x *DepFirstSeen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepFirstSeen.ProtoReflect.Descriptor instead.
 func (*DepFirstSeen) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{4}
+	return file_ermite_storage_deps_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DepFirstSeen) GetAt() *timestamppb.Timestamp {
@@ -501,13 +617,16 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\tecosystem\x18\x01 \x01(\tR\tecosystem\x12\x1c\n" +
 	"\tdirectory\x18\x02 \x01(\tR\tdirectory\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x04 \x01(\tR\aversion\"\x90\x01\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\";\n" +
+	"\aDepName\x12\x1c\n" +
+	"\tecosystem\x18\x01 \x01(\tR\tecosystem\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x90\x01\n" +
 	"\tDepUpdate\x12(\n" +
 	"\x03ref\x18\x01 \x01(\v2\x16.ermite.storage.DepRefR\x03ref\x12\x18\n" +
 	"\acurrent\x18\x02 \x01(\tR\acurrent\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\x05R\x04kind\x12\x10\n" +
 	"\x03new\x18\x04 \x01(\bR\x03new\x12\x19\n" +
-	"\bnew_name\x18\x05 \x01(\tR\anewName\"\xd3\x02\n" +
+	"\bnew_name\x18\x05 \x01(\tR\anewName\"\x80\x04\n" +
 	"\bDepBatch\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateR\aupdates\x12\x14\n" +
@@ -520,7 +639,14 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\vmr_versions\x18\b \x03(\v2\x16.ermite.storage.DepRefR\n" +
 	"mrVersions\x128\n" +
 	"\n" +
-	"mr_updates\x18\t \x03(\v2\x19.ermite.storage.DepUpdateR\tmrUpdates\"\x82\x04\n" +
+	"mr_updates\x18\t \x03(\v2\x19.ermite.storage.DepUpdateR\tmrUpdates\x12\x16\n" +
+	"\x06branch\x18\n" +
+	" \x01(\tR\x06branch\x12\x12\n" +
+	"\x04head\x18\v \x01(\tR\x04head\x12\x18\n" +
+	"\aadopted\x18\f \x01(\bR\aadopted\x127\n" +
+	"\tqueued_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bqueuedAt\x12\x16\n" +
+	"\x06manual\x18\x0e \x01(\bR\x06manual\x12\x14\n" +
+	"\x05repro\x18\x0f \x03(\tR\x05repro\"\xe6\x04\n" +
 	"\bRepoDeps\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x127\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateB\x02\x18\x01R\aupdates\x129\n" +
@@ -537,7 +663,9 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	" \x01(\x03B\x02\x18\x01R\x05runId\x12>\n" +
 	"\vrun_updates\x18\v \x03(\v2\x19.ermite.storage.DepUpdateB\x02\x18\x01R\n" +
 	"runUpdates\x122\n" +
-	"\abatches\x18\f \x03(\v2\x18.ermite.storage.DepBatchR\abatches\":\n" +
+	"\abatches\x18\f \x03(\v2\x18.ermite.storage.DepBatchR\abatches\x12,\n" +
+	"\x12auto_open_disabled\x18\r \x01(\bR\x10autoOpenDisabled\x124\n" +
+	"\tsplit_out\x18\x0e \x03(\v2\x17.ermite.storage.DepNameR\bsplitOut\":\n" +
 	"\fDepFirstSeen\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02atB/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
@@ -553,33 +681,36 @@ func file_ermite_storage_deps_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_deps_proto_rawDescData
 }
 
-var file_ermite_storage_deps_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_ermite_storage_deps_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_ermite_storage_deps_proto_goTypes = []any{
 	(*DepRef)(nil),                // 0: ermite.storage.DepRef
-	(*DepUpdate)(nil),             // 1: ermite.storage.DepUpdate
-	(*DepBatch)(nil),              // 2: ermite.storage.DepBatch
-	(*RepoDeps)(nil),              // 3: ermite.storage.RepoDeps
-	(*DepFirstSeen)(nil),          // 4: ermite.storage.DepFirstSeen
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*DepName)(nil),               // 1: ermite.storage.DepName
+	(*DepUpdate)(nil),             // 2: ermite.storage.DepUpdate
+	(*DepBatch)(nil),              // 3: ermite.storage.DepBatch
+	(*RepoDeps)(nil),              // 4: ermite.storage.RepoDeps
+	(*DepFirstSeen)(nil),          // 5: ermite.storage.DepFirstSeen
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_ermite_storage_deps_proto_depIdxs = []int32{
 	0,  // 0: ermite.storage.DepUpdate.ref:type_name -> ermite.storage.DepRef
-	1,  // 1: ermite.storage.DepBatch.updates:type_name -> ermite.storage.DepUpdate
-	1,  // 2: ermite.storage.DepBatch.run_updates:type_name -> ermite.storage.DepUpdate
+	2,  // 1: ermite.storage.DepBatch.updates:type_name -> ermite.storage.DepUpdate
+	2,  // 2: ermite.storage.DepBatch.run_updates:type_name -> ermite.storage.DepUpdate
 	0,  // 3: ermite.storage.DepBatch.mr_versions:type_name -> ermite.storage.DepRef
-	1,  // 4: ermite.storage.DepBatch.mr_updates:type_name -> ermite.storage.DepUpdate
-	1,  // 5: ermite.storage.RepoDeps.updates:type_name -> ermite.storage.DepUpdate
-	5,  // 6: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
-	5,  // 7: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
-	0,  // 8: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
-	1,  // 9: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
-	2,  // 10: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
-	5,  // 11: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	2,  // 4: ermite.storage.DepBatch.mr_updates:type_name -> ermite.storage.DepUpdate
+	6,  // 5: ermite.storage.DepBatch.queued_at:type_name -> google.protobuf.Timestamp
+	2,  // 6: ermite.storage.RepoDeps.updates:type_name -> ermite.storage.DepUpdate
+	6,  // 7: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
+	6,  // 8: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
+	0,  // 9: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
+	2,  // 10: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
+	3,  // 11: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
+	1,  // 12: ermite.storage.RepoDeps.split_out:type_name -> ermite.storage.DepName
+	6,  // 13: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_deps_proto_init() }
@@ -593,7 +724,7 @@ func file_ermite_storage_deps_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_deps_proto_rawDesc), len(file_ermite_storage_deps_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
