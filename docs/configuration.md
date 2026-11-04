@@ -67,6 +67,8 @@ The default lets crawlers index the home page, repository summaries, issues, mer
 | `ERMITE_DEPS_SNOOZE` | `168h` | Bernard stays quiet this long about an update that was declined. Go duration, above zero |
 | `ERMITE_DEPS_JOB_TIMEOUT` | `10m` | time budget of a dependency run once a runner has it: the `timeout-minutes` of its job, rounded up to the minute. The wait for a runner is CI's 24 hours. Go duration, above zero |
 | `ERMITE_DEPS_RUNNER_LABEL` | `ubuntu-latest` | runner label Bernard's dependency jobs ask for, not empty |
+| `ERMITE_DEPS_CONCURRENCY` | `1` | dependency runs at once across all repositories; at least 1 |
+| `ERMITE_DEPS_AUTO_OPEN` | `1` | `0` stops Bernard from opening the base merge requests by itself, whatever each repository's setting |
 
 ### `ERMITE_SECRETS_KEY`
 

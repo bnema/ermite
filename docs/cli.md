@@ -86,6 +86,8 @@ ermite mirror status [repo] | sync <repo>|--all [--force]   # sync --all: one ro
 ermite deps list [--repo <repo>] [--json]   # pending dependency updates (Bernard), owner only
 ermite deps check <repo>                 # check one repository now
 ermite deps open|ignore|snooze <repo>    # open/update the merge request, ignore these versions, hide for 7 days
+ermite deps auto <repo> on|off           # Bernard opens the base merge request by itself, or not
+ermite deps split <repo> <ecosystem> <name> [--join]   # a dependency's majors in their own batch, or back in their family
 
 ermite journal [--since 24h|7d|2026-10-01|<RFC 3339>] [--repo R] [--kind mr_merged,tag_created,…] [--limit N] [--json]
 ermite release pending [repo] [--json]   # repositories with commits after their latest tag
@@ -114,7 +116,7 @@ The web shows an **Archived** badge and hides write actions. `repo show` display
 
 ### Dependency updates
 
-`ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state`, `error` and `run_id`. The table has a `RUN` column with the run applying the updates, or the last one that tried (`-` for none); for a failed one, read its log with `ermite run view <repo> <run> --log`. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
+`ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state`, `error` and `run_id`. The table has a `RUN` column with the run applying the updates, or the last one that tried (`-` for none); for a failed one, read its log with `ermite run view <repo> <run> --log`. In the table, STATE shows the queue position (`queued #1` is next) and `adopted` when the branch was changed by hand; REPO reads `<repo> (auto off)` when Bernard does not open the base merge request by itself. `--json` also prints `auto_open`, `split_out` and, per batch, `adopted`, `queue_position`, `branch` and `repro`; `ermite deps --help` lists every field. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. `deps open` queues the batch and returns. `deps auto <repo> on|off` sets the repository's automatic merge request; `deps split <repo> <ecosystem> <name>` gives a dependency's majors their own batch, `--join` puts them back. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
 
 ### Activity journal
 

@@ -16,13 +16,54 @@ Bernard watches the dependencies of your repositories and lists the updates that
 
 Patch and minor updates share the base batch (key `""`), branch `bernard/deps`, and subject `build(deps): update N dependencies`. Newer majors are grouped by family, across directories, in one batch per family keyed `major:<ecosystem>:<family>`: an npm scope (`@scope/`), an Actions owner (`actions/`), for Go `host/owner/` on multi-owner hosts (github.com, gitlab.com, codeberg.org, bitbucket.org, git.bnema.dev, gitea.com, git.sr.ht, salsa.debian.org), `golang.org/x/`, and `host/` on any other (vanity) host such as `go.opentelemetry.io/`. Unscoped npm packages, gopkg.in modules and single-segment names have no family and get a batch of their own. The owner can split a dependency out of its family (`major:<ecosystem>:<name>`) and put it back. Its branch is `bernard/deps-major/<slug>-<hash>` (a batch upgraded from the per-dependency keys of schema 12 keeps its old branch) and its subject is `build(deps): update <name> to <major>` for one package, `build(deps): update <family>* to new majors` for several. The highest eligible same-major and cross-major versions can both be proposed for the same dependency. Floating Actions tags stay floating (`v4` → `v5`); pinned versions stay pinned (`v4.1.0` → `v5.0.0`).
 
+`ermite deps split <repo> <ecosystem> <name>` gives a dependency's majors a batch of their own; `--join` puts them back in their family. It is refused while a batch it changes is applying or queued.
+
 Open and Ignore act independently on each batch: `ermite deps open|ignore <repo> --batch KEY` takes the BATCH column of `ermite deps list`, and `base` (the default) names the base batch. Snooze remains repository-wide. Merging or closing one MR leaves other batches alone; an empty major batch is removed when its MR ends.
 
-The daily check preserves each batch's run and MR state. If a proposal vanishes while a major MR is open or a run is applying, the batch remains with no pending updates. An MR is **outdated** when it holds other versions than the batch now proposes (a newer version in the same major, say) or was built from other current versions (another batch updating the same dependency was merged). It stays open; Open/Update MR rebuilds its branch from the current default-branch tip. No MR is opened or refreshed automatically.
+The daily check preserves each batch's run and MR state. If a proposal vanishes while a major MR is open or a run is applying, the batch remains with no pending updates. An MR is **outdated** when it holds other versions than the batch now proposes (a newer version in the same major, say) or was built from other current versions (another batch updating the same dependency was merged). It stays open; Open/Update MR rebuilds its branch from the current default-branch tip.
+
+### Automatic merge requests
+
+After each check (daily, after a merge, or `ermite deps check`), Bernard queues the base batch by itself when:
+
+- `ERMITE_DEPS_AUTO_OPEN` is on (the default) and the repository's setting is on (`ermite deps auto <repo> on|off`, or the Inbox toggle);
+- the repository is not snoozed;
+- the batch has pending updates and no merge request, or an outdated one;
+- its branch is not [adopted](#adopted-branches), and it is not queued or applying;
+- it did not fail on these same versions: a failed batch is queued again only once its versions change.
+
+Majors are never queued automatically: open them by hand. Turning the repository setting on queues the base batch at once when these conditions hold.
+
+### The queue
+
+Open, Retry and the automatic merge requests put the batch in a queue (`queued`); `deps list` and the Inbox show its position, 1 being next. Bernard takes the batches in order: those opened by hand first, then the oldest.
+
+1. **Server step**, one batch at a time: Bernard writes the draft (see below), or for Actions-only batches the final commit and its merge request. It needs no runner.
+2. **Run step**: a `drafted` batch starts its dependency run when fewer than `ERMITE_DEPS_CONCURRENCY` (1 by default) runs are going across all repositories. An automatic batch also waits while any other workflow job waits for a runner, so normal CI goes first; a batch opened by hand does not wait.
+
+The queue is in the store: it resumes after a restart. Bernard looks at it on each Open, at the end of each run, on CI run and job changes, and every minute. When the versions of a batch opened by hand changed while it waited, it fails with `the pending dependency updates changed, reload and retry`; an automatic batch takes the current versions. Closing the batch's merge request or ignoring its updates takes it out of the queue.
+
+### Draft merge requests
+
+A batch with Go or npm updates gets its merge request before the runner works:
+
+1. The server step commits the manifest bump (`go.mod` and `package.json` versions only, no `go.sum` or lockfile) and the Actions updates on the batch branch, on top of the default-branch tip, and opens or updates the merge request as a draft: `WIP: <subject>`.
+2. The run updates the dependencies on that tip (see below). Its accepted report becomes a second commit on top of the draft, and the merge request is marked ready with the plain subject.
+3. If the run fails, the draft stays. Its description shows the failure and the commands that redo the update locally.
+
+Workflows do not run on the draft commit: its push and `pull_request` runs are held until the dependency run ends. The final commit runs them as any push; when it equals the draft, the held runs start on the draft. After a failure no run starts.
+
+A batch of Actions updates only gets one commit and a ready merge request.
+
+### Adopted branches
+
+A push by anyone but Bernard to a batch branch with an open merge request adopts it. Bernard also adopts a branch it finds moved when it writes. Bernard never rewrites an adopted branch: Open is refused with `the branch was changed by hand`, a run that ends only refreshes the merge request description, and no automatic merge request is queued. `deps list` marks the batch `adopted`. The adoption ends with its merge request (merged or closed).
+
+To finish a failed draft yourself, push the fix to its branch: the merge request becomes yours to merge.
 
 ## How updates are applied
 
-GitHub Actions updates are applied by the server. Go module and npm updates are applied by a runner, through a CI run: Bernard starts a run with the event `dependencies` on the tip of the default branch, with one job, **Update dependencies**. The job gets a read-only repository token for that commit, no secrets, no variables and no ID token.
+GitHub Actions updates are applied by the server. Go module and npm updates are applied by a runner, through a CI run: when the batch gets a run slot, Bernard starts a run with the event `dependencies` on the tip of the default branch, with one job, **Update dependencies**. The job gets a read-only repository token for that commit, no secrets, no variables and no ID token.
 
 A runner takes the job when it has the label set by `ERMITE_DEPS_RUNNER_LABEL` (`ubuntu-latest` by default) and every job kind the batch needs:
 
@@ -32,7 +73,7 @@ A runner takes the job when it has the label set by `ERMITE_DEPS_RUNNER_LABEL` (
 | `deps.npm` | npm updates |
 | `deps.gomod-path-majors` | Go majors that move to a new module path |
 
-The server learns a runner's kinds when it polls. If no registered runner with the label offers them, Open fails with `no runner supports <kind> updates` and starts no run.
+The server learns a runner's kinds when it polls. If no registered runner with the label offers them, the batch fails with `no runner supports <kind> updates` and no run starts.
 
 For Go, the runner runs `go get` and `go mod tidy` for the requested versions. For a new module path it first rewrites the import paths in the module's `.go` files (not `vendor`, `testdata` or nested modules). Go module downloads are kept in a per-repository cache on the runner, separate from workflow caches.
 
@@ -68,26 +109,23 @@ For `go.mod`:
 - other direct requirements may only be raised by Go, never lowered, removed, added or made indirect;
 - no `require` line is duplicated.
 
-The server checks the report when the job ends: a refused report fails the job and the run, with the reason in the log and in the Inbox. Otherwise Bernard commits the files, together with the Actions updates, on the batch branch on top of the commit the job ran on, and opens or updates the merge request. The merge request lists the versions Go raised or removed under "Also changed by Go".
+The server checks the report when the job ends: a refused report fails the job and the run, with the reason in the log and in the Inbox. Otherwise the commit's tree is the job's commit with the reported files and the Actions updates, its parent the draft commit. The merge request lists the versions Go raised or removed under "Also changed by Go".
 
 The run shows in the Actions tab, in `ermite run list` (`--workflow bernard/deps` keeps only these runs) and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
 
 - can be cancelled (`ermite run cancel`), which fails the update; closing the Bernard merge request cancels a run that is still going.
-- posts no check and cannot be re-run: click **Retry** in the Inbox to start a new one.
+- posts no check and cannot be re-run: **Retry** in the Inbox (or `ermite deps open`) queues the batch again.
 - has `ERMITE_DEPS_JOB_TIMEOUT` (10 minutes by default) from the moment a runner takes it, as the `timeout-minutes` of the job. The wait for a runner is CI's: a run no runner takes within 24 hours fails.
 - survives a server restart. If the server stops after the run ended and before Bernard applied the result, the update fails with a reason and you can retry.
 
-Nothing is retried on its own. A failed update keeps its updates listed with a bounded failure reason, such as `the run ended: failure`, and a link to the run.
+A failed update keeps its updates listed with a bounded failure reason, such as `the run ended: failure`, a link to the run and the commands that redo it locally. It is queued again on its own only as an automatic merge request with other versions.
 
 ## The Inbox table
 
-**Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked and how many batches and updates are pending. There is one row per batch:
+**Dependency updates** lists the repositories with pending updates; each one opens on its batches, collapsed by default, failed ones first. The header shows the last check and the queue: runs going, the limit and the batches waiting. Filters narrow the list. Per repository: **Re-check** and the **Auto-open** toggle.
 
-- A disclosure arrow, the repository name, the batch (**Updates** for base, `<name> → <major>` for a major), an **outdated** badge when its merge request holds other versions or was built from other current versions, the number of updates, their kinds (`1 major · 2 minor · 3 patch`, empty kinds left out) and a **new** badge for versions that appeared since the last check. Open the row to see each update: name, `current → latest`, kind, **new**, and the directory when it is not the repository root.
-- The status: `queued` or `running` with a link to the run while Bernard applies updates, `failed` with a link to the run (the Inbox shows the failure’s last output line; expand the row for the full excerpt), or the link to the open merge request (`MR !7`).
-- The main button: **Open MR** opens the Bernard merge request, **Update MR** updates it, **View MR** is a link when it already holds exactly the pending versions, **Retry** starts a new run after a failure. There is no button while a run is going.
-- The **⋯** menu holds **Ignore**, which hides exactly the listed versions (a newer version shows up again), and **Snooze**, which hides the repository for seven days (`ERMITE_DEPS_SNOOZE`).
+A batch row shows its updates, state (queued with its position, running with a link to the run, failed, or its merge request) and a main button: **Open MR**, **Update MR**, **View MR** or **Retry**. Family batches list their packages, and **⋯** holds **Ignore** and **Split**. A failed batch shows its failure and the commands that redo it locally.
 
-Each button sends the versions you saw. If a check changed the list in the meantime, or an update is being applied, the server refuses and you reload. The table updates live and keeps the rows you opened. Only the owner sees the Inbox and these buttons; everyone else gets a 404.
+Each button sends the versions you saw. If a check changed the list in the meantime, or an update is being applied, the server refuses and you reload. The table updates live. Only the owner sees the Inbox and these buttons; everyone else gets a 404.
 
-The same actions are available as `ermite deps list|check|open|ignore|snooze` ([CLI](cli.md#dependency-updates)) and as `DepsService` in the API.
+The same actions are available as `ermite deps list|check|open|ignore|snooze|auto|split` ([CLI](cli.md#dependency-updates)) and as `DepsService` in the API.

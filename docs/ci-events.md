@@ -18,6 +18,8 @@
 
 [Bernard](bernard.md) starts it to apply dependency updates. The run has one job, **Update dependencies**, with no workflow file: it is ready at once and goes to a runner that offers the `deps` job kind. It is never trusted, so its token is read-only and it gets no secrets. It posts no check, starts no `workflow_run` workflow and cannot be re-run. Workflow `Dependencies`, actor `bernard`.
 
+The draft commit Bernard pushes before this run starts no `push` or `pull_request` run: they are held until the dependency run ends, and run on the commit the branch then holds. A failed dependency run starts none. See [Draft merge requests](bernard.md#draft-merge-requests).
+
 ## `pull_request`
 
 A merge request is a pull request for workflows.

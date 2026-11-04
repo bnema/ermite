@@ -210,7 +210,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1.22+, Bun; workspaces included; Yarn Berry is not supported because its installs can run repository code; see `docs/bernard.md`). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
 
-Updates come in batches, one MR each: the base batch (patch and minor, branch `bernard/deps`) and one batch per dependency major (branch `bernard/deps-major/<slug>`).
+Updates come in batches, one MR each: the base batch (patch and minor, branch `bernard/deps`) and one batch per major family (`major:<ecosystem>:<family>`, e.g. an npm scope, an Actions owner, `golang.org/x/`; branch `bernard/deps-major/<slug>-<hash>`). A dependency without a family, or split out, has its own major batch.
 
 | Command | Notes |
 |---|---|
@@ -219,8 +219,16 @@ Updates come in batches, one MR each: the base batch (patch and minor, branch `b
 | `deps open <repo> [--batch KEY]` | open/update the batch MR |
 | `deps ignore <repo> [--batch KEY]` | ignore the batch’s pending versions |
 | `deps snooze <repo>` | hide the whole repo for `ERMITE_DEPS_SNOOZE` |
+| `deps auto <repo> on\|off` | Bernard opens the base batch MR by itself after each check, or not; `on` queues it at once when due |
+| `deps split <repo> <ecosystem> <name> [--join]` | a dependency's majors in their own batch; `--join` puts them back in the family; refused while a batch it changes is applying or queued |
 
-`--batch` takes the BATCH column of `deps list`; it defaults to `base`. JSON: `batches` (`key`, empty = base; `updates`; `state`; `error`; `run_id`; `merge_request_number`; `outdated`); updates have `new_name` for Go path majors. Top-level `updates`, `state`, `run_id`, `merge_request_number` describe the base batch.
+All `deps` subcommands take `--json`.
+
+`--batch` takes the BATCH column of `deps list`; it defaults to `base`. In the table STATE reads `queued #N` (1 = next) and `adopted`; REPO reads `<repo> (auto off)`. JSON: `batches` (`key`, empty = base; `updates`; `state`: idle, queued, drafted, applying or failed; `error`; `run_id`; `merge_request_number`; `outdated`; `adopted`; `queue_position`; `branch`; `repro`), `auto_open`, `split_out` (`ecosystem`, `name`); updates have `new_name` for Go path majors. Top-level `updates`, `state`, `run_id`, `merge_request_number` describe the base batch.
+
+`open` queues the batch and returns: by-hand batches go first, at most `ERMITE_DEPS_CONCURRENCY` runs at once; automatic ones also wait for waiting workflow jobs. For Go/npm the queue pushes a draft MR (`WIP:`, manifest bump only, no CI on it), then the runner's commit on top marks it ready and CI runs. A failed run keeps the draft with the failure and local repro commands (`repro`); no CI runs. Automatic MRs (`ERMITE_DEPS_AUTO_OPEN`, `deps auto`) cover the base batch only, never majors, and a failure is not retried until the versions change.
+
+To finish a failed draft, push the fix to its branch: the batch becomes `adopted`, Bernard never rewrites it (`open` is refused) until the MR is merged or closed.
 
 `open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors or `deps.npm` for npm updates. Capabilities are learned when the runner polls; otherwise the batch fails with `no runner supports <kind> updates` and no run starts.
 
