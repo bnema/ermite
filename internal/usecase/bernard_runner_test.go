@@ -222,7 +222,7 @@ func (rr *runnerRig) open(ups ...domain.DepUpdate) domain.RepoDeps {
 	for i, u := range ups {
 		refs[i] = u.DepRef
 	}
-	got, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), refs)
+	got, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), refs)
 	require.NoError(rr.t, err)
 	return got
 }
@@ -279,7 +279,7 @@ func TestBernardOpenGoStartsARunAtTheTip(t *testing.T) {
 func TestBernardOpenWhileApplyingStartsNoSecondRun(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	rr.open(goUpdate())
-	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
+	_, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	assert.Equal(t, 1, rr.starts)
 	assert.Equal(t, domain.DepsApplying, rr.snapshot().Batches[0].State, "the first run is still the record's")
@@ -291,7 +291,7 @@ func TestBernardOpenStartFailureFailsTheRecord(t *testing.T) {
 	rr.runs.ExpectedCalls = nil
 	rr.runs.EXPECT().StartDepsRun(mock.Anything, mock.Anything).Return(domain.CIRun{}, errors.New("store down\nsecond line"))
 	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
+	_, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.Error(t, err)
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsFailed, got.Base().State)
@@ -313,7 +313,7 @@ func TestBernardOpenCancelsTheRunWhenTheRecordMoved(t *testing.T) {
 		})
 	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(5)).Return(nil).Once()
 	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
+	_, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsDrafted, got.Base().State, "the draft is open, waiting for a run")
@@ -324,7 +324,7 @@ func TestBernardOpenGoRefusesABadGoVersion(t *testing.T) {
 	for _, line := range []string{"go 1.25rc1", "go 2.0"} {
 		rr := newRunnerRig(t, goModText(line, "", textOld))
 		rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-		_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
+		_, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 		require.Error(t, err, line)
 		assert.Equal(t, domain.DepsFailed, rr.rec.Base().State)
 		assert.Contains(t, rr.rec.Base().Error, "Go version")
@@ -623,12 +623,13 @@ func TestBernardOpenMajorBatchByKey(t *testing.T) {
 	key := domain.MajorBatchKey(up)
 	base := domain.DepBatch{State: domain.DepsApplying, RunID: 900, MR: 17}
 	rr.rec.Batches = []domain.DepBatch{base, {Key: key, Updates: []domain.DepUpdate{up}}}
-	_, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, "missing", []domain.DepRef{up.DepRef})
+	rr.b.SetConcurrencyForTest(2) // the base batch holds one slot
+	_, err := rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, "missing", []domain.DepRef{up.DepRef})
 	require.ErrorIs(t, err, domain.ErrNotFound)
 	require.Zero(t, rr.starts)
-	_, err = rr.b.Open(t.Context(), domain.Owner(), rr.repo, key, nil)
+	_, err = rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, key, nil)
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
-	got, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, key, []domain.DepRef{up.DepRef})
+	got, err := rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, key, []domain.DepRef{up.DepRef})
 	require.NoError(t, err)
 	require.Equal(t, base, got.Batches[0])
 	require.Equal(t, domain.DepsApplying, got.Batches[1].State)
@@ -685,7 +686,7 @@ func TestBernardOpenRequiresCapableRunner(t *testing.T) {
 			u := goUpdate()
 			u.NewName = tc.newName
 			rr.rec.Base().Updates = []domain.DepUpdate{u}
-			_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, "", []domain.DepRef{u.DepRef})
+			_, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, "", []domain.DepRef{u.DepRef})
 			require.ErrorContains(t, err, "no runner supports "+tc.want+" updates")
 			require.Equal(t, domain.DepsFailed, rr.rec.Base().State)
 			require.Contains(t, rr.rec.Base().Error, "no runner supports "+tc.want+" updates")
@@ -727,7 +728,7 @@ func TestBernardOpenNamesTheMissingRunnerKind(t *testing.T) {
 			u := goUpdate()
 			u.NewName = "golang.org/x/text/v2"
 			rr.rec.Base().Updates = []domain.DepUpdate{u}
-			_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, "", []domain.DepRef{u.DepRef})
+			_, err := rr.b.OpenNow(context.Background(), domain.Owner(), rr.repo, "", []domain.DepRef{u.DepRef})
 			require.EqualError(t, err, "failed precondition: no runner supports "+tc.want+" updates")
 		})
 	}
@@ -922,7 +923,7 @@ func TestBernardAdoptedBranchNotRewritten(t *testing.T) {
 		assert.Empty(t, rr.readied, "the title is the human's")
 		assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
 
-		_, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, "", snap.Base().Refs())
+		_, err := rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, "", snap.Base().Refs())
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		require.ErrorContains(t, err, "the branch was changed by hand")
 		assert.Equal(t, 1, rr.starts)
@@ -932,7 +933,7 @@ func TestBernardAdoptedBranchNotRewritten(t *testing.T) {
 		rr.rec.Base().Head, rr.rec.Base().MR = oid("d"), 7
 		rr.branches["bernard/deps"] = oid("5")
 		rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-		_, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, "", []domain.DepRef{goUpdate().DepRef})
+		_, err := rr.b.OpenNow(t.Context(), domain.Owner(), rr.repo, "", []domain.DepRef{goUpdate().DepRef})
 		require.ErrorContains(t, err, "the branch was changed by hand")
 		assert.True(t, rr.snapshot().Batches[0].Adopted)
 		assert.Equal(t, domain.DepsIdle, rr.snapshot().Batches[0].State)

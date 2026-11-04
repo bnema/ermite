@@ -32,8 +32,10 @@ type Inbox struct {
 	// git gives the head of the source branch; nil leaves HeadID as stored.
 	git ports.MergeGit
 	// deps is nil when Bernard is off.
-	deps  ports.DepsStore
-	clock ports.Clock
+	deps ports.DepsStore
+	// depsLimit is the dependency run limit.
+	depsLimit int
+	clock     ports.Clock
 	// journal and reader give the activity journal; nil leaves it empty.
 	journal ports.JournalStore
 	repos   ports.GitRepos
@@ -141,9 +143,11 @@ type InboxConfig struct {
 	CI      ports.CIStore
 	// Git reads the head of each open request's source branch. Optional.
 	Git ports.MergeGit
-	// Deps and Clock add the Bernard section; optional.
-	Deps  ports.DepsStore
-	Clock ports.Clock
+	// Deps and Clock add the Bernard section; optional. DepsLimit is the
+	// dependency run limit shown with the queue (one when zero).
+	Deps      ports.DepsStore
+	Clock     ports.Clock
+	DepsLimit int
 	// Journal, Repos and Reader give the activity journal and the commits
 	// since the nearest tag. Optional; they need Clock.
 	Journal ports.JournalStore
@@ -154,7 +158,7 @@ type InboxConfig struct {
 // NewInbox builds the inbox use case.
 func NewInbox(cfg InboxConfig) *Inbox {
 	return &Inbox{
-		meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI, git: cfg.Git, deps: cfg.Deps, clock: cfg.Clock,
+		meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI, git: cfg.Git, deps: cfg.Deps, clock: cfg.Clock, depsLimit: max(cfg.DepsLimit, 1),
 		journal: cfg.Journal, repos: cfg.Repos, reader: cfg.Reader,
 	}
 }
@@ -504,6 +508,10 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 			return out, fmt.Errorf("list dependency updates: %w", err)
 		}
 		now := in.clock.Now()
+		// The queue spans every record, snoozed or archived included: they
+		// hold their place and their slot.
+		queue, order, _ := depsQueueOf(all, in.depsLimit)
+		out.DepsQueue = queue
 		for _, d := range all {
 			if !slices.ContainsFunc(d.Batches, domain.DepBatch.Visible) || d.SnoozedUntil.After(now) {
 				continue
@@ -527,7 +535,7 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 				if d.CheckedAt.After(out.DepsCheckedAt) {
 					out.DepsCheckedAt = d.CheckedAt
 				}
-				item := ports.InboxDeps{Rec: d, Batch: batch}
+				item := ports.InboxDeps{Rec: d, Batch: batch, QueuePos: domain.DepsQueuePosition(order, d.Repo, batch.Key)}
 				if batch.RunID != 0 && in.ci != nil {
 					run, err := in.ci.GetRun(ctx, d.Repo, batch.RunID)
 					switch {

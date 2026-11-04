@@ -81,9 +81,12 @@ func TestBernardOpenMRForActions(t *testing.T) {
 
 	res, err := deps.OpenDependencyUpdates(c.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: expected()})
 	require.NoError(t, err)
-	number := depsBase(res.GetUpdates()).GetMergeRequestNumber()
+	// Open queues the batch; the queue applies it in the server.
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_QUEUED, depsBase(res.GetUpdates()).GetState())
+	got := settled(c, deps, "")
+	number := depsBase(got).GetMergeRequestNumber()
 	require.NotZero(t, number)
-	assert.Equal(t, pb.RepoDependencyUpdates_STATE_IDLE, depsBase(res.GetUpdates()).GetState())
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_IDLE, depsBase(got).GetState())
 
 	// One signed commit on top of main that only changes the version.
 	assert.Equal(t, "1", c.bareGit("proj", "rev-list", "--count", main+"..refs/heads/bernard/deps"))
@@ -130,9 +133,9 @@ func TestBernardOpenMRForActions(t *testing.T) {
 	require.NoError(t, err)
 	pending = up.GetUpdates()
 	require.Equal(t, number, depsBase(pending).GetMergeRequestNumber())
-	res, err = deps.OpenDependencyUpdates(c.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: expected()})
+	_, err = deps.OpenDependencyUpdates(c.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: expected()})
 	require.NoError(t, err)
-	assert.Equal(t, number, depsBase(res.GetUpdates()).GetMergeRequestNumber())
+	assert.Equal(t, number, depsBase(settled(c, deps, "")).GetMergeRequestNumber())
 	head2 := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
 	assert.NotEqual(t, head, head2)
 	assert.Equal(t, main2, c.bareGit("proj", "rev-parse", head2+"^"))
@@ -226,9 +229,9 @@ func newBernardGoRig(t *testing.T) *bernardGoRig {
 
 func (rig *bernardGoRig) open() *pb.RepoDependencyUpdates {
 	rig.t.Helper()
-	res, err := rig.deps.OpenDependencyUpdates(rig.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: rig.expected})
+	_, err := rig.deps.OpenDependencyUpdates(rig.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: rig.expected})
 	require.NoError(rig.t, err)
-	return res.GetUpdates()
+	return settled(rig.ciHarness, rig.deps, "")
 }
 
 // record is the dependency record of the repository.
@@ -525,9 +528,9 @@ func TestBernardSeparateMinorAndMajorMergeRequests(t *testing.T) {
 		for _, u := range batch.Updates {
 			expected = append(expected, &pb.DependencyVersion{Ecosystem: u.Ecosystem, Directory: u.Directory, Name: u.Name, Version: u.Latest})
 		}
-		res, err := deps.OpenDependencyUpdates(c.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", Batch: batch.Key, ExpectedVersions: expected})
+		_, err := deps.OpenDependencyUpdates(c.ctx, &pb.OpenDependencyUpdatesRequest{Repo: "proj", Batch: batch.Key, ExpectedVersions: expected})
 		require.NoError(t, err)
-		for _, b := range res.Updates.Batches {
+		for _, b := range settled(c, deps, batch.Key).Batches {
 			if b.Key == batch.Key {
 				numbers[b.Key] = b.MergeRequestNumber
 			}
@@ -575,4 +578,29 @@ func depsBase(r *pb.RepoDependencyUpdates) *pb.DependencyBatch {
 		}
 	}
 	return nil
+}
+
+// settled waits until the batch key of proj leaves the queue (Open only
+// queues it) and returns the record then.
+func settled(c *ciHarness, deps ermiteconnect.DepsServiceClient, key string) *pb.RepoDependencyUpdates {
+	c.t.Helper()
+	var rec *pb.RepoDependencyUpdates
+	c.waitFor("the batch "+key+" to leave the queue", func() bool {
+		res, err := deps.ListDependencyUpdates(c.ctx, &pb.ListDependencyUpdatesRequest{})
+		require.NoError(c.t, err)
+		for _, r := range res.GetRepos() {
+			if r.GetRepo() != "proj" {
+				continue
+			}
+			for _, b := range r.GetBatches() {
+				if b.GetKey() == key {
+					rec = r
+					st := b.GetState()
+					return st != pb.RepoDependencyUpdates_STATE_QUEUED && st != pb.RepoDependencyUpdates_STATE_DRAFTED
+				}
+			}
+		}
+		return false
+	})
+	return rec
 }

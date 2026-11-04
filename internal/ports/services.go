@@ -445,4 +445,7 @@ type DepsService interface {
 	Open(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)
 	Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)
 	Snooze(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error)
+	// Queue returns the dependency run queue: its counts and its order
+	// (domain.DepsQueueOrder).
+	Queue(ctx context.Context, p domain.Principal) (DepsQueue, []domain.DepsQueueEntry, error)
 }

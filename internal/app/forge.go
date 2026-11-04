@@ -450,7 +450,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
 			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
 			JobTimeout: cfg.DepsJobTimeout, Runs: f.CI, Runners: store.CI(), RunnerLabel: cfg.DepsRunnerLabel,
-			Hold: f.CI,
+			Hold: f.CI, Jobs: store.CI(), Concurrency: cfg.DepsConcurrency, AutoOpen: cfg.DepsAutoOpen,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("bernard: %w", err)
@@ -462,7 +462,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(), CI: store.CI(),
-		Git: git, Deps: inboxDeps, Clock: clock, Journal: journalStore, Repos: git, Reader: reader,
+		Git: git, Deps: inboxDeps, Clock: clock, Journal: journalStore, Repos: git, Reader: reader, DepsLimit: cfg.DepsConcurrency,
 	})
 	f.Pushes.WithRefsObserver(f.Inbox) // a push makes its tag warning stale
 	f.CI.SetPullGate(f.MergeRequests)

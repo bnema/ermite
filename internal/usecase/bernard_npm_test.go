@@ -61,7 +61,7 @@ func testBernardPNPM(t *testing.T, lock string) {
 		job = p.Job
 		return domain.CIRun{ID: 77, Sha: oid("a").String()}, nil
 	})
-	_, err = r.b.Open(context.Background(), domain.Owner(), r.repo, "", checked.Base().Refs())
+	_, err = r.b.OpenNow(context.Background(), domain.Owner(), r.repo, "", checked.Base().Refs())
 	require.NoError(t, err)
 	require.Equal(t, []string{"deps", "deps.npm"}, job.Requires)
 	require.Equal(t, "20", job.NodeVersion)

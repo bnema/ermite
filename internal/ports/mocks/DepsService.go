@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -357,6 +358,80 @@ func (_c *DepsService_Open_Call) Return(repoDeps domain.RepoDeps, err error) *De
 }
 
 func (_c *DepsService_Open_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)) *DepsService_Open_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Queue provides a mock function for the type DepsService
+func (_mock *DepsService) Queue(ctx context.Context, p domain.Principal) (ports.DepsQueue, []domain.DepsQueueEntry, error) {
+	ret := _mock.Called(ctx, p)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Queue")
+	}
+
+	var r0 ports.DepsQueue
+	var r1 []domain.DepsQueueEntry
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.DepsQueue, []domain.DepsQueueEntry, error)); ok {
+		return returnFunc(ctx, p)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.DepsQueue); ok {
+		r0 = returnFunc(ctx, p)
+	} else {
+		r0 = ret.Get(0).(ports.DepsQueue)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) []domain.DepsQueueEntry); ok {
+		r1 = returnFunc(ctx, p)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).([]domain.DepsQueueEntry)
+		}
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.Principal) error); ok {
+		r2 = returnFunc(ctx, p)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// DepsService_Queue_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Queue'
+type DepsService_Queue_Call struct {
+	*mock.Call
+}
+
+// Queue is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+func (_e *DepsService_Expecter) Queue(ctx any, p any) *DepsService_Queue_Call {
+	return &DepsService_Queue_Call{Call: _e.mock.On("Queue", ctx, p)}
+}
+
+func (_c *DepsService_Queue_Call) Run(run func(ctx context.Context, p domain.Principal)) *DepsService_Queue_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsService_Queue_Call) Return(depsQueue ports.DepsQueue, depsQueueEntrys []domain.DepsQueueEntry, err error) *DepsService_Queue_Call {
+	_c.Call.Return(depsQueue, depsQueueEntrys, err)
+	return _c
+}
+
+func (_c *DepsService_Queue_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.DepsQueue, []domain.DepsQueueEntry, error)) *DepsService_Queue_Call {
 	_c.Call.Return(run)
 	return _c
 }

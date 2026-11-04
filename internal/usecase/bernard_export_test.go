@@ -20,3 +20,32 @@ func (b *Bernard) SetHoldForTest(h interface {
 }) {
 	b.cfg.Hold = h
 }
+
+// Drain takes every queue step that can be taken now, as the queue loop does.
+func (b *Bernard) Drain(ctx context.Context) { b.drain(ctx) }
+
+// OpenNow is Open followed by the drain of the queue: the work Open used to
+// do at once. It returns the record after the drain, or the error of the
+// last queue step on the batch.
+func (b *Bernard) OpenNow(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error) {
+	if _, err := b.Open(ctx, p, repo, key, expected); err != nil {
+		return domain.RepoDeps{}, err
+	}
+	b.drainMu.Lock()
+	b.stepErr = nil
+	b.drainMu.Unlock()
+	b.drain(ctx)
+	b.drainMu.Lock()
+	err := b.stepErr
+	b.drainMu.Unlock()
+	if err != nil {
+		return domain.RepoDeps{}, err
+	}
+	return b.cfg.Store.Get(ctx, repo)
+}
+
+// SetConcurrencyForTest sets the dependency run limit of b.
+func (b *Bernard) SetConcurrencyForTest(n int) { b.cfg.Concurrency = n }
+
+// MetaForTest returns the repository metadata store of b.
+func (b *Bernard) MetaForTest() any { return b.cfg.Meta }

@@ -14,6 +14,7 @@ import (
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
@@ -101,11 +102,17 @@ func TestDepsListWithRepoFilter(t *testing.T) {
 	repo, err := domain.ParseRepoName("app")
 	require.NoError(t, err)
 	svc := mocks.NewDepsService(t)
-	svc.EXPECT().List(mock.Anything, mock.Anything, repo).Return([]domain.RepoDeps{{Repo: repo}}, nil).Once()
+	svc.EXPECT().List(mock.Anything, mock.Anything, repo).Return([]domain.RepoDeps{{Repo: repo, Batches: []domain.DepBatch{{State: domain.DepsQueued}, {Key: "k"}}}}, nil).Once()
+	svc.EXPECT().Queue(mock.Anything, mock.Anything).Return(ports.DepsQueue{Running: 1, Limit: 2, Queued: 3}, []domain.DepsQueueEntry{{Repo: repo, Key: "x"}, {Repo: repo, Key: ""}}, nil).Once()
 	r := "app"
 	res, err := (&depsService{svc}).ListDependencyUpdates(context.Background(), &pb.ListDependencyUpdatesRequest{Repo: &r})
 	require.NoError(t, err)
 	require.Len(t, res.Repos, 1)
+	assert.EqualValues(t, 1, res.GetQueue().GetRunning())
+	assert.EqualValues(t, 2, res.GetQueue().GetLimit())
+	assert.EqualValues(t, 3, res.GetQueue().GetQueued())
+	assert.EqualValues(t, 2, res.Repos[0].Batches[0].GetQueuePosition())
+	assert.Zero(t, res.Repos[0].Batches[1].GetQueuePosition())
 }
 
 func TestRepoDepsBatchesToPB(t *testing.T) {

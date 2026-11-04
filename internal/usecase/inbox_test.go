@@ -258,3 +258,32 @@ func TestInboxFillsHeadsFromGitForReturnedRequestsOnly(t *testing.T) {
 	assert.Equal(t, fresh, heads[1])
 	assert.True(t, heads[2].IsZero(), "a gone branch leaves the head zero")
 }
+
+func TestInboxDepsQueue(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
+	alpha := domain.RepoDeps{Repo: name(t, "alpha"), Batches: []domain.DepBatch{
+		{Updates: upd, State: domain.DepsDrafted, QueuedAt: now.Add(-time.Hour)},
+		{Key: "m", Updates: upd, State: domain.DepsApplying},
+	}}
+	beta := domain.RepoDeps{Repo: name(t, "beta"), Batches: []domain.DepBatch{{Updates: upd, State: domain.DepsQueued, Manual: true, QueuedAt: now}}}
+
+	mrs, is, meta, store, clock := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock, DepsLimit: 2})
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	clock.EXPECT().Now().Return(now)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{alpha, beta}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(domain.Repo{Name: name(t, "alpha")}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "beta")).Return(domain.Repo{Name: name(t, "beta")}, nil)
+
+	got, err := in.Overview(context.Background(), domain.Owner())
+	require.NoError(t, err)
+	assert.Equal(t, ports.DepsQueue{Running: 1, Limit: 2, Queued: 2}, got.DepsQueue)
+	pos := map[string]int{}
+	for _, d := range got.Deps {
+		pos[d.Rec.Repo.String()+"/"+string(d.Batch.Key)] = d.QueuePos
+	}
+	assert.Equal(t, map[string]int{"alpha/": 2, "alpha/m": 0, "beta/": 1}, pos, "manual first, 1 = next")
+}

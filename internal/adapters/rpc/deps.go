@@ -47,7 +47,10 @@ func depsStateToPB(s domain.DepsState) pb.RepoDependencyUpdates_State {
 	return pb.RepoDependencyUpdates_STATE_UNSPECIFIED
 }
 
-func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
+func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates { return repoDepsToPBQueue(d, nil) }
+
+// repoDepsToPBQueue is repoDepsToPB with the queue positions of order.
+func repoDepsToPBQueue(d domain.RepoDeps, order []domain.DepsQueueEntry) *pb.RepoDependencyUpdates {
 	base := d.Base()
 	//nolint:staticcheck // fills the deprecated base fields older clients read
 	out := &pb.RepoDependencyUpdates{
@@ -65,6 +68,7 @@ func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
 		out.Batches = append(out.Batches, &pb.DependencyBatch{
 			Key: string(batch.Key), Updates: updates, State: depsStateToPB(batch.State), Error: batch.Error, RunId: batch.RunID,
 			MergeRequestNumber: batch.MR, Outdated: batch.Outdated(), Adopted: batch.Adopted, Branch: batch.BranchName(), Repro: batch.Repro,
+			QueuePosition: int32(domain.DepsQueuePosition(order, d.Repo, batch.Key)), //nolint:gosec // a queue position is small
 		})
 	}
 
@@ -91,9 +95,15 @@ func (s *depsService) ListDependencyUpdates(ctx context.Context, req *pb.ListDep
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	out := &pb.ListDependencyUpdatesResponse{}
+	queue, order, err := s.deps.Queue(ctx, caller(ctx))
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	out := &pb.ListDependencyUpdatesResponse{Queue: &pb.DependencyQueue{
+		Running: int32(queue.Running), Limit: int32(queue.Limit), Queued: int32(queue.Queued), //nolint:gosec // small counts
+	}}
 	for _, d := range list {
-		out.Repos = append(out.Repos, repoDepsToPB(d))
+		out.Repos = append(out.Repos, repoDepsToPBQueue(d, order))
 	}
 	return out, nil
 }

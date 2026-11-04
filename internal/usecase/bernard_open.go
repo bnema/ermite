@@ -79,31 +79,35 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	if batch.Adopted {
 		return domain.RepoDeps{}, errBranchAdopted
 	}
-	var runnerSide bool
+	if batch.Queued() {
+		return domain.RepoDeps{}, fmt.Errorf("%w: the dependency updates are queued already", domain.ErrPreconditionFailed)
+	}
 	for _, u := range batch.Updates {
-		eco := b.ecosystem(u.Ecosystem)
-		if eco == nil {
+		if b.ecosystem(u.Ecosystem) == nil {
 			return domain.RepoDeps{}, fmt.Errorf("%w: unknown ecosystem %q", domain.ErrPreconditionFailed, u.Ecosystem)
 		}
-		if !eco.ApplyInServer() {
-			runnerSide = true
+	}
+	// The queue does the work (bernard_queue.go): the versions accepted are
+	// kept so that it can tell whether they changed meanwhile.
+	now := b.cfg.Clock.Now()
+	rec, err := b.cfg.Store.Mutate(ctx, repoName, func(r *domain.RepoDeps) (bool, error) {
+		if err := depsPrecondition(*r, key, expected); err != nil {
+			return false, err
 		}
-	}
-	var rec domain.RepoDeps
-	if runnerSide {
-		rec, err = b.openDraft(ctx, repoName, batch, expected)
-	} else {
-		rec, err = b.apply(ctx, repoName, batch, func(r domain.RepoDeps) error { return movedPrecondition(r, key, expected) })
-	}
+		_, i, _ := r.Batch(key)
+		stored := &r.Batches[i]
+		if stored.Queued() {
+			return false, fmt.Errorf("%w: the dependency updates are queued already", domain.ErrPreconditionFailed)
+		}
+		stored.State, stored.QueuedAt, stored.Manual = domain.DepsQueued, now, true
+		stored.Error, stored.Repro, stored.RunUpdates = "", nil, slices.Clone(stored.Updates)
+		return true, nil
+	})
 	if err != nil {
-		switch {
-		case errors.Is(err, errBranchAdopted):
-			b.markAdopted(ctx, repoName, key, true)
-		case !errors.Is(err, errRecordMoved): // the record is not ours to fail
-			b.fail(ctx, repoName, key, err)
-		}
-		return domain.RepoDeps{}, err
+		return domain.RepoDeps{}, fmt.Errorf("queue the dependency updates: %w", err)
 	}
+	b.changed(ctx, repoName)
+	b.wakeQueue()
 	return rec, nil
 }
 
@@ -391,10 +395,11 @@ func (b *Bernard) startRunWith(ctx context.Context, name domain.RepoName, batch 
 	return rec, nil
 }
 
-// openDraft writes the manifest bump of batch on its branch at the tip of the
-// default branch, opens or refreshes its merge request as a draft and starts
-// the runner job. The caller holds the repository lock.
-func (b *Bernard) openDraft(ctx context.Context, name domain.RepoName, batch domain.DepBatch, expected []domain.DepRef) (domain.RepoDeps, error) {
+// writeDraft writes the manifest bump of batch on its branch at the tip of the
+// default branch and opens or refreshes its merge request as a draft: the
+// batch is Drafted, waiting for a run slot (runStep). The caller holds the
+// repository lock.
+func (b *Bernard) writeDraft(ctx context.Context, name domain.RepoName, batch domain.DepBatch, expected []domain.DepRef) (domain.RepoDeps, error) {
 	params, err := b.runParams(ctx, name, batch)
 	if err != nil {
 		return domain.RepoDeps{}, err
@@ -454,8 +459,8 @@ func (b *Bernard) openDraft(ctx context.Context, name domain.RepoName, batch dom
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("record the draft merge request: %w", err)
 	}
-	stored, _, _ := rec.Batch(batch.Key)
-	return b.startRunWith(ctx, name, stored, expected, params)
+	b.changed(ctx, name)
+	return rec, nil
 }
 
 // bumpChanges is the draft content of ups at tip: the manifest bump of the
@@ -920,6 +925,8 @@ func (b *Bernard) watchMergeRequests(sub <-chan domain.Event) {
 				b.onMRDone(e.MergeRequest, true)
 			case domain.PushEvent:
 				b.onPush(e)
+			case domain.RunUpdated, domain.JobUpdated:
+				b.wakeQueue() // a slot or a runner may be free
 			}
 		}
 	}
@@ -1009,7 +1016,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		}
 		batch.MR, batch.MRVersions, batch.MRUpdates = 0, nil, nil
 		batch.Adopted, batch.Head = false, domain.ObjectID{} // the branch is Bernard's again
-		if !merged && (batch.State == domain.DepsApplying || batch.State == domain.DepsDrafted) {
+		if batch.Queued() || (!merged && batch.State == domain.DepsApplying) {
 			batch.State, batch.Error, batch.RunUpdates = domain.DepsIdle, "", nil
 		}
 		if !merged {

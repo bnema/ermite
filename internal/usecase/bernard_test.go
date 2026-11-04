@@ -354,7 +354,7 @@ func TestBernardOwnerOnly(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		_, err = r.b.Check(ctx, p, r.repo)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		_, err = r.b.Open(ctx, p, r.repo, domain.DepBatchKey(""), nil)
+		_, err = r.b.OpenNow(ctx, p, r.repo, domain.DepBatchKey(""), nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		_, err = r.b.Ignore(ctx, p, r.repo, domain.DepBatchKey(""), nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
@@ -365,7 +365,7 @@ func TestBernardOwnerOnly(t *testing.T) {
 
 func TestBernardOpenUnavailable(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
-	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), nil)
+	_, err := r.b.OpenNow(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), nil)
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 }
 

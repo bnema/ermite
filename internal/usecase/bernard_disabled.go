@@ -60,3 +60,11 @@ func (DisabledBernard) Split(_ context.Context, p domain.Principal, _ domain.Rep
 func (DisabledBernard) Snooze(_ context.Context, p domain.Principal, _ domain.RepoName) (domain.RepoDeps, error) {
 	return disabledBernard(p)
 }
+
+// Queue returns an empty queue to the owner.
+func (DisabledBernard) Queue(_ context.Context, p domain.Principal) (ports.DepsQueue, []domain.DepsQueueEntry, error) {
+	if !p.HasOwnerRights() {
+		return ports.DepsQueue{}, nil, domain.ErrNotFound
+	}
+	return ports.DepsQueue{}, nil, nil
+}

@@ -201,6 +201,7 @@ func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain
 	if closed {
 		return // shutting down: the next start settles the record from the run
 	}
+	defer b.wakeQueue() // the run's slot is free
 	rec, err := b.currentRecord(ctx, run)
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Str("repo", run.Repo.String()).Msg("bernard: read the record of a dependency run")

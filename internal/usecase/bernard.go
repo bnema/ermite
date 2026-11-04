@@ -114,6 +114,10 @@ type Bernard struct {
 
 	lockMu sync.Mutex
 	locks  map[domain.RepoName]*sync.Mutex // one lock per repository, for Open and the merge request events
+
+	wake    chan struct{} // wakes the queue (bernard_queue.go)
+	drainMu sync.Mutex    // one drain of the queue at a time
+	stepErr error         // the error of the last queue step, under drainMu
 }
 
 var _ ports.DepsService = (*Bernard)(nil)
@@ -141,8 +145,11 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 	if cfg.JobTimeout <= 0 {
 		cfg.JobTimeout = defaultDepsJobTimeout
 	}
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = 1
+	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &Bernard{cfg: cfg, cron: domain.CronSchedule{Cron: cron, Loc: time.UTC}, ctx: ctx, stop: stop}, nil
+	return &Bernard{cfg: cfg, cron: domain.CronSchedule{Cron: cron, Loc: time.UTC}, ctx: ctx, stop: stop, wake: make(chan struct{}, 1)}, nil
 }
 
 // SetAutoOpen is not implemented yet.
@@ -171,9 +178,10 @@ func (b *Bernard) Start() {
 		}
 		sub := b.cfg.Bus.Subscribe(b.ctx) // before returning: no event is missed
 		b.reconcileRuns(b.ctx, 0)         // the runs are the truth: settle the records left applying
-		b.wg.Add(2)
+		b.wg.Add(3)
 		go b.loop()
 		go b.watchMergeRequests(sub)
+		go b.queueLoop() // drains what a previous process left queued
 	})
 }
 
@@ -795,6 +803,9 @@ func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.Re
 		_, i, _ := d.Batch(key)
 		batch := &d.Batches[i]
 		batch.Updates = slices.DeleteFunc(slices.Clone(batch.Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
+		if batch.Queued() { // ignored: out of the queue
+			batch.State, batch.RunUpdates = domain.DepsIdle, nil
+		}
 		return true, nil
 	})
 	if err != nil {
