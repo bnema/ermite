@@ -92,7 +92,7 @@ type InboxPage struct {
 	Deps        []InboxDepsRepo
 	DepsBatches int
 	// DepsUpdates counts the updates of the rows of Deps; DepsChecked is the latest check
-	// (RFC 3339 and short date), empty when unknown.
+	// (RFC 3339 and short UTC date and time), empty when unknown.
 	DepsUpdates                int
 	DepsChecked, DepsCheckedAt string
 	// DepsQueue is the progress of Bernard's queue, empty when idle.
@@ -336,7 +336,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		p.DepsSorts = append(p.DepsSorts, InboxNavLink{Label: o.label, Href: href + "#inbox-deps", Current: o.param == sort})
 	}
 	if !ov.DepsCheckedAt.IsZero() {
-		p.DepsChecked, p.DepsCheckedAt = ov.DepsCheckedAt.UTC().Format("2006-01-02"), rfc3339(ov.DepsCheckedAt)
+		p.DepsChecked, p.DepsCheckedAt = ov.DepsCheckedAt.UTC().Format("2006-01-02 15:04"), rfc3339(ov.DepsCheckedAt)
 	}
 	for _, run := range ov.Runs {
 		r := InboxRunRow{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}

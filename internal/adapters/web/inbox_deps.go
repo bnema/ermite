@@ -330,8 +330,9 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 	}
 	failed := batch.State == domain.DepsFailed
 	// The merge request already holds these versions, or a human took it
-	// over: nothing to apply, only to view.
-	merged := batch.MR != 0 && batch.State == domain.DepsIdle && (!row.Outdated || batch.Adopted)
+	// over (whatever the state: Bernard refuses to write an adopted branch):
+	// nothing to apply, only to view.
+	merged := batch.MR != 0 && (batch.Adopted || batch.State == domain.DepsIdle && !row.Outdated)
 	if merged {
 		row.Primary = InboxDepsAction{Label: "View MR", Href: row.Status.MRHref}
 	}
@@ -339,7 +340,7 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 		return row
 	}
 	base := depsBase(repo)
-	if !merged {
+	if !merged && !batch.Adopted {
 		row.Ignore = base + "ignore" + query
 		label := "Open MR"
 		switch {
@@ -567,14 +568,15 @@ func (s *Server) depsResult(ctx context.Context, r *http.Request) (ActionResult,
 		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	repo := r.PathValue("repo")
-	for _, row := range s.depsRepos(ov.Deps, depsQueryOf(r)) {
+	p := s.inboxPage(ctx, ov, ports.InboxJournal{}, "deps", 0, depsQueryOf(r))
+	for _, row := range p.Deps {
 		if row.Repo == repo {
 			row.Open = true
-			result.Fragment = inboxDepsChanged([]InboxDepsRepo{row}, nil)
+			result.Fragment = inboxDepsChanged(p, []InboxDepsRepo{row}, nil)
 			return result, nil
 		}
 	}
-	result.Fragment = inboxDepsChanged(nil, []string{depsRepoID(repo)})
+	result.Fragment = inboxDepsChanged(p, nil, []string{depsRepoID(repo)})
 	return result, nil
 }
 

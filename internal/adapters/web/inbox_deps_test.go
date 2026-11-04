@@ -3,6 +3,7 @@
 package web
 
 import (
+	"fmt"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -731,4 +732,78 @@ func TestInboxDottedRepoDepsIDs(t *testing.T) {
 			assert.Contains(t, html, `/deps/alpha.beta/`)
 		})
 	}
+}
+
+// An adopted batch is in human hands: whatever its state, the row offers no
+// action Bernard would refuse, only the link to the merge request.
+func TestInboxDepsAdoptedWins(t *testing.T) {
+	t.Parallel()
+	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+	for _, st := range []domain.DepsState{domain.DepsIdle, domain.DepsFailed, domain.DepsApplying, domain.DepsQueued, domain.DepsDrafted} {
+		for _, outdated := range []bool{false, true} {
+			t.Run(fmt.Sprintf("state=%d/outdated=%v", st, outdated), func(t *testing.T) {
+				rec := depsRec(t)
+				b := rec.Batches[0]
+				b.State, b.MR, b.Adopted = st, 1, true
+				b.MRVersions = b.Refs()
+				if outdated {
+					b.MRVersions = b.MRVersions[:1]
+				}
+				row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b}, "")
+				assert.Equal(t, InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/1"}, row.Primary)
+				assert.Empty(t, row.Ignore)
+				assert.True(t, row.Status.Adopted)
+				assert.False(t, row.Status.Draft)
+			})
+		}
+	}
+	// failed and adopted: the failure stays, with a word on who holds it
+	rec := depsRec(t)
+	b := rec.Batches[0]
+	b.MR, b.Adopted = 1, true
+	html := renderToString(t, inboxDepsRow(srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b, Run: depsRun(3, domain.CICompleted)}, "")))
+	assert.Contains(t, html, `class="deps-failure"`)
+	assert.Contains(t, html, "the run ended: failure")
+	assert.Contains(t, html, "changed by hand")
+	assert.Contains(t, html, `>adopted</span>`)
+	assert.Contains(t, html, `class="btn primary" href="/alpha/merge-requests/1">View MR</a>`)
+	assert.NotContains(t, html, ">Retry<")
+	assert.NotContains(t, html, "/deps/alpha/open")
+	assert.NotContains(t, html, "/deps/alpha/ignore")
+}
+
+// The repository name is said once: the summary, plus an icon link to the
+// repository outside of it (a link inside a summary breaks the toggle for
+// keyboard and screen reader users).
+func TestInboxDepsRepoLinkOnce(t *testing.T) {
+	t.Parallel()
+	sec := depsSection(t, "/-/inbox?tab=deps", depsOverview(t))
+	row := liOf(t, sec, "deps-alpha", `<li class="deps-repo-row"`)
+	assert.NotContains(t, row, "deps-repolink")
+	assert.Equal(t, 1, strings.Count(row, ">alpha<"), "the name appears once")
+	assert.Contains(t, row, `<a id="deps-alpha-repo" class="btn icon" href="/alpha" aria-label="Open repository alpha"`)
+	sum := regexp.MustCompile(`(?s)<summary id="deps-alpha-sum">.*?</summary>`).FindString(row)
+	assert.NotContains(t, sum, "<a ")
+}
+
+// An action brings the header back with the new check time and counts.
+func TestInboxDepsActionRefreshesTheHeader(t *testing.T) {
+	t.Parallel()
+	ov := depsOverview(t)
+	ov.DepsCheckedAt = time.Date(2026, 3, 5, 6, 0, 0, 0, time.UTC)
+	inbox := mocks.NewInboxService(t)
+	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+	deps := mocks.NewDepsService(t)
+	deps.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha")).Return(domain.RepoDeps{}, nil).Once()
+	req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/recheck", nil)
+	req.Header.Set("Origin", testPublicURL)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+	w := httptest.NewRecorder()
+	depsServer(t, inbox, deps).ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps-h" hx-swap="outerMorph"><h2 id="inbox-deps-h"`)
+	assert.Contains(t, body, `<time datetime="2026-03-05T06:00:00Z">2026-03-05 06:00</time>`)
+	assert.Contains(t, body, "1 batch · 3 updates")
 }

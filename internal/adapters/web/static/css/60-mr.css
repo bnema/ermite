@@ -467,7 +467,6 @@
     & .deps-repo-act form { margin: 0; }
     & .deps-body { padding-left: calc(1ch + var(--s2)); }
     & .deps-group-h { margin: var(--s2) 0 var(--s1); font-size: var(--fs-s); color: var(--ink-dim); font-weight: 600; }
-    & .deps-repolink { margin: var(--s1) 0 var(--s2); font-size: var(--fs-s); }
   }
   .deps-repo-row, .deps-row {
     & details:not(.menu) > summary {

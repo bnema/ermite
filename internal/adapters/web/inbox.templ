@@ -251,18 +251,7 @@ templ InboxDeps(p InboxPage) {
 		}
 	>
 		if p.DepsBatches > 0 {
-			<h2 id="inbox-deps-h" class="rule-h">
-				<span>Dependency updates</span>
-				<span class="dim">
-					if p.DepsCheckedAt != "" {
-						checked <time datetime={ p.DepsCheckedAt }>{ p.DepsChecked }</time> ·{ " " }
-					}
-					{ plural(p.DepsBatches, "batch", "batches") } · { plural(p.DepsUpdates, "update", "updates") }
-					if p.DepsQueue != "" {
-						{ " · " }<span class="deps-queue">{ p.DepsQueue }</span>
-					}
-				</span>
-			</h2>
+			@inboxDepsHeader(p)
 			<div class="deps-bar">
 				<nav class="deps-filters" aria-label="Filter batches">
 					for _, f := range p.DepsFilters {
@@ -306,6 +295,23 @@ templ InboxDeps(p InboxPage) {
 			}
 		}
 	</section>
+}
+
+// inboxDepsHeader is the title of the table with the last check and the
+// queue; #inbox-deps-meta is swapped after an action.
+templ inboxDepsHeader(p InboxPage) {
+<h2 id="inbox-deps-h" class="rule-h">
+	<span>Dependency updates</span>
+	<span id="inbox-deps-meta" class="dim">
+		if p.DepsCheckedAt != "" {
+			checked <time datetime={ p.DepsCheckedAt }>{ p.DepsChecked }</time> ·{ " " }
+		}
+		{ plural(p.DepsBatches, "batch", "batches") } · { plural(p.DepsUpdates, "update", "updates") }
+		if p.DepsQueue != "" {
+			{ " · " }<span class="deps-queue">{ p.DepsQueue }</span>
+		}
+	</span>
+</h2>
 }
 
 // depsStatusCell is the state of the batch: its run or its place in the
@@ -402,7 +408,6 @@ templ inboxDepsRepo(r InboxDepsRepo) {
 				@depsRepoSummary(r)
 			</summary>
 			<div class="deps-body">
-				<p class="deps-repolink"><a href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a></p>
 				if r.Base != nil {
 					<ul class="deps-rows deps-base" aria-label={ "Patch and minor updates of " + r.Repo }>
 						@inboxDepsRow(*r.Base)
@@ -418,8 +423,9 @@ templ inboxDepsRepo(r InboxDepsRepo) {
 				}
 			</div>
 		</details>
-		if r.Recheck != "" {
-			<span class="deps-repo-act">
+		<span class="deps-repo-act">
+			<a id={ r.ID + "-repo" } class="btn icon" href={ templ.SafeURL(r.RepoHref) } aria-label={ "Open repository " + r.Repo } title={ "open " + r.Repo }><span class="ico i-link" aria-hidden="true"></span></a>
+			if r.Recheck != "" {
 				@depsForm(InboxDepsRow{}, r.Recheck, "Re-check", "btn", false, r.ID+"-recheck")
 				<details class="menu deps-menu">
 					<summary id={ r.ID + "-more" } class="btn icon" aria-label={ "More actions for " + r.Repo }>⋯</summary>
@@ -432,8 +438,8 @@ templ inboxDepsRepo(r InboxDepsRepo) {
 						@depsForm(InboxDepsRow{}, r.Snooze, "Snooze", "btn", false, "")
 					</div>
 				</details>
-			</span>
-		}
+			}
+		</span>
 	</li>
 }
 
@@ -441,6 +447,9 @@ templ inboxDepsRepo(r InboxDepsRepo) {
 // redo it by hand, and the link to the log.
 templ depsFailure(d InboxDepsRow) {
 	<div class="deps-failure" role="region" aria-label={ "Failure of " + d.Title }>
+		if d.Status.Adopted {
+			<p class="dim deps-adopted-note">The branch was changed by hand: Bernard no longer retries it. Fix it in the merge request.</p>
+		}
 		<pre class="deps-error">{ d.Status.Title }</pre>
 		if d.Repro != "" {
 			<p class="dim">Reproduce locally:</p>
@@ -534,7 +543,10 @@ templ inboxModerated(id string, count int) {
 	@CountOOB("inbox-pending-count", count)
 }
 
-templ inboxDepsChanged(rows []InboxDepsRepo, removed []string) {
+templ inboxDepsChanged(p InboxPage, rows []InboxDepsRepo, removed []string) {
+	if p.DepsBatches > 0 {
+		<hx-partial hx-target="#inbox-deps-h" hx-swap="outerMorph">@inboxDepsHeader(p)</hx-partial>
+	}
 	for _, id := range removed {
 		@RemoveEl(id)
 	}
