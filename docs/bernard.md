@@ -6,7 +6,7 @@ Bernard watches the dependencies of your repositories and lists the updates that
 
 - Once a day (`ERMITE_DEPS_CHECK_AT`, 06:00 UTC by default) it checks every repository that is not [archived](cli.md#archived-repositories). Archived repositories are skipped.
 - It reads Go modules (`go.mod`), GitHub Actions (`uses:` in workflows and `action.yml`) and npm packages (`dependencies` and `devDependencies` of every `package.json` outside `node_modules`, `testdata`, `fixtures` and `__fixtures__`; an invalid `package.json` is skipped with a warning). Vendored modules, `replace`d modules and actions pinned to a commit are left alone.
-- For each dependency it proposes the highest version that is older than the cooldown (`ERMITE_DEPS_COOLDOWN`, 72 hours by default) and has no malicious-package (`MAL-`) advisory. A version that cannot be checked is not proposed. A Go module version is proposed only if its `go.mod` does not need a newer `go` directive than the requiring module's.
+- For each dependency it proposes the highest version that is older than the cooldown (`ERMITE_DEPS_COOLDOWN`, 72 hours by default) and has no malicious-package (`MAL-`) advisory. A version that cannot be checked is not proposed. A Go module version is proposed only if its `go.mod` does not need a newer `go` directive than the requiring module's and its `module` line is the path Bernard would require (a version that moved to another path, such as a vanity domain, is skipped).
 - Go majors include new module paths: `foo` → `foo/v2` and `gopkg.in/x.v1` → `gopkg.in/x.v2` (up to five newer paths, stopping at the first missing one).
 - A check that finds a version the previous one did not publishes a `deps.updates_found` event, delivered to the owner only.
 

@@ -55,6 +55,7 @@ func TestGoDirective(t *testing.T) {
 		"/example.com/!module/@v/v1.1.0.mod":       "module example.com/Module\n",
 		"/example.com/!module/@v/v1.0.0-!r!c1.mod": "module example.com/Module\ngo 1.25rc1\nunknown directive\n",
 		"/example.com/!module/@v/v0.9.0.mod":       "module example.com/Module\ngo 1.25 garbage(\n",
+		"/example.com/!module/@v/v2.0.0.mod":       "module vanity.example/module\ngo 1.24\n",
 	}
 	calls := map[string]int{}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +81,7 @@ func TestGoDirective(t *testing.T) {
 		{name: "escaped version, lax parse", version: "v1.0.0-RC1", want: "1.25rc1"},
 		{name: "malformed go.mod", version: "v0.9.0", errAny: true},
 		{name: "gone", version: "v0.8.0", err: domain.ErrNotFound},
+		{name: "declares another path", version: "v2.0.0", err: domain.ErrModulePathMismatch},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := New(Config{GoProxyURL: s.URL}).GoDirective(t.Context(), "example.com/Module", tc.version)

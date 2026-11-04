@@ -601,7 +601,9 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 
 // fittingUpdate returns the first of ups, highest first, that can be applied:
 // for a Go module, the first whose go.mod go directive fits the one of the
-// module in c.Directory. A version whose go.mod cannot be read is skipped; a done ctx is an error.
+// module in c.Directory and whose module line is the path it is required as.
+// A version whose go.mod cannot be read or declares another path is skipped; a
+// done ctx is an error.
 func fittingUpdate(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName, c domain.DepCandidate, ups []domain.DepUpdate) (domain.DepUpdate, bool, error) {
 	if c.Ecosystem != domain.EcosystemGoMod {
 		if len(ups) == 0 {
@@ -617,6 +619,10 @@ func fittingUpdate(ctx context.Context, reg ports.DepsRegistry, name domain.Repo
 		if err != nil {
 			if cerr := ctx.Err(); cerr != nil {
 				return domain.DepUpdate{}, false, cerr
+			}
+			if errors.Is(err, domain.ErrModulePathMismatch) {
+				ctxLog(ctx).Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: go.mod declares another module path, version skipped")
+				continue
 			}
 			ctxLog(ctx).Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: go.mod lookup failed, version skipped")
 			continue

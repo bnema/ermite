@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -295,6 +296,49 @@ func TestBernardProposesOnlyVersionsFittingTheGoDirective(t *testing.T) {
 			}
 			require.Len(t, got.Base().Updates, 1)
 			assert.Equal(t, depRef("x/mod", tc.want), got.Base().Updates[0].DepRef)
+		})
+	}
+}
+
+// A version whose go.mod declares another module path (vanity move, case
+// change) can never be required as Bernard would: it is not proposed, on the
+// same path or on a new major path.
+func TestBernardSkipsGoVersionsDeclaringAnotherPath(t *testing.T) {
+	mismatch := fmt.Errorf("%w: module declares its path as %q", domain.ErrModulePathMismatch, "charm.land/bubbles/v2")
+	for _, tc := range []struct {
+		name string
+		errs map[string]error // module@version → GoDirective error
+		want []string         // proposed module@version
+	}{
+		{name: "major path declares another path", errs: map[string]error{"x/mod/v2@v2.2.1": mismatch}, want: []string{"x/mod@v0.23.0"}},
+		{name: "same-major newer declares another path", errs: map[string]error{"x/mod@v0.23.0": mismatch}, want: []string{"x/mod@v0.22.0", "x/mod/v2@v2.2.1"}},
+		{name: "matching paths proposed", want: []string{"x/mod@v0.23.0", "x/mod/v2@v2.2.1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newBernardRig(t, "0 6 * * *")
+			r.repoReads()
+			major := r.old("v2.2.1")
+			major.Path = "x/mod/v2"
+			c := goCand("x/mod", r.old("v0.23.0"), r.old("v0.22.0"), major)
+			c.GoDirective = "1.25.3"
+			r.cands = []domain.DepCandidate{c}
+			r.goDirs, r.goDirErr = map[string]string{}, tc.errs
+			r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+			r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, mock.Anything, mock.Anything).Return(false, nil)
+			r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
+			got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
+			require.NoError(t, err)
+			var proposed []string
+			for _, b := range got.Batches {
+				for _, up := range b.Updates {
+					n := up.Name
+					if up.NewName != "" {
+						n = up.NewName
+					}
+					proposed = append(proposed, n+"@"+up.Version)
+				}
+			}
+			assert.ElementsMatch(t, tc.want, proposed)
 		})
 	}
 }
