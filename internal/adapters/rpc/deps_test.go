@@ -143,3 +143,31 @@ func TestRepoDepsBatchesToPB(t *testing.T) {
 		})
 	}
 }
+
+func TestDepsSetAutoOpenAndSplit(t *testing.T) {
+	repo, err := domain.ParseRepoName("app")
+	require.NoError(t, err)
+	svc := mocks.NewDepsService(t)
+	s := &depsService{svc}
+	ctx := context.Background()
+	svc.EXPECT().SetAutoOpen(mock.Anything, mock.Anything, repo, false).Return(domain.RepoDeps{Repo: repo, AutoOpenDisabled: true}, nil).Once()
+	auto, err := s.SetDependencyAutoOpen(ctx, &pb.SetDependencyAutoOpenRequest{Repo: "app", Enabled: false})
+	require.NoError(t, err)
+	assert.False(t, auto.GetUpdates().GetAutoOpen())
+
+	name := domain.DepName{Ecosystem: domain.EcosystemGoMod, Name: "x/y"}
+	svc.EXPECT().Split(mock.Anything, mock.Anything, repo, name, true).Return(domain.RepoDeps{Repo: repo, SplitOut: []domain.DepName{name}}, nil).Once()
+	split, err := s.SplitDependency(ctx, &pb.SplitDependencyRequest{Repo: "app", Ecosystem: "gomod", Name: "x/y", Split: true})
+	require.NoError(t, err)
+	require.Len(t, split.GetUpdates().GetSplitOut(), 1)
+	assert.Equal(t, "x/y", split.GetUpdates().GetSplitOut()[0].GetName())
+
+	svc.EXPECT().SetAutoOpen(mock.Anything, mock.Anything, repo, true).Return(domain.RepoDeps{}, domain.ErrNotFound).Once()
+	_, err = s.SetDependencyAutoOpen(ctx, &pb.SetDependencyAutoOpenRequest{Repo: "app", Enabled: true})
+	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+	svc.EXPECT().Split(mock.Anything, mock.Anything, repo, name, false).Return(domain.RepoDeps{}, domain.ErrPreconditionFailed).Once()
+	_, err = s.SplitDependency(ctx, &pb.SplitDependencyRequest{Repo: "app", Ecosystem: "gomod", Name: "x/y"})
+	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	_, err = s.SplitDependency(ctx, &pb.SplitDependencyRequest{Repo: "../bad"})
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}

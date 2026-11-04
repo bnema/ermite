@@ -27,11 +27,20 @@ type jsonDepsUpdate struct {
 type jsonDepsBatch struct {
 	Key                string           `json:"key" help:"empty = base"`
 	Updates            []jsonDepsUpdate `json:"updates"`
-	State              string           `json:"state" help:"idle, applying or failed"`
+	State              string           `json:"state" help:"idle, queued, drafted, applying or failed"`
 	Error              string           `json:"error"`
 	RunID              int64            `json:"run_id" help:"0 = none"`
 	MergeRequestNumber int64            `json:"merge_request_number" help:"0 = none"`
 	Outdated           bool             `json:"outdated" help:"the merge request holds other versions"`
+	Adopted            bool             `json:"adopted" help:"the branch was changed by hand: Bernard no longer rewrites it"`
+	QueuePosition      int32            `json:"queue_position" help:"1 = next; 0 = not queued"`
+	Branch             string           `json:"branch"`
+	Repro              []string         `json:"repro" help:"local commands that redo a failed update"`
+}
+
+type jsonDepsName struct {
+	Ecosystem string `json:"ecosystem"`
+	Name      string `json:"name"`
 }
 
 type jsonDepsRepo struct {
@@ -44,6 +53,8 @@ type jsonDepsRepo struct {
 	Error              string           `json:"error"`
 	RunID              int64            `json:"run_id" help:"the run applying the updates, or the last one that tried; 0 = none"`
 	Batches            []jsonDepsBatch  `json:"batches"`
+	AutoOpen           bool             `json:"auto_open" help:"Bernard opens the base batch's merge request by itself"`
+	SplitOut           []jsonDepsName   `json:"split_out" help:"dependencies whose majors have their own batch"`
 }
 
 func toJSONDepsRepo(r *ermite.RepoDependencyUpdates) jsonDepsRepo {
@@ -57,13 +68,17 @@ func toJSONDepsRepo(r *ermite.RepoDependencyUpdates) jsonDepsRepo {
 	out := jsonDepsRepo{
 		Repo: r.GetRepo(), Updates: toJSONDepsRepoUpdates(base.GetUpdates()), CheckedAt: jsonTime(r.GetCheckedAt()), SnoozedUntil: jsonTime(r.GetSnoozedUntil()),
 		MergeRequestNumber: base.GetMergeRequestNumber(), State: depsStateName(base.GetState()), Error: base.GetError(), RunID: base.GetRunId(),
-		Batches: []jsonDepsBatch{},
+		Batches: []jsonDepsBatch{}, AutoOpen: r.GetAutoOpen(), SplitOut: []jsonDepsName{},
 	}
 	for _, b := range r.GetBatches() {
 		out.Batches = append(out.Batches, jsonDepsBatch{
 			Key: b.GetKey(), Updates: toJSONDepsRepoUpdates(b.GetUpdates()), State: depsStateName(b.GetState()), Error: b.GetError(),
 			RunID: b.GetRunId(), MergeRequestNumber: b.GetMergeRequestNumber(), Outdated: b.GetOutdated(),
+			Adopted: b.GetAdopted(), QueuePosition: b.GetQueuePosition(), Branch: b.GetBranch(), Repro: append([]string{}, b.GetRepro()...),
 		})
+	}
+	for _, n := range r.GetSplitOut() {
+		out.SplitOut = append(out.SplitOut, jsonDepsName{Ecosystem: n.GetEcosystem(), Name: n.GetName()})
 	}
 	return out
 }
@@ -88,7 +103,7 @@ func depsExpected(r *ermite.DependencyBatch) []*ermite.DependencyVersion {
 func newDepsCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "deps", Short: "Bernard: pending dependency updates (owner only)", Long: "Manage pending dependency updates (owner only).\n" +
 		jsonFieldsHelp("a repository", jsonDepsRepo{}) + " The log of a run, failed ones included: ermite run view <repo> <run> --log."}
-	cmd.AddCommand(newDepsListCmd(env), newDepsCheckCmd(env))
+	cmd.AddCommand(newDepsListCmd(env), newDepsCheckCmd(env), newDepsAutoCmd(env), newDepsSplitCmd(env))
 	for _, name := range []string{"open", "ignore", "snooze"} {
 		cmd.AddCommand(newDepsActionCmd(env, name))
 	}
@@ -107,7 +122,10 @@ func depsBatchLabel(key string) string {
 const depsBaseBatch = "base"
 
 func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
-	pairs := [][2]string{{"repo", r.GetRepo()}, {"checked", shortTime(r.GetCheckedAt(), "never")}, {"snoozed until", shortTime(r.GetSnoozedUntil(), "-")}}
+	pairs := [][2]string{{"repo", r.GetRepo()}, {"checked", shortTime(r.GetCheckedAt(), "never")}, {"snoozed until", shortTime(r.GetSnoozedUntil(), "-")}, {"auto open", depsOnOff(r.GetAutoOpen())}}
+	for _, n := range r.GetSplitOut() {
+		pairs = append(pairs, [2]string{"split out", n.GetEcosystem() + " " + n.GetName()})
+	}
 	batches := depsBatches(r)
 	for _, b := range batches {
 		pairs = append(pairs, depsBatchDetails(r.GetRepo(), b)...)
@@ -125,6 +143,12 @@ func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
 // depsBatchDetails lists the state, error, run and merge request of a batch.
 func depsBatchDetails(repo string, b *ermite.DependencyBatch) [][2]string {
 	pairs := [][2]string{{"batch", depsBatchLabel(b.GetKey())}, {"state", depsStateName(b.GetState())}}
+	if b.GetQueuePosition() != 0 {
+		pairs = append(pairs, [2]string{"queue position", strconv.Itoa(int(b.GetQueuePosition()))})
+	}
+	if b.GetAdopted() {
+		pairs = append(pairs, [2]string{"branch", b.GetBranch() + " (changed by hand)"})
+	}
 	if b.GetError() != "" {
 		for i, line := range strings.Split(b.GetError(), "\n") {
 			label := ""
@@ -167,15 +191,46 @@ func depsBatchRows(b *ermite.DependencyBatch, withDir bool) [][]string {
 		if withDir {
 			row = append(row, u.GetDirectory())
 		}
-		rows = append(rows, append(row, mark, depsStateName(b.GetState()), run))
+		rows = append(rows, append(row, mark, depsStateCell(b), run))
 	}
 	return rows
+}
+
+// depsStateCell is the STATE of a batch with its queue position ("queued #2")
+// and an adopted branch ("idle adopted").
+func depsStateCell(b *ermite.DependencyBatch) string {
+	s := depsStateName(b.GetState())
+	if b.GetQueuePosition() != 0 {
+		s += fmt.Sprintf(" #%d", b.GetQueuePosition())
+	}
+	if b.GetAdopted() {
+		s += " adopted"
+	}
+	return s
+}
+
+// depsRepoCell is the REPO of a listing, marked when Bernard does not open the
+// base batch by itself.
+func depsRepoCell(r *ermite.RepoDependencyUpdates) string {
+	if !r.GetAutoOpen() {
+		return r.GetRepo() + " (auto off)"
+	}
+	return r.GetRepo()
+}
+
+func depsOnOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 func newDepsListCmd(env *cliEnv) *cobra.Command {
 	var repo string
 	cmd := &cobra.Command{Use: "list", Short: "List the repositories with pending dependency updates", Args: cobra.NoArgs,
-		Long: "List pending updates, snoozed repositories included (--repo limits to one)." + "\nJSON: repository updates; see `ermite deps --help`."}
+		Long: "List pending updates, snoozed repositories included (--repo limits to one)." +
+			"\nSTATE shows the queue position (queued #1 is next) and \"adopted\" when the branch was changed by hand; REPO is marked \"(auto off)\" when Bernard does not open the base merge request by itself." +
+			"\nJSON: repository updates; see `ermite deps --help`."}
 	cmd.Flags().StringVar(&repo, "repo", "", "only this repository")
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -202,7 +257,7 @@ func newDepsListCmd(env *cliEnv) *cobra.Command {
 		for _, r := range res.GetRepos() {
 			for _, batch := range depsBatches(r) {
 				for _, row := range depsBatchRows(batch, false) {
-					rows = append(rows, append([]string{r.GetRepo()}, row...))
+					rows = append(rows, append([]string{depsRepoCell(r)}, row...))
 				}
 			}
 		}
@@ -308,6 +363,71 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 			return writeJSON(cmd.OutOrStdout(), toJSONDepsRepo(got))
 		}
 		noticef(cmd, "%s: %s", name, clean(args[0]))
+		return nil
+	}
+	return cmd
+}
+
+func newDepsAutoCmd(env *cliEnv) *cobra.Command {
+	cmd := &cobra.Command{Use: "auto <repo> on|off", Short: "Turn Bernard's automatic merge request on or off for a repository",
+		Long: "Turn on or off the merge request Bernard opens by itself for the patch and minor updates (the base batch) of a repository, after each check." +
+			" Turning it on queues the base batch at once when it has updates and no current merge request. Majors are never opened by themselves. ERMITE_DEPS_AUTO_OPEN=0 turns it off for every repository." +
+			"\nJSON: repository updates; see `ermite deps --help`.",
+		Args: cobra.ExactArgs(2), ValidArgs: []string{"on", "off"}}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		var on bool
+		switch args[1] {
+		case "on":
+			on = true
+		case "off":
+		default:
+			return fmt.Errorf("auto takes on or off, not %q", clean(args[1]))
+		}
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		res, err := c.Deps().SetDependencyAutoOpen(env.ctx(cmd), &ermite.SetDependencyAutoOpenRequest{Repo: args[0], Enabled: on})
+		if err != nil {
+			return c.Describe(err)
+		}
+		if *asJSON {
+			return writeJSON(cmd.OutOrStdout(), toJSONDepsRepo(res.GetUpdates()))
+		}
+		noticef(cmd, "auto open %s: %s", args[1], clean(args[0]))
+		return nil
+	}
+	return cmd
+}
+
+func newDepsSplitCmd(env *cliEnv) *cobra.Command {
+	var join bool
+	cmd := &cobra.Command{Use: "split <repo> <ecosystem> <name>", Short: "Give a dependency's majors their own batch, or join them back",
+		Long: "Pull the major updates of one dependency out of their family batch into a batch of their own (--join puts them back)." +
+			" ECOSYSTEM is gomod, github-actions or npm; NAME is the module path, owner/repository of the action, or npm package, as in deps list." +
+			" Refused while a batch it changes is applying or queued." +
+			"\nJSON: repository updates; see `ermite deps --help`.",
+		Args: cobra.ExactArgs(3)}
+	cmd.Flags().BoolVar(&join, "join", false, "join the dependency back to its family batch")
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		res, err := c.Deps().SplitDependency(env.ctx(cmd), &ermite.SplitDependencyRequest{Repo: args[0], Ecosystem: args[1], Name: args[2], Split: !join})
+		if err != nil {
+			return c.Describe(err)
+		}
+		if *asJSON {
+			return writeJSON(cmd.OutOrStdout(), toJSONDepsRepo(res.GetUpdates()))
+		}
+		verb := "split"
+		if join {
+			verb = "join"
+		}
+		noticef(cmd, "%s: %s %s %s", verb, clean(args[0]), clean(args[1]), clean(args[2]))
 		return nil
 	}
 	return cmd

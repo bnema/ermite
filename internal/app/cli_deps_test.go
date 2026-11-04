@@ -22,7 +22,7 @@ var depsAlphaUpdates = []*ermite.DependencyUpdate{
 }
 
 var depsAlpha = &ermite.RepoDependencyUpdates{
-	Repo: "alpha", CheckedAt: ts("2026-03-04T05:06:07Z"),
+	Repo: "alpha", CheckedAt: ts("2026-03-04T05:06:07Z"), AutoOpen: true,
 	Batches: []*ermite.DependencyBatch{{Updates: depsAlphaUpdates, State: ermite.RepoDependencyUpdates_STATE_IDLE}},
 }
 
@@ -48,14 +48,16 @@ func TestDepsListTableAndJSON(t *testing.T) {
 		{"ecosystem":"github-actions","name":"actions/checkout","directory":"","current":"v4","latest":"v5","kind":"major","new":false,"new_name":""}]`
 	assert.JSONEq(t, `[{"repo":"alpha","updates":`+updates+`,
 		"checked_at":"2026-03-04T05:06:07Z","snoozed_until":null,"merge_request_number":0,"state":"idle","error":"","run_id":0,
-		"batches":[{"key":"","updates":`+updates+`,"state":"idle","error":"","run_id":0,"merge_request_number":0,"outdated":false}]}]`, res.stdout)
+		"batches":[{"key":"","updates":`+updates+`,"state":"idle","error":"","run_id":0,"merge_request_number":0,"outdated":false,
+			"adopted":false,"queue_position":0,"branch":"","repro":[]}],
+		"auto_open":true,"split_out":[]}]`, res.stdout)
 	_, reqs = f.snapshot()
 	assert.Nil(t, reqs[1].(*ermite.ListDependencyUpdatesRequest).Repo, "no filter without --repo")
 }
 
 func TestDepsListShowsTheRun(t *testing.T) {
 	failed := &ermite.RepoDependencyUpdates{
-		Repo: "beta", Batches: []*ermite.DependencyBatch{{
+		Repo: "beta", AutoOpen: true, Batches: []*ermite.DependencyBatch{{
 			State: ermite.RepoDependencyUpdates_STATE_FAILED, Error: "the run ended: failure", RunId: 12,
 			Updates: []*ermite.DependencyUpdate{{Name: "x/y", Current: "v1", Latest: "v2", Kind: ermite.DependencyUpdate_KIND_MAJOR}},
 		}},
@@ -272,4 +274,62 @@ func TestDepsCallTimeouts(t *testing.T) {
 			assert.InDelta(t, tc.timeout.Milliseconds(), millis, 1000)
 		})
 	}
+}
+
+func TestDepsAuto(t *testing.T) {
+	var got []*ermite.SetDependencyAutoOpenRequest
+	f := &fakeAPI{autoDeps: func(r *ermite.SetDependencyAutoOpenRequest) (*ermite.SetDependencyAutoOpenResponse, error) {
+		got = append(got, r)
+		return &ermite.SetDependencyAutoOpenResponse{Updates: &ermite.RepoDependencyUpdates{Repo: "alpha", AutoOpen: r.GetEnabled()}}, nil
+	}}
+	url := f.serve(t)
+	res := runCLI(t, envFor(url), "", "deps", "auto", "alpha", "off").ok(t)
+	assert.Equal(t, "ermite: auto open off: alpha\n", res.stderr)
+	res = runCLI(t, envFor(url), "", "deps", "auto", "alpha", "on", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"auto_open": true`)
+	require.Len(t, got, 2)
+	assert.Equal(t, "alpha", got[0].GetRepo())
+	assert.False(t, got[0].GetEnabled())
+	assert.True(t, got[1].GetEnabled())
+	assert.ErrorContains(t, runCLI(t, envFor(url), "", "deps", "auto", "alpha", "maybe").err, `auto takes on or off, not "maybe"`)
+	require.Error(t, runCLI(t, envFor(url), "", "deps", "auto", "alpha").err)
+	calls, _ := f.snapshot()
+	assert.Len(t, calls, 2, "a bad argument sends nothing")
+
+	// deps list marks a repository with auto open off.
+	f.listDeps = func(*ermite.ListDependencyUpdatesRequest) (*ermite.ListDependencyUpdatesResponse, error) {
+		r := &ermite.RepoDependencyUpdates{Repo: "beta", Batches: []*ermite.DependencyBatch{
+			{Updates: depsAlphaUpdates[:1], State: ermite.RepoDependencyUpdates_STATE_QUEUED, QueuePosition: 2},
+			{Key: "major:gomod:x", Updates: depsAlphaUpdates[1:], State: ermite.RepoDependencyUpdates_STATE_IDLE, Adopted: true, Branch: "bernard/x"},
+		}}
+		return &ermite.ListDependencyUpdatesResponse{Repos: []*ermite.RepoDependencyUpdates{r}}, nil
+	}
+	res = runCLI(t, envFor(f.serve(t)), "", "deps", "list").ok(t)
+	assert.Regexp(t, `beta \(auto off\)\s+base\s+golang.org/x/text .*queued #2\s+-\n`, res.stdout)
+	assert.Regexp(t, `major:gomod:x\s+actions/checkout .*idle adopted\s+-\n`, res.stdout)
+}
+
+func TestDepsSplit(t *testing.T) {
+	var got []*ermite.SplitDependencyRequest
+	f := &fakeAPI{splitDeps: func(r *ermite.SplitDependencyRequest) (*ermite.SplitDependencyResponse, error) {
+		got = append(got, r)
+		out := &ermite.RepoDependencyUpdates{Repo: "alpha", AutoOpen: true}
+		if r.GetSplit() {
+			out.SplitOut = []*ermite.DependencyName{{Ecosystem: r.GetEcosystem(), Name: r.GetName()}}
+		}
+		return &ermite.SplitDependencyResponse{Updates: out}, nil
+	}}
+	url := f.serve(t)
+	res := runCLI(t, envFor(url), "", "deps", "split", "alpha", "gomod", "golang.org/x/text", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"split_out": [`)
+	assert.Contains(t, res.stdout, `"name": "golang.org/x/text"`)
+	res = runCLI(t, envFor(url), "", "deps", "split", "alpha", "gomod", "golang.org/x/text", "--join").ok(t)
+	assert.Equal(t, "ermite: join: alpha gomod golang.org/x/text\n", res.stderr)
+	require.Len(t, got, 2)
+	assert.Equal(t, "alpha", got[0].GetRepo())
+	assert.Equal(t, "gomod", got[0].GetEcosystem())
+	assert.Equal(t, "golang.org/x/text", got[0].GetName())
+	assert.True(t, got[0].GetSplit())
+	assert.False(t, got[1].GetSplit())
+	require.Error(t, runCLI(t, envFor(url), "", "deps", "split", "alpha", "gomod").err)
 }

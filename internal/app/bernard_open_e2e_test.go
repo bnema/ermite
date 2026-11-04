@@ -47,7 +47,7 @@ func TestBernardOpenMRForActions(t *testing.T) {
 		ports.RemoteRef{Name: "refs/tags/v4.1.0", ID: shaTag},
 		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
 	)
-	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns"}},
+	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns", config.EnvDepsAutoOpen: "0"}},
 		func(o *options) { o.remoteLister = remote.m })
 	c := &ciHarness{harness: h, root: h.api(adminToken), repo: "proj"}
 	h.seed("proj", domain.VisibilityPrivate)
@@ -191,7 +191,7 @@ func newBernardGoRig(t *testing.T) *bernardGoRig {
 		ports.RemoteRef{Name: "refs/tags/v4.1.0", ID: shaTag},
 		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
 	)
-	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns"}},
+	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns", config.EnvDepsAutoOpen: "0"}},
 		func(o *options) {
 			o.remoteLister = remote.m
 			o.ci = func(cc *usecase.CIConfig) { cc.PollTimeout = 300 * time.Millisecond }
@@ -508,7 +508,7 @@ func TestBernardSeparateMinorAndMajorMergeRequests(t *testing.T) {
 		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
 		ports.RemoteRef{Name: "refs/tags/v5.0.0", ID: shaTagObj, Peeled: shaPeeled},
 	)
-	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns"}}, func(o *options) { o.remoteLister = remote.m })
+	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns", config.EnvDepsAutoOpen: "0"}}, func(o *options) { o.remoteLister = remote.m })
 	c := &ciHarness{harness: h, root: h.api(adminToken), repo: "proj"}
 	h.seed("proj", domain.VisibilityPrivate)
 	c.wt = h.workTree("main")

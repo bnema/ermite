@@ -91,6 +91,8 @@ type fakeAPI struct {
 	openDeps   func(*ermite.OpenDependencyUpdatesRequest) (*ermite.OpenDependencyUpdatesResponse, error)
 	ignoreDeps func(*ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error)
 	snoozeDeps func(*ermite.SnoozeDependencyUpdatesRequest) (*ermite.SnoozeDependencyUpdatesResponse, error)
+	autoDeps   func(*ermite.SetDependencyAutoOpenRequest) (*ermite.SetDependencyAutoOpenResponse, error)
+	splitDeps  func(*ermite.SplitDependencyRequest) (*ermite.SplitDependencyResponse, error)
 
 	listActivity   func(*ermite.ListActivityRequest) (*ermite.ListActivityResponse, error)
 	listUnreleased func(*ermite.ListUnreleasedRequest) (*ermite.ListUnreleasedResponse, error)
@@ -341,6 +343,12 @@ func (f *fakeAPI) OpenDependencyUpdates(ctx context.Context, r *ermite.OpenDepen
 }
 func (f *fakeAPI) IgnoreDependencyUpdates(ctx context.Context, r *ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error) {
 	return respond(ctx, f, "IgnoreDependencyUpdates", r, f.ignoreDeps)
+}
+func (f *fakeAPI) SetDependencyAutoOpen(ctx context.Context, r *ermite.SetDependencyAutoOpenRequest) (*ermite.SetDependencyAutoOpenResponse, error) {
+	return respond(ctx, f, "SetDependencyAutoOpen", r, f.autoDeps)
+}
+func (f *fakeAPI) SplitDependency(ctx context.Context, r *ermite.SplitDependencyRequest) (*ermite.SplitDependencyResponse, error) {
+	return respond(ctx, f, "SplitDependency", r, f.splitDeps)
 }
 func (f *fakeAPI) SnoozeDependencyUpdates(ctx context.Context, r *ermite.SnoozeDependencyUpdatesRequest) (*ermite.SnoozeDependencyUpdatesResponse, error) {
 	return respond(ctx, f, "SnoozeDependencyUpdates", r, f.snoozeDeps)
