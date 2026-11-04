@@ -45,21 +45,21 @@
     &[data-theme="dark"] { color-scheme: dark; }
 
     /* surfaces, bottom to top */
-    --bg-canvas: light-dark(#f3f3f3, #050505); /* the page */
-    --bg-inset:  light-dark(#f8f8f8, #020202); /* code, fields: sunk into a surface */
-    --bg-surface:light-dark(#ffffff, #0c0c0c); /* cards, header, rail blocks */
-    --bg-raised: light-dark(#ececec, #151515); /* hover, buttons, panel rows */
-    --bg-strong: light-dark(#dedede, #212121); /* selected row, pressed button */
-    --bg-overlay:light-dark(#ffffff, #0f0f0f); /* dialogs */
+    --bg-canvas: light-dark(#f4f4f4, #070707); /* the page */
+    --bg-inset:  light-dark(#f9f9f9, #040404); /* code, fields: sunk into a surface */
+    --bg-surface:light-dark(#ffffff, #0e0e0e); /* cards, header, rail blocks */
+    --bg-raised: light-dark(#eeeeee, #171717); /* hover, buttons, panel rows */
+    --bg-strong: light-dark(#e0e0e0, #232323); /* selected row, pressed button */
+    --bg-overlay:light-dark(#ffffff, #111111); /* dialogs */
     --backdrop:  light-dark(rgb(0 0 0 / .25), rgb(0 0 0 / .7));
 
-    --border:        light-dark(#dddddd, #1c1c1c);
-    --border-strong: light-dark(#c2c2c2, #303030);
+    --border:        light-dark(#e0e0e0, #222222);
+    --border-strong: light-dark(#c6c6c6, #363636);
 
-    --ink:      light-dark(#1b1b1b, #d6d6d6);
+    --ink:      light-dark(#1b1b1b, #dadada);
     --ink-hi:   light-dark(#000000, #fafafa);
-    --ink-dim:  light-dark(#4d4d4d, #a3a3a3);
-    --ink-mute: light-dark(#616161, #8c8c8c);
+    --ink-dim:  light-dark(#4a4a4a, #a8a8a8);
+    --ink-mute: light-dark(#5f5f5f, #8f8f8f);
     --focus:    light-dark(#000000, #ffffff);
     --on-ink:   light-dark(#ffffff, #050505); /* text on a filled ink button */
 
@@ -80,13 +80,16 @@
     --syn-type:    var(--teal-2);
     --syn-punct:   var(--ink-dim);
 
-    --add: light-dark(#dcebeb, #0c1616);
-    --del: light-dark(#f2dfe1, #1d0e10);
+    --add: light-dark(#e1efef, #0d1a1a);
+    --del: light-dark(#f5e3e5, #1f0f11);
+    --add-hi: light-dark(#c4e0e0, #143030); /* the gutter of an added line */
+    --del-hi: light-dark(#ecc9cd, #3a1a1e);
 
     --font: "Mona Sans", system-ui, sans-serif;
     --mono: "Monaspace Neon", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
     --fs: 15px;
     --fs-code: 13px;
+    --fs-m: 14px; /* notes and comments: content, a step under the page text */
     --fs-s: 13px;
     --fs-xs: 12px;
     --fs-2xs: 11px;

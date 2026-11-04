@@ -12,6 +12,11 @@ templ Blob(l Layout, p BlobPage) {
 	@Shell(l, blobRail(p)) {
 		<h1 class="file-h">
 			<span>{ p.Name }</span>
+			<span class="file-facts">
+				for _, f := range p.Facts {
+					<span title={ f.Key }>{ f.Val }</span>
+				}
+			</span>
 			<span class="acts"><a class="btn" href={ templ.SafeURL(p.RawHref) }>Raw</a><a class="btn" href={ templ.SafeURL(p.HistHref) }>History</a><a class="btn" href={ templ.SafeURL(p.DirHref) }>Folder</a></span>
 		</h1>
 		if p.Notice != "" {
@@ -58,10 +63,6 @@ templ CodeView(h template.HTML) {
 }
 
 templ blobRail(p BlobPage) {
-	<section aria-labelledby="r-file">
-		<h2 id="r-file">File</h2>
-		@Facts(p.Facts)
-	</section>
 	if p.Last != nil {
 		<section aria-labelledby="r-last">
 			<h2 id="r-last">Last change <a href={ templ.SafeURL(p.HistHref) }>History</a></h2>
@@ -81,10 +82,9 @@ templ blobRail(p BlobPage) {
 		</section>
 	}
 	if p.HasCode {
-		<section aria-labelledby="r-sel">
-			<h2 id="r-sel">Selection</h2>
-			<p :text="document.body.dataset.sel || 'none · click a line number, shift-click extends'">none · click a line number, shift-click extends</p>
-			<p class="dim">y copies a permalink pinned to the commit sha</p>
+		<section aria-labelledby="r-sel" class="r-hint">
+			<h2 id="r-sel" class="sr">Selection</h2>
+			<p class="dim" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y copies a permalink' : 'Click a line number to select it, shift-click for a range; y copies a permalink.'">Click a line number to select it, shift-click for a range; y copies a permalink.</p>
 		</section>
 	}
 }

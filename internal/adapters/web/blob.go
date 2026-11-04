@@ -159,7 +159,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	if src != nil {
 		text := string(src)
 		lines := countLines(src)
-		p.Facts = append(p.Facts, Fact{Key: "lines", Val: itoa(lines)})
+		p.Facts = append(p.Facts, Fact{Key: "lines", Val: plural(lines, "line", "lines")})
 		if lines > maxViewLines {
 			text = firstLines(text, maxViewLines)
 			p.Notice = fmt.Sprintf("%d lines: showing the first %d. use raw for the rest.", lines, maxViewLines)

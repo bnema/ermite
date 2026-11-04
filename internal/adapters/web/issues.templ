@@ -135,12 +135,15 @@ templ IssueShow(l Layout, p IssuePage) {
 	@Shell(l, issueRail(p)) {
 		<section class="mr-card">
 			<header class="show mr-h">
-				<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+				<div class="mr-title">
+					<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+					@issueActions(p, false)
+				</div>
 				<dl class="kv show-kv">
 					<dt>state</dt>
 					@issueState(p, false)
 					<dt>opened</dt>
-					<dd>
+					<dd data-k="opened by">
 						{ p.Opened.Name }
 						if p.Opened.WhenAt != "" {
 							{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
@@ -148,11 +151,11 @@ templ IssueShow(l Layout, p IssuePage) {
 					</dd>
 					if p.ResolvedBy != nil {
 						<dt>resolved by</dt>
-						<dd><a class="ref" href={ templ.SafeURL(p.ResolvedBy.Href) }>{ p.ResolvedBy.Label }</a></dd>
+						<dd data-k="resolved by"><a class="ref" href={ templ.SafeURL(p.ResolvedBy.Href) }>{ p.ResolvedBy.Label }</a></dd>
 					}
 					if p.UpdatedAt != "" {
 						<dt>updated</dt>
-						<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
+						<dd data-k="updated"><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
 				</dl>
 			</header>
@@ -204,25 +207,22 @@ templ issueRail(p IssuePage) {
 			</ul>
 		</section>
 	}
-	@issueActions(p, false)
 }
 
 templ issueActions(p IssuePage, fragment bool) {
-	<section
+	<div
 		id="issue-actions"
 		if fragment {
 			hx-swap-oob="outerMorph"
 		}
+		class="mr-title-acts"
 	>
 		if p.Transition != nil {
-			<div aria-labelledby="r-act">
-				<h2 id="r-act">Issue</h2>
-				@ActionForm(ActionProps{Action: p.Transition.Action}) {
-					<button type="submit" class="btn">{ p.Transition.Label }</button>
-				}
-			</div>
+			@ActionForm(ActionProps{Action: p.Transition.Action}) {
+				<button type="submit" class="btn">{ p.Transition.Label }</button>
+			}
 		}
-	</section>
+	</div>
 }
 
 templ issueState(p IssuePage, fragment bool) {

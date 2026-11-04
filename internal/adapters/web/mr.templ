@@ -135,13 +135,13 @@ templ MergeRequest(l Layout, p MRPage) {
 					<dt>state</dt>
 					@mrState(p)
 					<dt>branch</dt>
-					<dd>
+					<dd class="k-branch">
 						@branchLink(p.Source, p.SourceHref)
 						{ " → " }
 						@branchLink(p.Target, p.TargetHref)
 					</dd>
 					<dt>opened</dt>
-					<dd>
+					<dd data-k="opened by">
 						{ p.Opened.Name }
 						if p.Opened.WhenAt != "" {
 							{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
@@ -149,7 +149,7 @@ templ MergeRequest(l Layout, p MRPage) {
 					</dd>
 					if p.UpdatedAt != "" {
 						<dt>updated</dt>
-						<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
+						<dd data-k="updated"><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
 				</dl>
 			</header>
@@ -224,7 +224,7 @@ templ MergeRequest(l Layout, p MRPage) {
 			}
 		</div>
 		<div id="mr-comments">
-			<h2 class="rule-h" id="comments"><span>Comments</span><span class="count"><span id="mr-unresolved-count" class="count">{ itoa(p.NUnresolved) }</span> open / <span id="mr-comment-count" class="count">{ itoa(p.NComments) }</span></span></h2>
+			<h2 class="rule-h" id="comments"><span>Comments</span><span class="c-counts"><span id="mr-comment-count" class="count">{ itoa(p.NComments) }</span><span class="c-open"><span id="mr-unresolved-count" class="count">{ itoa(p.NUnresolved) }</span> unresolved</span></span></h2>
 			for _, c := range p.Loose {
 				@commentView(c, "")
 			}
@@ -276,24 +276,67 @@ templ lineNotes(notes []CommentView, form *CommentForm, suffix string) {
 }
 
 // commentView is a note: a ruled block, under its line in the diff or in the
-// list of comments. Body comes only from the safe Markdown renderer.
+// list of comments. One header line holds who, when, the badges and, on the
+// right, the actions: Resolve, then a menu for quote, edit and delete. The
+// replies follow, then one Reply button that opens the form. Body comes only
+// from the safe Markdown renderer.
 templ commentView(c CommentView, suffix string) {
 	<div class="cmt" id={ "c" + c.ID + suffix } data-resolved={ boolText(c.Resolved) } data-thread?={ c.Reply != nil }>
-		<p class="c-head">
-			<span class="c-who">{ c.Author }</span>
-			if c.WhenAt != "" {
-				{ " " }<time class="mute" datetime={ c.WhenAt } title={ c.Abs }>{ c.When }</time>
+		<div class="c-head">
+			<p class="c-meta">
+				<span class="c-who">{ c.Author }</span>
+				if c.WhenAt != "" {
+					{ " " }<a class="c-when" href={ templ.SafeURL("#c" + c.ID + suffix) }><time datetime={ c.WhenAt } title={ c.Abs }>{ c.When }</time></a>
+				}
+				if c.Verdict != "" {
+					{ " " }<span class="c-verdict" data-verdict={ c.Verdict }>{ verdictLabel(c.Verdict) }</span>
+				}
+				if c.Resolved {
+					{ " " }<span class="c-state" data-state="resolved">resolved</span>
+				}
+				if c.Outdated {
+					{ " " }<span class="c-state" title="written on an earlier head; the line may have moved">outdated</span>
+				}
+				if c.Range != "" {
+					{ " " }<span class="c-tag">{ c.Range }</span>
+				}
+				if c.Where != "" {
+					{ " " }<span class="c-where">{ c.Where }</span>
+				}
+				if c.Edited {
+					{ " " }<span class="c-tag">edited</span>
+				}
+			</p>
+			if c.Resolve != nil || c.Quote != "" || c.Edit != nil || c.Delete != nil {
+				<div class="c-tools">
+					if c.Resolve != nil {
+						@ActionForm(ActionProps{Action: c.Resolve.Action, Class: "c-act c-resolve"}) {
+							<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
+							if c.Resolve.From > 0 {
+								<input type="hidden" name="from" value={ itoa(c.Resolve.From) }/>
+							}
+							<button type="submit" class="btn ghost sm"><span class="ico i-check" aria-hidden="true"></span>{ c.Resolve.Label }</button>
+						}
+					}
+					if c.Quote != "" || c.Edit != nil || c.Delete != nil {
+						<details class="menu c-menu">
+							<summary class="btn ghost sm icon" title="more actions"><span class="ico i-more" aria-hidden="true"></span><span class="sr">More actions</span></summary>
+							<div class="menu-pop">
+								if c.Quote != "" {
+									<button type="button" class="btn" data-js data-quote={ c.Quote }><span class="ico i-quote" aria-hidden="true"></span>Quote reply</button>
+								}
+								if c.Edit != nil {
+									<button type="button" class="btn" data-js data-c-open={ "edit-" + c.ID + suffix }><span class="ico i-pencil" aria-hidden="true"></span>Edit</button>
+								}
+								if c.Delete != nil {
+									<button type="button" class="btn danger" data-js data-c-open={ "delete-" + c.ID + suffix }><span class="ico i-trash" aria-hidden="true"></span>Delete</button>
+								}
+							</div>
+						</details>
+					}
+				</div>
 			}
-			if c.Resolved {
-				{ " " }<span class="c-state">resolved</span>
-			}
-			if c.Outdated {
-				{ " " }<span class="c-state" title="written on an earlier head; the line may have moved">outdated</span>
-			}
-			if c.Where != "" {
-				{ " " }<span class="c-where mute">{ c.Where }</span>
-			}
-		</p>
+		</div>
 		if len(c.Parts) > 0 {
 			<p class="c-text">
 				@userText(c.Parts)
@@ -313,35 +356,29 @@ templ commentView(c CommentView, suffix string) {
 				}
 			</div>
 		}
-		if c.Edited {
-			<span class="mute">edited</span>
-		}
-		if c.Verdict != "" {
-			<span class="c-state">{ c.Verdict }</span>
-		}
-		if c.Range != "" {
-			<span class="mute">{ c.Range }</span>
-		}
-		if c.Quote != "" {
-			<button type="button" class="btn" data-js data-quote={ c.Quote }>Quote</button>
-		}
+		// Edit and delete: without scripts, plain disclosures under the body;
+		// with them, the menu opens the one it names (data-c-open).
 		if c.Edit != nil {
-			<details>
+			<details class="c-fold" id={ "edit-" + c.ID + suffix }>
 				<summary>Edit</summary>
-				@ActionForm(ActionProps{Action: c.Edit.Action, Class: "c-act"}) {
+				@ActionForm(ActionProps{Action: c.Edit.Action, Class: "c-act c-edit"}) {
 					<input type="hidden" name="from" value={ itoa(c.Edit.From) }/>
 					<textarea data-md name="text" maxlength="8000" aria-label="Edit note">{ c.Edit.Text }</textarea>
-					<button class="btn" type="submit">Save</button>
+					<div class="f-btns">
+						<button class="btn primary" type="submit">Save</button>
+						<button class="btn ghost" type="button" data-js data-c-close>Cancel</button>
+					</div>
 				}
 			</details>
 		}
 		if c.Delete != nil {
-			<details>
+			<details class="c-fold" id={ "delete-" + c.ID + suffix }>
 				<summary>Delete</summary>
-				@ActionForm(ActionProps{Action: c.Delete.Action, Class: "c-act"}) {
+				@ActionForm(ActionProps{Action: c.Delete.Action, Class: "c-act c-confirm"}) {
 					<input type="hidden" name="from" value={ itoa(c.Delete.From) }/>
 					<p>Delete this note?</p>
-					<button class="btn" type="submit">Confirm delete</button>
+					<button class="btn danger" type="submit">Confirm delete</button>
+					<button class="btn ghost" type="button" data-js data-c-close>Cancel</button>
 				}
 			</details>
 		}
@@ -351,20 +388,22 @@ templ commentView(c CommentView, suffix string) {
 			}
 		</div>
 		if c.Reply != nil {
-			<details data-reply>
-				<summary>Reply</summary>@commentForm(*c.Reply, suffix)
+			<details data-reply class="c-reply">
+				<summary><span class="ico i-reply" aria-hidden="true"></span>Reply…</summary>@commentForm(*c.Reply, suffix)
 			</details>
 		}
-		if c.Resolve != nil {
-			@ActionForm(ActionProps{Action: c.Resolve.Action, Class: "c-act"}) {
-				<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
-				if c.Resolve.From > 0 {
-					<input type="hidden" name="from" value={ itoa(c.Resolve.From) }/>
-				}
-				<button type="submit" class="btn">{ c.Resolve.Label }</button>
-			}
-		}
 	</div>
+}
+
+// verdictLabel is the badge text of a review verdict.
+func verdictLabel(v string) string {
+	switch v {
+	case "approve":
+		return "approved"
+	case "changes_requested":
+		return "changes requested"
+	}
+	return v
 }
 
 func boolText(b bool) string {
@@ -387,7 +426,7 @@ templ commentForm(f CommentForm, suffix string) {
 }
 
 templ commentFields(f CommentForm, suffix string) {
-	<label for={ f.ID + suffix }>{ f.Title }</label>
+	<label class="f-title" for={ f.ID + suffix }>{ f.Title }</label>
 	<textarea
 		data-md
 		id={ f.ID + suffix }
@@ -406,22 +445,23 @@ templ commentFields(f CommentForm, suffix string) {
 		<input type="hidden" name="path" value={ f.Path }/>
 		<input type="hidden" name="line" value={ f.Line }/>
 		<input type="hidden" name="side" value={ f.Side }/>
-		<label>from line <input type="number" name="start_line" min="1" value={ f.StartLine }/></label>
+		<label class="f-range">from line <input type="number" name="start_line" min="1" value={ f.StartLine } placeholder={ f.Line }/> to { f.Line }</label>
 	}
 	if f.ReplyTo != "" {
 		<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
-	}
-	if f.Path == "" && f.ReplyTo == "" && !f.Issue {
-		<fieldset><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Note</label><label><input type="radio" name="verdict" value="approve"/>Approve</label><label><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
 	}
 	if f.From > 0 {
 		<input type="hidden" name="from" value={ itoa(f.From) }/>
 	}
 	<div class="f-btns">
-		<button type="submit" class="btn primary">Comment</button>
-		if f.Cancel != "" {
-			<a class="btn" href={ templ.SafeURL(f.Cancel) }>Cancel</a>
+		if f.Path == "" && f.ReplyTo == "" && !f.Issue {
+			<fieldset class="f-verdict"><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Comment</label><label data-verdict="approve"><input type="radio" name="verdict" value="approve"/>Approve</label><label data-verdict="changes_requested"><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
 		}
+		<button type="submit" class="btn primary" data-label="Comment">Comment</button>
+		if f.Cancel != "" {
+			<a class="btn ghost" href={ templ.SafeURL(f.Cancel) }>Cancel</a>
+		}
+		<span class="f-hint" data-js><kbd>ctrl</kbd><kbd>enter</kbd> to send</span>
 	</div>
 }
 
@@ -495,7 +535,7 @@ templ mrRail(p MRPage) {
 			</ul>
 		</section>
 	}
-	<section aria-labelledby="r-files" class="r-files">
+	<section aria-labelledby="r-files" class="r-files" hidden?={ len(p.Files) == 0 }>
 		<h2 id="r-files">
 			Files <span class="count">{ itoa(len(p.Files)) }</span><kbd aria-hidden="true">l</kbd>
 			<button type="button" class="btn icon fold" data-js aria-expanded="true" title="fold the list of files" hx-on:click="ermiteMR.foldFiles()">
@@ -507,12 +547,12 @@ templ mrRail(p MRPage) {
 	if len(p.Verdicts) > 0 {
 		<section>
 			<h2>Verdicts</h2>
-			<ul>
+			<ul class="verdicts">
 				for _, v := range p.Verdicts {
-					<li>
-						<a href={ templ.SafeURL(v.Href) }>{ v.Author }: { v.Label }</a>
+					<li data-verdict={ v.Label } data-stale?={ v.Stale }>
+						<a href={ templ.SafeURL(v.Href) }><span class="v-who">{ v.Author }</span> <span class="v-label">{ verdictLabel(v.Label) }</span></a>
 						if v.Stale {
-							<span class="mute">(stale)</span>
+							<span class="mute" title="given on an earlier head">(stale)</span>
 						}
 					</li>
 				}

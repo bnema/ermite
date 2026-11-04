@@ -24,7 +24,7 @@ const StaticPrefix = "/-/static/"
 // Assets are the URLs of the assets a page loads. Their names carry a hash of
 // the content, so they can be cached for ever.
 type Assets struct {
-	CSS, HTMX, Live, SSE, Store, App, Rail, Files, Passkey, Log, Lazy, MR, IssueForm, PowWorker, MDEditor, Icon string
+	CSS, HTMX, Live, SSE, Store, App, Rail, Files, Passkey, Log, Lazy, MR, IssueForm, PowWorker, MDEditor, Comments, Icon string
 	// Manifest is the web app manifest (install on a phone's home screen),
 	// AppleIcon the home screen icon iOS reads from a link instead.
 	Manifest, AppleIcon string
@@ -68,6 +68,7 @@ var scripts = []struct {
 	{"lazy.js", func(a *Assets, u string) { a.Lazy = u }},
 	{"mr.js", func(a *Assets, u string) { a.MR = u }},
 	{"md-editor.js", func(a *Assets, u string) { a.MDEditor = u }},
+	{"comments.js", func(a *Assets, u string) { a.Comments = u }},
 	{"issue-form.js", func(a *Assets, u string) { a.IssueForm = u }},
 	{"pow-worker.js", func(a *Assets, u string) { a.PowWorker = u }},
 }

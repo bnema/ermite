@@ -6,27 +6,54 @@
   /* one card: the header (title, facts) a shade lighter, the description below */
   .mr-card {
     background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
-    & > .mr-h { background: var(--bg-raised); border: 0; border-radius: 0; padding-bottom: var(--s3); }
+    & > .mr-h { background: var(--bg-surface); border: 0; border-radius: 0; padding: var(--s4) var(--s5); }
     & > .mr-desc.prose { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+  }
+  /* the facts of a merge request or an issue: one line under the title,
+     "open · feat/x → main · opened by owner 2 min ago", not a table */
+  .mr-h {
+    & h1 { margin-bottom: var(--s2); }
+    /* the title with its actions on the right (close or reopen an issue) */
+    & .mr-title { display: flex; align-items: flex-start; gap: var(--s4); }
+    & .mr-title h1 { flex: 1; min-width: 0; }
+    & .mr-title-acts { flex: none; display: flex; gap: var(--s2); }
+    & .mr-title-acts form { margin: 0; }
+    & .mr-title-acts:empty { display: none; }
+    & .show-kv {
+      display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s4);
+      font-size: var(--fs-s); color: var(--ink-dim);
+    }
+    & .show-kv dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    & .show-kv dd { color: var(--ink-dim); white-space: nowrap; }
+    & .show-kv dd a { color: var(--ink); }
+    & .show-kv dd.mr-state {
+      display: inline-flex; align-items: center; height: 24px; padding: 0 var(--s3); border-radius: 999px;
+      font-weight: 650; color: var(--ink-hi); background: var(--bg-raised); border: 1px solid var(--border-strong);
+    }
+    & .show-kv dd.mr-state[data-state="open"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 50%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
+    & .show-kv dd.mr-state[data-state="merged"] { color: var(--teal); }
+    & .show-kv dd.mr-state[data-state="closed"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
+    /* the label of a fact reads as a word before it */
+    & .show-kv dd[data-k]::before { content: attr(data-k) " "; color: var(--ink-mute); }
+    & .show-kv dd.k-branch { font-family: var(--mono); font-size: var(--fs-xs); }
   }
 
   .mr-footer {
-    border-top: 1px solid var(--border); padding: var(--s2) var(--s4);
-    /* the shade of the card header; the card's overflow clips the corners */
-    background: var(--bg-raised);
+    border-top: 1px solid var(--border); padding: var(--s2) var(--s5);
+    background: var(--bg-surface);
     font-size: var(--fs-s);
-    /* the tabs are buttons: a thin border, the count in a darker badge;
-       the open one in the teal accent */
-    & [data-mr-tabs] { display: flex; flex-wrap: wrap; gap: var(--s2); }
+    /* the tabs are quiet text buttons, the count in a badge; the open one
+       is underlined in the accent, like the page tabs */
+    & [data-mr-tabs] { display: flex; flex-wrap: wrap; gap: var(--s1); margin-inline: calc(-1 * var(--s2)); }
     & [data-mr-tabs] button {
-      display: inline-flex; align-items: center; gap: var(--s1);
-      padding: 2px var(--s2); border: 1px solid var(--border-strong); border-radius: var(--r-s);
-      color: var(--ink-dim); text-decoration: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: var(--s2); height: 30px;
+      padding: 0 var(--s2); border: 0; border-radius: var(--r-s);
+      color: var(--ink-dim); font-weight: 600; text-decoration: none; cursor: pointer;
     }
     & [data-checks-label] { color: var(--ink-dim); font-size: var(--fs-xs); }
     & [data-mr-tabs] .count { margin-left: 0; color: var(--ink-hi); background: var(--bg-canvas); box-shadow: inset 0 0 0 1px var(--border); }
-    & [data-mr-tabs] button:hover { background: var(--bg-strong); color: var(--ink-hi); }
-    & [data-mr-tabs] button[aria-expanded="true"] { border-color: var(--teal); color: var(--teal); background: var(--bg-surface); }
+    & [data-mr-tabs] button:hover { background: var(--bg-raised); color: var(--ink-hi); }
+    & [data-mr-tabs] button[aria-expanded="true"] { color: var(--ink-hi); box-shadow: inset 0 -2px 0 var(--accent); border-radius: var(--r-s) var(--r-s) 0 0; }
     & [data-mr-panel] { padding-block-start: var(--s2); overflow-x: auto; }
     & [hidden] { display: none; }
     /* Without scripts both panels remain visible; disclosure controls use data-js. */
@@ -42,7 +69,7 @@
   .merge-settings { font-size: var(--fs-s); color: var(--ink-dim); }
   .merge-settings h2 { font-size: var(--fs-s); }
 
-  .mr-state[data-state="open"]::before { content: "● "; color: var(--teal); }
+  .mr-state[data-state="open"]::before { content: "●\00a0"; color: var(--teal); }
   .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
   .mr-state[data-state="closed"]::before { content: "✗ "; color: var(--red); }
   .mr-state[data-state="draft"]::before { content: "◌ "; color: var(--ink-dim); }
@@ -185,6 +212,21 @@
     & > .files { margin: var(--s2) 0 !important; padding: 0 var(--s2); margin-inline: calc(-1 * var(--s2)) !important; }
   }
 
+  /* the verdicts of the rail: who, then the verdict as a coloured word */
+  .verdicts {
+    display: grid; gap: var(--s1); font-size: var(--fs-s);
+    & li { display: flex; align-items: center; gap: var(--s2); }
+    & a { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border-radius: var(--r-s); text-decoration: none; }
+    & a:hover { background: var(--bg-raised); }
+    & .v-who { font-weight: 600; color: var(--ink-hi); overflow: hidden; text-overflow: ellipsis; }
+    & .v-label { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-dim); white-space: nowrap; }
+    & li[data-verdict="approve"] .v-label { color: var(--teal); }
+    & li[data-verdict="approve"] .v-label::before { content: "✓ "; }
+    & li[data-verdict="changes_requested"] .v-label { color: var(--red); }
+    & li[data-verdict="changes_requested"] .v-label::before { content: "± "; }
+    & li[data-stale] .v-label { opacity: .6; }
+  }
+
   /* a file of the diff whose window is not loaded yet: about its room */
   .dlazy {
     display: flex; align-items: center; justify-content: center;
@@ -212,36 +254,163 @@
   .pcommits .s { color: var(--ink); }
 
 
-  /* a note: a plain outlined block, under its line in the diff and in the list of comments */
+  /* a note: one framed thread. A header line (who, when, badges, and the
+     actions on the right), the body, the replies under a rule, then one
+     quiet Reply line. The actions stay faint until the note is hovered or
+     holds the focus, so that the text reads first. */
   .cmt {
-    padding: var(--s3) var(--s4); margin-top: var(--s3); max-width: var(--measure);
-    background: none; border: 1px solid var(--border); border-radius: var(--r-s);
-    white-space: normal; font-family: var(--font); font-size: var(--fs-s); line-height: 22px;
+    --c-x: var(--s4);
+    margin-top: var(--s3); max-width: var(--note-w, calc(var(--measure) + 8ch));
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
+    white-space: normal; font-family: var(--font); font-size: var(--fs-m); line-height: 1.6;
     & p { white-space: normal; }
-    & .c-who { font-weight: bold; }
-    & .c-state { color: var(--ink-dim); }
-    & .c-where { font-size: var(--fs-s); overflow-wrap: anywhere; }
-    & .c-act { margin-top: var(--s2); }
-    & .c-act button { height: 26px; font-size: var(--fs-xs); }
+    & > .c-head {
+      display: flex; align-items: center; gap: var(--s2); min-height: 40px;
+      padding: var(--s1) var(--s2) var(--s1) var(--c-x);
+    }
+    & .c-meta {
+      flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s2);
+      font-size: var(--fs-s); line-height: 20px; color: var(--ink-mute);
+    }
+    & .c-who { font-weight: 650; color: var(--ink-hi); }
+    & .c-when { color: var(--ink-mute); text-decoration: none; }
+    & .c-when:hover { color: var(--ink-hi); text-decoration: underline; }
+    & .c-where { font-family: var(--mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+    & .c-tag { font-size: var(--fs-xs); }
+    & .c-state, & .c-verdict {
+      display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); gap: 4px;
+      font-size: var(--fs-xs); font-weight: 600; border-radius: 999px; white-space: nowrap;
+      color: var(--ink-dim); border: 1px solid var(--border-strong);
+    }
+    & .c-verdict[data-verdict="approve"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 55%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
+    & .c-verdict[data-verdict="changes_requested"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
+    & .c-verdict[data-verdict="approve"]::before { content: "✓"; }
+    & .c-verdict[data-verdict="changes_requested"]::before { content: "±"; }
+    & .c-state[data-state="resolved"] { color: var(--teal); border-color: transparent; padding-inline: 0; }
+    & .c-state[data-state="resolved"]::before { content: "✓"; }
+
+    & .c-tools { display: flex; align-items: center; gap: 2px; flex: none; }
+    & .c-tools form { margin: 0; }
+    @media (hover: hover) {
+      & > .c-head .c-tools { opacity: .45; transition: opacity .12s ease; }
+      &:is(:hover, :focus-within) > .c-head .c-tools, & > .c-head .c-tools:has(details[open]) { opacity: 1; }
+    }
+    & .c-menu .menu-pop { width: 190px; gap: 2px; padding: var(--s1); }
+    & .c-menu .menu-pop .btn { width: 100%; justify-content: flex-start; border-color: transparent; background: none; font-weight: 500; }
+    & .c-menu .menu-pop .btn:hover { background: var(--bg-raised); }
+    & .c-menu .menu-pop .btn .ico { color: var(--ink-mute); }
+    & .c-menu .menu-pop .btn.danger:hover, & .c-menu .menu-pop .btn.danger:hover .ico { color: var(--red); }
+
+    & > .c-body, & > .c-text, & > p.mute { padding: 0 var(--c-x) var(--s3); margin: 0; }
+    & > .c-body > * { max-width: var(--measure); }
+    & > .c-body > pre { max-width: 100%; }
+    & > .c-body > :first-child { margin-top: 0; }
+    & > .c-body > :last-child { margin-bottom: 0; }
+    & .c-body pre { font-size: var(--fs-code); }
+
+    /* edit / delete: opened from the menu; without scripts, plain disclosures */
+    & > .c-fold { padding: 0 var(--c-x); }
+    & > .c-fold > summary { font-size: var(--fs-s); color: var(--ink-mute); padding-bottom: var(--s2); }
+    & > .c-fold[open] { padding-bottom: var(--s3); }
+    html.js & > .c-fold > summary { display: none; }
+    html.js & > .c-fold:not([open]) { display: none; }
+    & .c-edit { display: grid; gap: var(--s2); }
+    & .c-edit textarea { width: 100%; min-height: 6lh; }
+    & .c-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border: 1px solid color-mix(in srgb, var(--red) 50%, var(--border)); border-radius: var(--r-s); }
+    & .c-confirm p { flex: 1; margin: 0; }
+
+    /* replies: one ruled list inside the root */
+    & > [data-replies]:not(:empty) { border-top: 1px solid var(--border); }
+    & > [data-replies] > .cmt {
+      margin: 0; max-width: none; border: 0; border-radius: 0; background: none;
+      border-top: 1px solid var(--border);
+      &:first-child { border-top: 0; }
+      & > .c-head { padding-left: calc(var(--c-x) + var(--s3)); }
+      & > :is(.c-body, .c-text, p.mute, .c-fold) { padding-left: calc(var(--c-x) + var(--s3)); }
+    }
+    & > .c-reply { border-top: 1px solid var(--border); }
+    & > .c-reply > summary {
+      display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--c-x);
+      font-size: var(--fs-s); color: var(--ink-mute); list-style: none; border-radius: 0 0 var(--r) var(--r);
+    }
+    & > .c-reply > summary::-webkit-details-marker { display: none; }
+    & > .c-reply > summary:hover { color: var(--ink-hi); background: var(--bg-raised); }
+    & > .c-reply[open] > summary { display: none; }
+    & > .c-reply > div { padding: var(--s3) var(--c-x); }
+    & > .c-reply .cform { margin: 0; max-width: none; }
+
     &[data-resolved="true"] .c-body { color: var(--ink-dim); }
+    /* a resolved root thread folds to its header line (comments.js); the
+       header unfolds it */
+    html.js &[data-resolved="true"]:not([data-open]):not(.cmt .cmt) {
+      background: none;
+      & > :not(.c-head) { display: none; }
+      & > .c-head { cursor: pointer; }
+      & > .c-head .c-meta::after { content: "show thread"; font-size: var(--fs-xs); color: var(--ink-mute); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+    }
+    html.js &[data-resolved="true"][data-open]:not(.cmt .cmt) > .c-head { cursor: pointer; }
+    &:target, &:has(> .c-head :target) { border-color: var(--ink-mute); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
   }
-  .dt .fnote td { background: var(--bg-canvas); padding: var(--s2) var(--s3); white-space: normal; }
+  /* the notes under a diff line: on the canvas, aligned with the code */
+  .dt .fnote td { background: var(--bg-canvas); padding: var(--s3) var(--s4) var(--s3) var(--s3); white-space: normal; font-family: var(--font); }
   .dt .fnote .cmt, .dt .fnote .cform { margin: 0; }
-  .dt .fnote .cmt + .cmt, .dt .fnote .cmt + .cform { margin-top: var(--s2); }
+  .dt .fnote .cmt + .cmt, .dt .fnote .cmt + .cform { margin-top: var(--s3); }
   .ln a { color: inherit; text-decoration: none; }
   .ln a:hover, .ln a:focus-visible { text-decoration: underline; color: var(--ink-hi); }
 
+  /* small, quiet buttons: the actions of a note */
+  .btn.sm { height: 28px; padding: 0 var(--s2); font-size: var(--fs-xs); gap: 6px; }
+  .btn.sm.icon { width: 28px; padding: 0; }
+  .btn.sm .ico { width: 14px; height: 14px; }
+  .btn.ghost { background: none; border-color: transparent; color: var(--ink-dim); }
+  .btn.ghost:hover { background: var(--bg-raised); color: var(--ink-hi); }
+  .btn.danger:not(.ghost):not(:hover) { color: var(--red); }
+  .i-more { --i: url(icons/more.svg); }
+  .i-check { --i: url(icons/check.svg); }
+  .i-circle-check { --i: url(icons/circle-check.svg); }
+  .i-reply { --i: url(icons/reply.svg); }
+  .i-quote { --i: url(icons/quote.svg); }
+  .i-pencil { --i: url(icons/pencil.svg); }
+  .i-trash { --i: url(icons/trash.svg); }
+
   /* the forms: a comment, a new merge request */
   .cform {
-    display: grid; gap: var(--s2); margin-top: var(--s3); max-width: var(--measure);
+    display: grid; gap: var(--s2); margin-top: var(--s3); max-width: var(--note-w, calc(var(--measure) + 8ch));
     font-family: var(--font); font-size: var(--fs-s);
     & label { color: var(--ink-dim); font-weight: 600; }
+    & .f-title { color: var(--ink-hi); font-size: var(--fs-s); }
+    & .f-title::first-letter { text-transform: uppercase; }
     & textarea, & input[type="text"] {
       display: block; width: 100%; font: inherit; font-size: var(--fs); color: inherit; resize: vertical;
       background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--r-s); padding: var(--s2) var(--s3);
     }
     & textarea::placeholder { color: var(--ink-mute); opacity: 1; }
-    & .f-btns { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s1); }
+    & .f-btns { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s1); }
+    & .f-hint { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); color: var(--ink-mute); }
+    & .f-hint kbd { font-size: var(--fs-2xs); line-height: 16px; min-width: 0; }
+    @media (hover: none) { & .f-hint { display: none; } }
+    /* the first line of a range: a small inline number field */
+    & .f-range { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 400; color: var(--ink-mute); font-size: var(--fs-xs); }
+    & .f-range input {
+      width: 9ch; height: 26px; padding: 0 var(--s2); font: var(--fs-xs) var(--mono); color: var(--ink);
+      background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: 4px;
+    }
+    /* the verdict of a general comment: a segmented control */
+    & .f-verdict {
+      display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; margin: 0; min-width: 0;
+      border: 1px solid var(--border-strong); border-radius: var(--r-s); background: var(--bg-inset);
+      & legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      & label {
+        display: inline-flex; align-items: center; height: 28px; padding: 0 var(--s3); border-radius: 4px;
+        font-weight: 600; font-size: var(--fs-xs); color: var(--ink-dim); cursor: pointer;
+      }
+      & label:hover { color: var(--ink-hi); }
+      & input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+      & label:has(:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
+      & label:has(:checked) { background: var(--bg-strong); color: var(--ink-hi); box-shadow: 0 0 0 1px var(--border-strong); }
+      & label[data-verdict="approve"]:has(:checked) { color: var(--teal); box-shadow: 0 0 0 1px color-mix(in srgb, var(--teal) 60%, transparent); }
+      & label[data-verdict="changes_requested"]:has(:checked) { color: var(--red); box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 60%, transparent); }
+    }
   }
 
   /* the public issue form: counters, field errors, the honeypot out of sight */
@@ -371,7 +540,10 @@
   .mrs tr[data-state="resolved"] .c-state::before { content: "✓ "; color: var(--teal); }
 
   .c-body { white-space: normal; overflow-wrap: anywhere; }
+  /* the counts of the comments heading: the total, then the unresolved */
+  .rule-h .c-counts { display: inline-flex; align-items: center; gap: var(--s3); }
+  .rule-h .c-open { display: inline-flex; align-items: center; gap: var(--s1); font: 500 var(--fs-xs) / 1 var(--font); color: var(--ink-mute); letter-spacing: 0; }
+  .rule-h .c-open .count { margin-left: 0; }
   .c-body.prose > * { margin-block: .5em; }
   .c-body .ref { font-variant-numeric: tabular-nums; text-decoration: underline; }
-  .cmt > .cmt, .cmt > [data-replies] > .cmt { margin-inline-start: 2ch; }
 }

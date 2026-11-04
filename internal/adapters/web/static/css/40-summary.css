@@ -27,11 +27,13 @@
 
   /* rendered Markdown */
   .prose {
-    max-width: var(--measure); line-height: 1.65; overflow-wrap: break-word;
-    & h1, & h2, & h3, & h4 { margin: 1.6em 0 0; }
-    & h1 { font-size: 26px; line-height: 34px; padding-bottom: var(--s2); border-bottom: 1px solid var(--border); }
-    & h2 { font-size: 20px; line-height: 28px; padding-bottom: var(--s1); border-bottom: 1px solid var(--border); }
-    & h3 { font-size: 17px; }
+    max-width: var(--measure); line-height: 1.7; overflow-wrap: break-word;
+    color: var(--ink); letter-spacing: .003em;
+    & h1, & h2, & h3, & h4 { margin: 1.8em 0 0; }
+    & h1 { font-size: 24px; line-height: 32px; padding-bottom: var(--s2); border-bottom: 1px solid var(--border); }
+    & h2 { font-size: 19px; line-height: 28px; padding-bottom: var(--s2); border-bottom: 1px solid var(--border); }
+    & h3 { font-size: 16px; }
+    & strong { color: var(--ink-hi); }
     & > :first-child { margin-top: 0; }
     & p, & ul, & ol, & pre, & table, & blockquote { margin-top: var(--s4); }
     & ul { list-style: disc; }
@@ -48,8 +50,9 @@
       font-size: var(--fs-code); line-height: var(--lh-code);
     }
     & :not(pre) > code {
-      padding: 1px 5px; font-size: .88em; overflow-wrap: anywhere;
+      padding: 1px 5px; font-size: .86em; overflow-wrap: anywhere;
       background: var(--bg-raised); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--ink-hi);
     }
     & blockquote { padding-left: var(--s4); border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border-strong)); color: var(--ink-dim); }
     /* the box fits its columns, and scrolls when they overflow the text */

@@ -1,10 +1,14 @@
 @layer components {
   /* page title for a file: name, then its actions as plain words */
   .file-h {
-    display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap; font-size: 18px;
+    display: flex; gap: var(--s2) var(--s4); align-items: center; flex-wrap: wrap; font-size: 18px;
     & > span:first-child { overflow-wrap: anywhere; }
+    /* size, lines and language, quiet beside the name */
+    & .file-facts { display: inline-flex; flex-wrap: wrap; gap: var(--s3); font: 400 var(--fs-s) / 1 var(--font); color: var(--ink-mute); letter-spacing: 0; }
+    & .file-facts > span + span::before { content: "·"; margin-right: var(--s3); color: var(--border-strong); }
     & .acts { margin-left: auto; display: flex; gap: var(--s2); }
   }
+  .rail .r-hint p { font-size: var(--fs-s); line-height: 20px; }
   .notice {
     padding: var(--s3) var(--s4); max-width: var(--measure); font-size: var(--fs-s);
     background: var(--bg-surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--ink-hi); border-radius: var(--r-s);
@@ -63,9 +67,12 @@
          the lines scrolling under it never show through */
       box-shadow: 0 calc(-1 * var(--s3)) 0 var(--bg-canvas);
       background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r) var(--r) 0 0; padding: var(--s2) var(--s3);
-      font-family: var(--mono); font-size: var(--fs-s);
+      font-family: var(--mono); font-size: var(--fs-s); color: var(--ink);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style: none;
     }
+    & > summary:hover { color: var(--ink-hi); }
+    & > summary .p { color: var(--ink-hi); }
+    & > summary :is(.plus, .minus) { font-size: var(--fs-xs); }
     &:not([open]) > summary { border-radius: var(--r); }
     & > summary::-webkit-details-marker { display: none; }
     & > summary::before { content: "▸ "; }
@@ -81,6 +88,7 @@
     /* the gutter is as wide as the largest line number of the file (lnw-N on
        .dfile), plus 1ch on each side */
     & .ln { width: calc(var(--lnw) + 2ch); min-width: calc(var(--lnw) + 2ch); padding: 0 1ch; text-align: right; color: var(--ink-mute); user-select: none; }
+    & .tx { padding-right: var(--s4); }
     & .m { width: 2ch; text-align: center; user-select: none; color: var(--ink-dim); }
     & .tx { white-space: pre; }
     /* the hunk headers and the hidden lines stay quiet: a faint band between
@@ -98,6 +106,10 @@
     & .gap button:disabled { cursor: progress; opacity: .6; }
     & .add, & tr.add td { background: var(--add); }
     & .del, & tr.del td { background: var(--del); }
+    /* the gutter of a changed line a shade stronger: the eye finds the
+       change down the left edge */
+    & tr.add td.ln, & td.ln.add { background: var(--add-hi); }
+    & tr.del td.ln, & td.ln.del { background: var(--del-hi); }
     & .add.m, & tr.add .m { color: var(--teal); font-weight: bold; }
     & .del.m, & tr.del .m { color: var(--red); font-weight: bold; }
     & tr.add .ln, & .ln.add { color: var(--teal); }

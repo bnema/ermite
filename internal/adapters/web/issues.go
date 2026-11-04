@@ -328,7 +328,9 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	)
 	p.Live = true
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=issue&n="+strconv.FormatInt(n, 10))
-	l.HasRail = true
+	// The rail holds the merge requests naming the issue; without them the
+	// discussion takes the whole width.
+	l.HasRail = len(p.References) > 0
 	return IssueShow(l, p), http.StatusOK, nil
 }
 

@@ -111,6 +111,11 @@
 </div>
 <h1 class="file-h">
 <span>logo.svg</span>
+<span class="file-facts">
+<span title="size">89 B</span>
+<span title="lines">1 line</span>
+<span title="type">XML</span>
+</span>
 <span class="acts">
 <a class="btn" href="/files/raw/main/logo.svg">Raw</a>
 <a class="btn" href="/files/commits/main/logo.svg">History</a>
@@ -138,17 +143,6 @@
 </pre>
 </main>
 <aside class="rail" aria-label="Context">
-<section aria-labelledby="r-file">
-<h2 id="r-file">File</h2>
-<dl class="kv">
-<dt>size</dt>
-<dd>89 B</dd>
-<dt>lines</dt>
-<dd>1</dd>
-<dt>type</dt>
-<dd>XML</dd>
-</dl>
-</section>
 <section aria-labelledby="r-last">
 <h2 id="r-last">Last change <a href="/files/commits/main/logo.svg">History</a>
 </h2>
@@ -157,10 +151,9 @@
 <p class="dim">T · <time datetime="STAMP" title="STAMP">AGO</time>
 </p>
 </section>
-<section aria-labelledby="r-sel">
-<h2 id="r-sel">Selection</h2>
-<p :text="document.body.dataset.sel || 'none · click a line number, shift-click extends'">none · click a line number, shift-click extends</p>
-<p class="dim">y copies a permalink pinned to the commit sha</p>
+<section aria-labelledby="r-sel" class="r-hint">
+<h2 id="r-sel" class="sr">Selection</h2>
+<p class="dim" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y copies a permalink' : 'Click a line number to select it, shift-click for a range; y copies a permalink.'">Click a line number to select it, shift-click for a range; y copies a permalink.</p>
 </section>
 </aside>
 </div>

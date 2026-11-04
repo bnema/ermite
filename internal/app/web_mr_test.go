@@ -734,7 +734,7 @@ func TestWebMergeRequestFileWindows(t *testing.T) {
 	form := b.get("/proj/merge-requests/1?from=50&on=new:1:many%2Ff55.txt", as(token))
 	require.Equal(t, 200, form.status)
 	assert.Contains(t, form.body, `name="from" value="50"`)
-	assert.Contains(t, form.body, `class="btn" href="/proj/merge-requests/1?from=50#f`)
+	assert.Contains(t, form.body, `class="btn ghost" href="/proj/merge-requests/1?from=50#f`)
 	res := b.form("/proj/merge-requests/1/comments", token, url.Values{"text": {"near it"}, "path": {"many/f55.txt"}, "line": {"1"}, "side": {"new"}, "from": {"50"}})
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
 	assert.Equal(t, "/proj/merge-requests/1?from=50#c2", res.hdr.Get("Location"))
