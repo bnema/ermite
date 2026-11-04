@@ -224,7 +224,7 @@ func TestFamilyOf(t *testing.T) {
 		{EcosystemActions, "local", "local"},
 		{EcosystemGoMod, "github.com/charmbracelet/bubbletea", "github.com/charmbracelet/"},
 		{EcosystemGoMod, "github.com/charmbracelet/lipgloss/v2", "github.com/charmbracelet/"},
-		{EcosystemGoMod, "git.bnema.dev/brice/lib", "git.bnema.dev/brice/"},
+		{EcosystemGoMod, "git.bnema.dev/owner/lib", "git.bnema.dev/owner/"},
 		{EcosystemGoMod, "codeberg.org/owner/x", "codeberg.org/owner/"},
 		{EcosystemGoMod, "go.opentelemetry.io/otel", "go.opentelemetry.io/"},
 		{EcosystemGoMod, "go.opentelemetry.io/otel/sdk/metric", "go.opentelemetry.io/"},
