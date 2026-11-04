@@ -160,6 +160,74 @@ func (_c *DepsEcosystem_ApplyInServer_Call) RunAndReturn(run func() bool) *DepsE
 	return _c
 }
 
+// Bump provides a mock function for the type DepsEcosystem
+func (_mock *DepsEcosystem) Bump(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
+	ret := _mock.Called(files, ups)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Bump")
+	}
+
+	var r0 map[domain.TreePath][]byte
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.TreePath][]byte, error)); ok {
+		return returnFunc(files, ups)
+	}
+	if returnFunc, ok := ret.Get(0).(func(map[domain.TreePath][]byte, []domain.DepUpdate) map[domain.TreePath][]byte); ok {
+		r0 = returnFunc(files, ups)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[domain.TreePath][]byte)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(map[domain.TreePath][]byte, []domain.DepUpdate) error); ok {
+		r1 = returnFunc(files, ups)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DepsEcosystem_Bump_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Bump'
+type DepsEcosystem_Bump_Call struct {
+	*mock.Call
+}
+
+// Bump is a helper method to define mock.On call
+//   - files map[domain.TreePath][]byte
+//   - ups []domain.DepUpdate
+func (_e *DepsEcosystem_Expecter) Bump(files any, ups any) *DepsEcosystem_Bump_Call {
+	return &DepsEcosystem_Bump_Call{Call: _e.mock.On("Bump", files, ups)}
+}
+
+func (_c *DepsEcosystem_Bump_Call) Run(run func(files map[domain.TreePath][]byte, ups []domain.DepUpdate)) *DepsEcosystem_Bump_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 map[domain.TreePath][]byte
+		if args[0] != nil {
+			arg0 = args[0].(map[domain.TreePath][]byte)
+		}
+		var arg1 []domain.DepUpdate
+		if args[1] != nil {
+			arg1 = args[1].([]domain.DepUpdate)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsEcosystem_Bump_Call) Return(treePathToBytes map[domain.TreePath][]byte, err error) *DepsEcosystem_Bump_Call {
+	_c.Call.Return(treePathToBytes, err)
+	return _c
+}
+
+func (_c *DepsEcosystem_Bump_Call) RunAndReturn(run func(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error)) *DepsEcosystem_Bump_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Detect provides a mock function for the type DepsEcosystem
 func (_mock *DepsEcosystem) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
 	ret := _mock.Called(ctx, files, reg)

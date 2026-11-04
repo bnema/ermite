@@ -12,6 +12,17 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
+// CIHold identifies held heads: CI does not start push or pull_request runs
+// for a held head.
+type CIHold interface {
+	Held(ctx context.Context, repo domain.RepoName, branch string, sha domain.ObjectID) bool
+}
+
+// CIReadyJobLister lists jobs waiting for a runner. CIStore implements it.
+type CIReadyJobLister interface {
+	ListReadyJobs(ctx context.Context, limit int) ([]domain.CIJob, error)
+}
+
 // CIRunDraft is what CreateRun stores: a run with its source, its jobs and
 // their checks, built once the store has chosen the ids.
 type CIRunDraft struct {

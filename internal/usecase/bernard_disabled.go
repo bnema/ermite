@@ -46,6 +46,16 @@ func (DisabledBernard) Ignore(_ context.Context, p domain.Principal, _ domain.Re
 	return disabledBernard(p)
 }
 
+// SetAutoOpen refuses: Bernard is disabled.
+func (DisabledBernard) SetAutoOpen(_ context.Context, p domain.Principal, _ domain.RepoName, _ bool) (domain.RepoDeps, error) {
+	return disabledBernard(p)
+}
+
+// Split refuses: Bernard is disabled.
+func (DisabledBernard) Split(_ context.Context, p domain.Principal, _ domain.RepoName, _ domain.DepName, _ bool) (domain.RepoDeps, error) {
+	return disabledBernard(p)
+}
+
 // Snooze refuses: Bernard is disabled.
 func (DisabledBernard) Snooze(_ context.Context, p domain.Principal, _ domain.RepoName) (domain.RepoDeps, error) {
 	return disabledBernard(p)

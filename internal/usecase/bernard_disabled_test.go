@@ -32,6 +32,8 @@ func TestDisabledBernard(t *testing.T) {
 			return err
 		},
 		func(p domain.Principal) error { _, err := d.Snooze(ctx, p, repo); return err },
+		func(p domain.Principal) error { _, err := d.SetAutoOpen(ctx, p, repo, true); return err },
+		func(p domain.Principal) error { _, err := d.Split(ctx, p, repo, domain.DepName{}, true); return err },
 	} {
 		err := call(domain.Owner())
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)

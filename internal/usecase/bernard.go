@@ -35,6 +35,14 @@ const (
 
 // BernardConfig configures Bernard.
 type BernardConfig struct {
+	// Jobs lists CI jobs waiting for a runner.
+	Jobs ports.CIReadyJobLister
+	// Logs optionally provides job log tails.
+	Logs ports.CILogStore
+	// Concurrency is the dependency run limit.
+	Concurrency int
+	// AutoOpen enables automatic patch/minor merge requests.
+	AutoOpen   bool
 	Store      ports.DepsStore
 	Meta       ports.RepoMetaStore
 	Reader     ports.RepoReader
@@ -130,6 +138,22 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	return &Bernard{cfg: cfg, cron: domain.CronSchedule{Cron: cron, Loc: time.UTC}, ctx: ctx, stop: stop}, nil
+}
+
+// SetAutoOpen is not implemented yet.
+func (b *Bernard) SetAutoOpen(_ context.Context, p domain.Principal, _ domain.RepoName, _ bool) (domain.RepoDeps, error) {
+	if !p.HasOwnerRights() {
+		return domain.RepoDeps{}, domain.ErrNotFound
+	}
+	return domain.RepoDeps{}, fmt.Errorf("%w: SetAutoOpen not implemented", domain.ErrPreconditionFailed)
+}
+
+// Split is not implemented yet.
+func (b *Bernard) Split(_ context.Context, p domain.Principal, _ domain.RepoName, _ domain.DepName, _ bool) (domain.RepoDeps, error) {
+	if !p.HasOwnerRights() {
+		return domain.RepoDeps{}, domain.ErrNotFound
+	}
+	return domain.RepoDeps{}, fmt.Errorf("%w: Split not implemented", domain.ErrPreconditionFailed)
 }
 
 // Start starts the daily schedule, once.

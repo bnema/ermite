@@ -85,6 +85,11 @@ func (Actions) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg
 	return out, nil, nil
 }
 
+// Bump edits action references without any runner or lockfile work.
+func (a Actions) Bump(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
+	return a.Apply(files, ups)
+}
+
 // Apply changes only matched uses version bytes, preserving quotes and comments.
 func (Actions) Apply(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
 	out := make(map[domain.TreePath][]byte, len(files))

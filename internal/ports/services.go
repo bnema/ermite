@@ -436,6 +436,8 @@ type GitHubReleaseAPI interface {
 // DepsService is Bernard. Every method needs owner rights and answers
 // domain.ErrNotFound to anyone else. *usecase.Bernard implements it.
 type DepsService interface {
+	SetAutoOpen(ctx context.Context, p domain.Principal, repo domain.RepoName, on bool) (domain.RepoDeps, error)
+	Split(ctx context.Context, p domain.Principal, repo domain.RepoName, name domain.DepName, split bool) (domain.RepoDeps, error)
 	// List returns the records with pending updates (snoozed included, so
 	// clients can show them), or only repo's when repo is not zero.
 	List(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]domain.RepoDeps, error)

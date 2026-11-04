@@ -361,6 +361,84 @@ func (_c *DepsService_Open_Call) RunAndReturn(run func(ctx context.Context, p do
 	return _c
 }
 
+// SetAutoOpen provides a mock function for the type DepsService
+func (_mock *DepsService) SetAutoOpen(ctx context.Context, p domain.Principal, repo domain.RepoName, on bool) (domain.RepoDeps, error) {
+	ret := _mock.Called(ctx, p, repo, on)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetAutoOpen")
+	}
+
+	var r0 domain.RepoDeps
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, bool) (domain.RepoDeps, error)); ok {
+		return returnFunc(ctx, p, repo, on)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, bool) domain.RepoDeps); ok {
+		r0 = returnFunc(ctx, p, repo, on)
+	} else {
+		r0 = ret.Get(0).(domain.RepoDeps)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, bool) error); ok {
+		r1 = returnFunc(ctx, p, repo, on)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DepsService_SetAutoOpen_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetAutoOpen'
+type DepsService_SetAutoOpen_Call struct {
+	*mock.Call
+}
+
+// SetAutoOpen is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - on bool
+func (_e *DepsService_Expecter) SetAutoOpen(ctx any, p any, repo any, on any) *DepsService_SetAutoOpen_Call {
+	return &DepsService_SetAutoOpen_Call{Call: _e.mock.On("SetAutoOpen", ctx, p, repo, on)}
+}
+
+func (_c *DepsService_SetAutoOpen_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, on bool)) *DepsService_SetAutoOpen_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 bool
+		if args[3] != nil {
+			arg3 = args[3].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsService_SetAutoOpen_Call) Return(repoDeps domain.RepoDeps, err error) *DepsService_SetAutoOpen_Call {
+	_c.Call.Return(repoDeps, err)
+	return _c
+}
+
+func (_c *DepsService_SetAutoOpen_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, on bool) (domain.RepoDeps, error)) *DepsService_SetAutoOpen_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Snooze provides a mock function for the type DepsService
 func (_mock *DepsService) Snooze(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error) {
 	ret := _mock.Called(ctx, p, repo)
@@ -429,6 +507,90 @@ func (_c *DepsService_Snooze_Call) Return(repoDeps domain.RepoDeps, err error) *
 }
 
 func (_c *DepsService_Snooze_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error)) *DepsService_Snooze_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Split provides a mock function for the type DepsService
+func (_mock *DepsService) Split(ctx context.Context, p domain.Principal, repo domain.RepoName, name domain.DepName, split bool) (domain.RepoDeps, error) {
+	ret := _mock.Called(ctx, p, repo, name, split)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Split")
+	}
+
+	var r0 domain.RepoDeps
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.DepName, bool) (domain.RepoDeps, error)); ok {
+		return returnFunc(ctx, p, repo, name, split)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.DepName, bool) domain.RepoDeps); ok {
+		r0 = returnFunc(ctx, p, repo, name, split)
+	} else {
+		r0 = ret.Get(0).(domain.RepoDeps)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.DepName, bool) error); ok {
+		r1 = returnFunc(ctx, p, repo, name, split)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DepsService_Split_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Split'
+type DepsService_Split_Call struct {
+	*mock.Call
+}
+
+// Split is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - name domain.DepName
+//   - split bool
+func (_e *DepsService_Expecter) Split(ctx any, p any, repo any, name any, split any) *DepsService_Split_Call {
+	return &DepsService_Split_Call{Call: _e.mock.On("Split", ctx, p, repo, name, split)}
+}
+
+func (_c *DepsService_Split_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, name domain.DepName, split bool)) *DepsService_Split_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 domain.DepName
+		if args[3] != nil {
+			arg3 = args[3].(domain.DepName)
+		}
+		var arg4 bool
+		if args[4] != nil {
+			arg4 = args[4].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsService_Split_Call) Return(repoDeps domain.RepoDeps, err error) *DepsService_Split_Call {
+	_c.Call.Return(repoDeps, err)
+	return _c
+}
+
+func (_c *DepsService_Split_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, name domain.DepName, split bool) (domain.RepoDeps, error)) *DepsService_Split_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -488,16 +488,22 @@ type InboxCounts struct {
 // InboxDeps is one visible dependency batch of a repository with the run that
 // applies it, or applied it last.
 type InboxDeps struct {
-	Batch domain.DepBatch
-	Rec   domain.RepoDeps
+	// QueuePos is the batch's queue position; zero when not queued.
+	QueuePos int
+	Batch    domain.DepBatch
+	Rec      domain.RepoDeps
 	// Run is the run of Batch.RunID; nil when the record has none or the run is
 	// gone.
 	Run *domain.CIRun
 }
 
+// DepsQueue summarizes dependency queue capacity and occupancy.
+type DepsQueue struct{ Running, Limit, Queued int }
+
 // InboxOverview is what the owner has to look at across every repository: the
 // open merge requests and issues, ongoing CI runs, and issues awaiting moderation.
 type InboxOverview struct {
+	DepsQueue DepsQueue
 	// Deps are the visible batches of non-archived repositories, excluding
 	// snoozed records.
 	Deps []InboxDeps

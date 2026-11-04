@@ -35,6 +35,11 @@ func (GoMod) Name() domain.DepsEcosystem { return domain.EcosystemGoMod }
 // ApplyInServer reports that Go updates require a runner.
 func (GoMod) ApplyInServer() bool { return false }
 
+// Bump is not implemented yet.
+func (GoMod) Bump(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
+	return nil, fmt.Errorf("%w: Go manifest bump not implemented", domain.ErrPreconditionFailed)
+}
+
 // Apply refuses server-side Go edits.
 func (GoMod) Apply(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
 	return nil, fmt.Errorf("%w: Go updates require a runner", domain.ErrPreconditionFailed)

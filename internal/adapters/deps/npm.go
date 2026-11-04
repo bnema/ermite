@@ -31,6 +31,11 @@ func (NPM) Apply(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.Tre
 	return nil, fmt.Errorf("%w: npm updates require a runner", domain.ErrPreconditionFailed)
 }
 
+// Bump is not implemented yet.
+func (NPM) Bump(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
+	return nil, fmt.Errorf("%w: npm manifest bump not implemented", domain.ErrPreconditionFailed)
+}
+
 var npmLockfiles = map[string]bool{"package-lock.json": true, "npm-shrinkwrap.json": true, "pnpm-lock.yaml": true, "yarn.lock": true, "bun.lock": true, "bun.lockb": true}
 
 // npmRegistryBase is the only registry new package-lock.json resolutions may
