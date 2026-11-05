@@ -96,3 +96,11 @@ func TestBotMRBodyFor(t *testing.T) {
 		})
 	}
 }
+
+func TestBotMRBodyPathMajor(t *testing.T) {
+	ups := []DepUpdate{{DepRef: DepRef{Ecosystem: EcosystemGoMod, Name: "github.com/go-acme/lego/v4", Version: "v5.0.0"}, Current: "v4.20.0", NewName: "github.com/go-acme/lego/v5"}}
+	got := BotMRBody(ups, nil)
+	if !strings.Contains(got, "github.com/go-acme/lego/v4 -> github.com/go-acme/lego/v5") || strings.Contains(got, "v4 ? ") {
+		t.Errorf("got %q", got)
+	}
+}

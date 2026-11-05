@@ -359,7 +359,7 @@ func BotMRBody(ups []DepUpdate, effects []DepSideEffect) string {
 	named := slices.Clone(ups)
 	for i := range named {
 		if named[i].NewName != "" {
-			named[i].Name += " → " + named[i].NewName
+			named[i].Name += " -> " + named[i].NewName
 		}
 	}
 	b.WriteString(BotCommitBody(named))
