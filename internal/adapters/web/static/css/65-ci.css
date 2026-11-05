@@ -34,7 +34,7 @@
   .run-h { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s4); }
   .run-err, .job-err {
     max-width: var(--measure); padding: var(--s3) var(--s4); margin: 0 0 var(--s4); white-space: pre-wrap; overflow-wrap: anywhere;
-    background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--red); border-radius: var(--r-s);
+    background: var(--bg-surface); border: 1px solid var(--red); border-radius: var(--r-s);
     font: inherit; font-size: var(--fs-s);
   }
 
@@ -67,12 +67,12 @@
   .annot-list { display: grid; gap: var(--s2); padding: 0; margin: 0; list-style: none; }
   .annot {
     display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) var(--s3);
-    background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--r-s);
+    background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--r-s);
     font-size: var(--fs-s);
   }
-  .annot-failure { border-left-color: var(--red); }
-  .annot-warning { border-left-style: dashed; border-left-color: var(--ink-dim); }
-  .annot-notice { border-left-color: var(--teal); }
+  .annot-failure { border-color: var(--red); }
+  .annot-warning { border-style: dashed; border-color: var(--ink-dim); }
+  .annot-notice { border-color: var(--teal); }
   .annot p { margin: 0; }
   .annot-step { flex-basis: 100%; font-weight: 700; }
   .annot:has(.annot-step) { flex-wrap: wrap; }

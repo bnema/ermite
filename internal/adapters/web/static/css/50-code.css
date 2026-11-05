@@ -13,7 +13,7 @@
   .rail .r-hint p { font-size: var(--fs-s); line-height: 20px; }
   .notice {
     padding: var(--s3) var(--s4); max-width: var(--measure); font-size: var(--fs-s);
-    background: var(--bg-surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--ink-hi); border-radius: var(--r-s);
+    background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--r-s);
   }
   .note { color: var(--ink-dim); font-size: var(--fs-s); }
   .pad { padding: var(--s3) var(--s4); }

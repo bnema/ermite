@@ -154,7 +154,7 @@
     & .d-btns .btn { flex: 1; justify-content: center; }
     & .d-draft { color: var(--ink-dim); }
     & .d-note { margin: 0; color: var(--ink-dim); }
-    & .d-err { margin: 0; padding: var(--s2) var(--s3); color: var(--ink-hi); border: 1px solid var(--red); border-left-width: 3px; border-radius: var(--r-s); overflow-wrap: anywhere; }
+    & .d-err { margin: 0; padding: var(--s2) var(--s3); color: var(--ink-hi); border: 1px solid var(--red); border-radius: var(--r-s); overflow-wrap: anywhere; }
     /* the badge is a live slot, but not a banner */
     & #mr-mergeability:not(:empty) { padding: 0; font-weight: normal; background: none; border: 0; display: grid; gap: var(--s1); }
     & .mg-paths { margin: 0; padding-left: 2ch; max-height: 8em; overflow: auto; }
@@ -503,7 +503,7 @@
       margin: 0 0 var(--s2); padding: var(--s2); max-height: 20rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
       font: var(--fs-s)/var(--lh-code) var(--mono); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r);
     }
-    & .deps-failure > .deps-error { border-left: 3px solid var(--red); }
+    & .deps-failure > .deps-error { border-color: var(--red); }
   }
   .deps-menu .menu-pop { width: 170px; gap: var(--s1); padding: var(--s2); }
   .deps-menu .menu-pop .btn { width: 100%; justify-content: flex-start; border-color: transparent; background: none; }
