@@ -963,16 +963,20 @@ window.ermiteLive = (() => {
   // row whose open menu held the focus, or ''.
   const keepOpen = (old, el) => {
     let menuOf = '';
-    const items = [...el.querySelectorAll('li[id]')];
-    if (el.matches('li[id]')) items.push(el);
+    const items = [...el.querySelectorAll('li')];
+    if (el.tagName === 'LI') items.push(el);
     const twin = (li) => {
       const fresh = items.find((e) => e.id === li.id);
       return [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
     };
-    for (const d of old.querySelectorAll('details:not(.menu)')) {
+    for (const d of old.querySelectorAll('details')) {
+      if (d.matches('.menu')) continue;
       const li = d.parentElement;
       if (li?.tagName !== 'LI' || !li.id) continue;
-      twin(li)?.toggleAttribute('open', d.open);
+      const same = twin(li);
+      if (!same) continue;
+      if (d.hasAttribute('open')) same.setAttribute('open', '');
+      else same.removeAttribute('open');
     }
     for (const open of old.querySelectorAll('details.menu[open]')) {
       const row = open.closest('li');
@@ -982,7 +986,7 @@ window.ermiteLive = (() => {
   };
   // An action answered with a morph of a [data-keep-open] element keeps its
   // disclosures as the live swap does.
-  addEventListener('htmx:before:swap', (e) => {
+  window.addEventListener('htmx:before:swap', (e) => {
     for (const task of e.detail.tasks || []) {
       const target = typeof task.target === 'string' ? document.querySelector(task.target) : task.target;
       if (!target?.id || !target.matches?.('[data-keep-open]')) continue;
