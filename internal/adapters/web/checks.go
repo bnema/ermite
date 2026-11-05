@@ -19,6 +19,9 @@ type ChecksSummary struct {
 	Kind, State  string
 	Label, Title string
 	Href         string
+	// Deps is Bernard's dependency run of the merge request, shown when the
+	// commit has no check yet; nil otherwise.
+	Deps *CheckRow
 }
 
 // CheckRow is a check of a commit or a merge request.
@@ -83,8 +86,11 @@ func checksSummary(repo domain.RepoName, sha string, checks []ports.CheckView) C
 
 // checksSection is the checks of the footer of a merge request, with the rule of
 // the repository that applies to them.
-func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
+func checksSection(repo domain.Repo, checks []ports.CheckView, deps *CheckRow) ChecksSection {
 	sec := ChecksSection{}
+	if deps != nil {
+		sec.Rows = append(sec.Rows, *deps)
+	}
 	groups := checksByRun(checks)
 	for _, group := range groups {
 		for i, c := range group {
@@ -109,6 +115,10 @@ func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
 		}
 	}
 	switch {
+	case deps != nil && deps.Kind != "bad":
+		sec.Note = "CI runs after the dependency run finishes."
+	case len(checks) == 0 && deps != nil:
+		sec.Note = "the dependency run failed: Bernard holds CI on this commit."
 	case len(checks) == 0:
 		sec.Note = "no check on this commit: nothing blocks the merge."
 	default:
@@ -131,4 +141,67 @@ func checksByRun(checks []ports.CheckView) [][]ports.CheckView {
 		groups[i] = append(groups[i], c)
 	}
 	return groups
+}
+
+// depsCheck is the row of Bernard's dependency run for merge request n of
+// repo, nil when n is not the merge request of a batch Bernard still drives.
+// The dependency records are the owner's: anyone else gets nil.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter picks the batch of the merge request page from the Inbox read of DepsService, display only
+func (s *Server) depsCheck(ctx context.Context, repo domain.RepoName, n int64) *CheckRow {
+	if s.cfg.Deps == nil || !SignedIn(ctx) || n == 0 {
+		return nil
+	}
+	p := principal(ctx)
+	recs, err := s.cfg.Deps.List(ctx, p, repo)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("repo", repo.String()).Msg("read the dependency record")
+		}
+		return nil
+	}
+	for _, rec := range recs {
+		if rec.Repo != repo {
+			continue
+		}
+		for _, b := range rec.Batches {
+			if b.MR != n || b.Adopted {
+				continue
+			}
+			pos := 0
+			if b.Queued() {
+				if _, order, err := s.cfg.Deps.Queue(ctx, p); err == nil {
+					pos = domain.DepsQueuePosition(order, repo, b.Key)
+				}
+			}
+			return depsCheckRow(repo, b, pos)
+		}
+	}
+	return nil
+}
+
+// depsCheckRow is the check row of the state of batch b, at queue position
+// pos (zero when unknown).
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter renders a batch state as a check row, as depsStatus does for the Inbox
+func depsCheckRow(repo domain.RepoName, b domain.DepBatch, pos int) *CheckRow {
+	row := &CheckRow{Name: "Dependencies"}
+	if b.RunID != 0 {
+		row.Href = runHref(repo.String(), b.RunID)
+	}
+	switch {
+	case b.Queued():
+		row.Kind, row.State, row.Href = "queued", "queued", ""
+		if pos > 0 {
+			row.State = fmt.Sprintf("queued (#%d)", pos)
+		}
+	case b.State == domain.DepsApplying:
+		row.Kind, row.State = "running", "running"
+	case b.State == domain.DepsFailed:
+		row.Kind, row.State = "bad", "failed"
+	default:
+		return nil
+	}
+	return row
 }

@@ -436,6 +436,9 @@ templ MRChecksSum(c ChecksSummary) {
 		if c.Total > 0 {
 			@CheckIcon(c.Kind, c.State)
 			<span>{ c.Label }</span>
+		} else if c.Deps != nil {
+			@CheckIcon(c.Deps.Kind, c.Deps.State)
+			<span>{ "dependencies " + c.Deps.State }</span>
 		} else {
 			<span class="mute">no checks</span>
 		}

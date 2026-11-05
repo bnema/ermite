@@ -803,8 +803,13 @@ func (s *Server) mrFacts(ctx context.Context, r *http.Request, d *repoData, p *M
 	p.ChecksBlock = true
 	if head != "" {
 		checks := s.checksFor(ctx, d.repo.Name, head)
-		p.Checks = checksSection(d.repo.Repo, checks)
+		var deps *CheckRow
+		if open {
+			deps = s.depsCheck(ctx, d.repo.Name, m.Number)
+		}
+		p.Checks = checksSection(d.repo.Repo, checks, deps)
 		p.ChecksSum = checksSummary(d.repo.Name, head, checks)
+		p.ChecksSum.Deps = deps
 		if !open {
 			p.Checks.Note = ""
 		}

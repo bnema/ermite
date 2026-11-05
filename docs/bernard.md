@@ -53,6 +53,8 @@ A batch with Go or npm updates gets its merge request before the runner works:
 
 Workflows do not run on the draft commit: its push, `create` and `pull_request` runs are held, even when CI plans them after the dependency run ended. The final commit runs them as any push; when it equals the draft, the held runs start on the draft (with its `create` runs when the draft created the branch). A failed or replaced draft never starts them.
 
+For the owner, the Checks section of a Bernard merge request that is not adopted shows a **Dependencies** row: `queued (#N)` with the queue position, `running` with a link to the run, or `failed` with a link to the run when there is one. While the run is pending, its note says CI runs after the dependency run finishes.
+
 A batch of Actions updates only gets one commit and a ready merge request.
 
 ### Adopted branches

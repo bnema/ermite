@@ -618,6 +618,8 @@ func (l *liveStream) notice(ctx context.Context, text, href string) ([]fragment,
 // list of runs, the recent actions of the summary, or the body of the run page
 // shown. Only a state is sent: the
 // events carry no log and no text of the workflow.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter routes a run event to the fragments of the page it changes
 func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]fragment, error) {
 	if l.s.cfg.Runs == nil {
 		return nil, nil
@@ -642,7 +644,9 @@ func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]frag
 	case "mr":
 		ofHead := ev.Run.CheckSha() == l.head
 		l.rememberRun(ev.Run.ID, ofHead)
-		if !ofHead {
+		// A dependency run moves the Bernard row of the checks: the
+		// record's own change goes to the owner topic only.
+		if !ofHead && !ev.Run.IsDeps() {
 			return nil, nil
 		}
 		return l.mrChecks(ctx)
@@ -696,11 +700,15 @@ func (l *liveStream) mrChecks(ctx context.Context) ([]fragment, error) {
 		return nil, err
 	}
 	checks := l.s.checksFor(ctx, name, l.head)
-	f, err := renderFragment(ctx, "ci-run", MRChecks(checksSection(repo, checks)))
+	n, _ := strconv.ParseInt(l.n, 10, 64)
+	deps := l.s.depsCheck(ctx, name, n)
+	f, err := renderFragment(ctx, "ci-run", MRChecks(checksSection(repo, checks, deps)))
 	if err != nil {
 		return nil, err
 	}
-	sum, err := renderFragment(ctx, "ci-run", MRChecksSum(checksSummary(name, l.head, checks)))
+	summary := checksSummary(name, l.head, checks)
+	summary.Deps = deps
+	sum, err := renderFragment(ctx, "ci-run", MRChecksSum(summary))
 	if err != nil {
 		return nil, err
 	}
