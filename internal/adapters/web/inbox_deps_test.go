@@ -536,6 +536,7 @@ func TestInboxDepsBatchStates(t *testing.T) {
 			InboxDepsStatus{MR: 41, MRHref: "/alpha/merge-requests/41", Adopted: true}, "View MR"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			rec := depsRec(t)
 			b := rec.Batches[0]
 			b.Error = ""
@@ -752,6 +753,7 @@ func TestInboxDepsAdoptedWins(t *testing.T) {
 	for _, st := range []domain.DepsState{domain.DepsIdle, domain.DepsFailed, domain.DepsApplying, domain.DepsQueued, domain.DepsDrafted} {
 		for _, outdated := range []bool{false, true} {
 			t.Run(fmt.Sprintf("state=%d/outdated=%v", st, outdated), func(t *testing.T) {
+				t.Parallel()
 				rec := depsRec(t)
 				b := rec.Batches[0]
 				b.State, b.MR, b.Adopted = st, 1, true
@@ -838,6 +840,7 @@ func TestInboxDepsAdoptedMajors(t *testing.T) {
 	} {
 		for _, st := range []domain.DepsState{domain.DepsIdle, domain.DepsFailed, domain.DepsApplying, domain.DepsQueued, domain.DepsDrafted} {
 			t.Run(fmt.Sprintf("%s/state=%d", tc.name, st), func(t *testing.T) {
+				t.Parallel()
 				rec := depsRec(t)
 				rec.SplitOut = tc.split
 				b := tc.batch

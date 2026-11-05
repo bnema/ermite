@@ -36,8 +36,6 @@ func (NPM) Apply(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.Tre
 // runner. It returns only changed files and never mutates files. A missing
 // manifest or package, a spec that is not a plain semver range, or a current
 // version that differs from the update wraps domain.ErrPreconditionFailed.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter applies the DepsEcosystem.Bump port contract with npm manifest syntax; nothing is chosen here
 func (NPM) Bump(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error) {
 	out := map[domain.TreePath][]byte{}
 	for _, u := range ups {
