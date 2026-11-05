@@ -199,6 +199,12 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.runEvent(ctx, ev)
 	case domain.JobUpdated:
 		return l.jobEvent(ctx, ev)
+	case domain.DependencyUpdatesChanged:
+		// Bernard's batch moved: the Dependencies row of the checks.
+		if l.view != "mr" || ev.Repo.String() != l.repo {
+			return nil, nil
+		}
+		return l.mrChecks(ctx)
 	case domain.RepoDeleted, domain.RepoCreated:
 		// Gone, or a new repository under the same name: whatever the page
 		// shows is not true any more.

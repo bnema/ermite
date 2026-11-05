@@ -105,6 +105,38 @@ func TestJournalUpdatedReachesOnlyTheOwnerTopic(t *testing.T) {
 	})
 }
 
+// Bernard's record signal also reaches the owner's watch of the repository
+// (its merge request page), never anyone else's.
+func TestDependencyUpdatesChangedReachesTheOwnersRepoTopic(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 16)
+		pub := r.repo("pub", domain.VisibilityPublic)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		owners := map[string]*watcher{
+			"owner topic": r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"owner"}}),
+			"repo, owner": r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"repo:pub"}}),
+		}
+		others := map[string]*watcher{
+			"home, owner":     r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"home"}}),
+			"repo, anonymous": r.watch(ctx, domain.Anonymous(), ports.WatchParams{Topics: []string{"repo:pub"}}),
+		}
+		synctest.Wait()
+
+		signal := domain.DependencyUpdatesChanged{Repo: pub, At: now}
+		r.feed <- signal
+		r.push(pub, 0)
+		for who, w := range owners {
+			assert.Equal(t, signal, w.next(t).Event, who)
+		}
+		for who, w := range others {
+			_, ok := w.next(t).Event.(domain.PushEvent)
+			assert.True(t, ok, "%s: the push comes first, the signal never", who)
+		}
+	})
+}
+
 func withIssues(m domain.IssuesMode) domain.RepoSettings {
 	st := domain.DefaultRepoSettings()
 	st.Issues = m

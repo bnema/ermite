@@ -178,3 +178,29 @@ func TestMRChecksLiveMergeControls(t *testing.T) {
 		})
 	}
 }
+
+// Bernard settles its record after the run's last event: the record's own
+// signal re-renders the checks of its merge request page.
+func TestMRChecksLiveDepsChanged(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	head := strings.Repeat("a", domain.ObjectIDLen)
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{}, nil)
+	deps := mocks.NewDepsService(t)
+	deps.EXPECT().List(mock.Anything, mock.Anything, repo).Return([]domain.RepoDeps{{Repo: repo, Batches: []domain.DepBatch{{State: domain.DepsFailed, RunID: 9, MR: 3}}}}, nil)
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: mocks.NewBrowseService(t), Runs: runs, Deps: deps})
+	owner := context.WithValue(t.Context(), signedInKey{}, struct{}{})
+	ls := &liveStream{s: srv, repo: "proj", head: head, view: "mr", n: "3"}
+
+	got, err := ls.render(owner, ports.WatchEvent{Event: domain.DependencyUpdatesChanged{Repo: repo}})
+	require.NoError(t, err)
+	require.NotEmpty(t, got)
+	assert.Contains(t, got[0].html, `id="mr-checks"`)
+	assert.Contains(t, got[0].html, "failed")
+	assert.Contains(t, got[0].html, runHref("proj", 9))
+
+	other, err := ls.render(owner, ports.WatchEvent{Event: domain.DependencyUpdatesChanged{Repo: repoName(t, "else")}})
+	require.NoError(t, err)
+	assert.Empty(t, other, "another repository's record")
+}

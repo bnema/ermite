@@ -218,7 +218,9 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 	case domain.IssueCommented:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueSubmitted, domain.IssuePendingRemoved, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.JournalUpdated:
-		return bufferedEvent{known: true} // owner topic only: no repository snapshot
+		// Owner topic (and, for DependencyUpdatesChanged, the owner's
+		// repository topic): no repository snapshot.
+		return bufferedEvent{known: true}
 	case domain.CommentEdited:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.CommentDeleted:
@@ -540,7 +542,14 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
 	case domain.IssuePendingRemoved:
 		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
-	case domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.JournalUpdated:
+	case domain.DependencyUpdatesChanged:
+		// The owner topic, and the owner's watch of the repository: its merge
+		// request page shows the state of Bernard's batch. No content travels.
+		if !w.owner && (!w.repos[ev.Repo] || !w.p.HasOwnerRights()) {
+			return nil
+		}
+		return send(out)
+	case domain.DependencyUpdatesFound, domain.JournalUpdated:
 		// Owner topic only, like IssueSubmitted, but not tied to the issue tracker.
 		if !w.owner {
 			return nil
