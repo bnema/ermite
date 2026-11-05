@@ -791,7 +791,7 @@ func TestInboxDepsRepoLinkOnce(t *testing.T) {
 	row := liOf(t, sec, "deps-alpha", `<li class="deps-repo-row"`)
 	assert.NotContains(t, row, "deps-repolink")
 	assert.Equal(t, 1, strings.Count(row, ">alpha<"), "the name appears once")
-	assert.Contains(t, row, `<a id="deps-alpha-repo" class="btn icon" href="/alpha" aria-label="Open repository alpha"`)
+	assert.Contains(t, row, `<a id="deps-alpha-repo" class="btn" href="/alpha" aria-label="Open repository alpha">Repo</a>`)
 	sum := regexp.MustCompile(`(?s)<summary id="deps-alpha-sum">.*?</summary>`).FindString(row)
 	assert.NotContains(t, sum, "<a ")
 }

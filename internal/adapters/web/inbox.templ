@@ -424,7 +424,7 @@ templ inboxDepsRepo(r InboxDepsRepo) {
 			</div>
 		</details>
 		<span class="deps-repo-act">
-			<a id={ r.ID + "-repo" } class="btn icon" href={ templ.SafeURL(r.RepoHref) } aria-label={ "Open repository " + r.Repo } title={ "open " + r.Repo }><span class="ico i-link" aria-hidden="true"></span></a>
+			<a id={ r.ID + "-repo" } class="btn" href={ templ.SafeURL(r.RepoHref) } aria-label={ "Open repository " + r.Repo }>Repo</a>
 			if r.Recheck != "" {
 				@depsForm(InboxDepsRow{}, r.Recheck, "Re-check", "btn", false, r.ID+"-recheck")
 				<details class="menu deps-menu">
