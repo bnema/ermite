@@ -98,7 +98,7 @@ func newBernardRig(t *testing.T, checkAt string) *bernardRig {
 	b, err := usecase.NewBernard(usecase.BernardConfig{
 		Store: r.store, Meta: r.meta, Reader: r.reader, Ecosystems: []ports.DepsEcosystem{r.eco},
 		Registry: func() ports.DepsRegistry { r.regs++; return r.reg }, Bus: r.bus, Clock: r.clock,
-		CheckAt: checkAt, Cooldown: 72 * time.Hour, Snooze: 7 * 24 * time.Hour, Tick: time.Hour,
+		CheckAt: checkAt, AutoOpenAt: "* * * * *", Cooldown: 72 * time.Hour, Snooze: 7 * 24 * time.Hour, Tick: time.Hour,
 	})
 	require.NoError(t, err)
 	r.b = b

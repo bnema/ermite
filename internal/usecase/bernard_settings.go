@@ -39,6 +39,16 @@ func (b *Bernard) SetAutoOpen(ctx context.Context, p domain.Principal, repo doma
 	return rec, nil
 }
 
+// autoWindowDue reports whether the repository has an unused opening window.
+// The first check consumes a window even if no batch can be queued.
+func (b *Bernard) autoWindowDue(d domain.RepoDeps, now time.Time) bool {
+	if d.AutoOpenWindowAt.IsZero() {
+		return true
+	}
+	next, ok := b.autoCron.Next(d.AutoOpenWindowAt)
+	return ok && !next.After(now)
+}
+
 // autoEnqueue queues the base batch of d as an automatic batch when Bernard
 // opens merge requests by itself (cfg.AutoOpen and the repository's setting),
 // the repository is not snoozed and the batch is due: pending updates, no

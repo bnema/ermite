@@ -101,12 +101,13 @@ type BernardConfig struct {
 // Bernard checks the dependencies of the repositories every day and keeps the
 // pending updates. It implements ports.DepsService.
 type Bernard struct {
-	cfg   BernardConfig
-	cron  domain.CronSchedule
-	ctx   context.Context
-	stop  context.CancelFunc
-	wg    sync.WaitGroup
-	start sync.Once
+	cfg      BernardConfig
+	cron     domain.CronSchedule
+	autoCron domain.Cron
+	ctx      context.Context
+	stop     context.CancelFunc
+	wg       sync.WaitGroup
+	start    sync.Once
 
 	mu     sync.Mutex
 	closed bool
@@ -141,6 +142,13 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bernard check schedule: %w", err)
 	}
+	if cfg.AutoOpenAt == "" {
+		cfg.AutoOpenAt = "* * * * *"
+	}
+	autoCron, err := domain.ParseCron(cfg.AutoOpenAt)
+	if err != nil {
+		return nil, fmt.Errorf("bernard automatic opening schedule: %w", err)
+	}
 	if cfg.Tick <= 0 {
 		cfg.Tick = defaultBernardTick
 	}
@@ -151,7 +159,7 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 		cfg.Concurrency = 1
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &Bernard{cfg: cfg, cron: domain.CronSchedule{Cron: cron, Loc: time.UTC}, ctx: ctx, stop: stop, wake: make(chan struct{}, 1)}, nil
+	return &Bernard{cfg: cfg, autoCron: autoCron, cron: domain.CronSchedule{Cron: cron, Loc: time.UTC}, ctx: ctx, stop: stop, wake: make(chan struct{}, 1)}, nil
 }
 
 // Start starts the daily schedule, once.
@@ -286,7 +294,10 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 		fresh, moved = rebatch(d, carrySkipped(d, ups, skipped, allowed))
 		d.Repo = name
 		d.CheckedAt = now
-		queued = b.autoEnqueue(d, now) // a queue hook (bernard_settings.go)
+		if b.autoWindowDue(*d, now) {
+			d.AutoOpenWindowAt = now
+			queued = b.autoEnqueue(d, now) // a queue hook (bernard_settings.go)
+		}
 		return true, nil
 	})
 	if err != nil {

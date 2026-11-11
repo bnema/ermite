@@ -26,6 +26,9 @@ func autoOpenRig(t *testing.T) *bernardRig {
 	r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
 	r.reg.EXPECT().GoMajorPaths(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
+	var err error
+	r.b, err = r.b.RestartWithAutoOpenAtForTest("0 6 * * 1")
+	require.NoError(t, err)
 	return r
 }
 
@@ -47,6 +50,7 @@ func TestBernardAutoOpensBaseBatch(t *testing.T) {
 	assert.Equal(t, domain.DepsQueued, base.State, "the base batch is queued")
 	assert.False(t, base.Manual)
 	assert.Equal(t, r.at, base.QueuedAt)
+	assert.Equal(t, r.at, r.rec.AutoOpenWindowAt)
 	require.Len(t, r.rec.Batches, 2)
 	assert.Equal(t, domain.DepsIdle, r.rec.Batches[1].State, "a major is never queued automatically")
 	assert.NotEmpty(t, r.rec.Batches[1].Updates)
@@ -103,6 +107,8 @@ func TestBernardSetAutoOpen(t *testing.T) {
 	_, err := r.b.SetAutoOpen(t.Context(), domain.Principal{}, r.repo, false)
 	require.ErrorIs(t, err, domain.ErrNotFound, "owner only")
 
+	r.rec.AutoOpenWindowAt = r.at.Add(-time.Hour)
+	stamp := r.rec.AutoOpenWindowAt
 	r.rec.Batches = []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.21.0"), Current: "v0.20.0"}}}}
 	got, err := r.b.SetAutoOpen(t.Context(), domain.Owner(), r.repo, false)
 	require.NoError(t, err)
@@ -116,4 +122,114 @@ func TestBernardSetAutoOpen(t *testing.T) {
 	assert.Equal(t, domain.DepsQueued, got.Base().State, "on queues the due base batch")
 	assert.False(t, got.Base().Manual)
 	assert.Equal(t, 2, r.changedCount())
+	assert.Equal(t, stamp, got.AutoOpenWindowAt)
+}
+
+// checkAgain uses the public check path without depending on the daily schedule.
+func (r *bernardRig) checkAgain() {
+	r.t.Helper()
+	r.repoReads()
+	_, err := r.b.Check(r.t.Context(), domain.Owner(), r.repo)
+	require.NoError(r.t, err)
+}
+
+func TestBernardAutoOpenWindowWaitsForNextFire(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		label := "outdated MR"
+		if failed {
+			label = "failure with changed versions"
+		}
+		t.Run(label, func(t *testing.T) {
+			r := autoOpenRig(t)
+			r.daily()
+			stamp := r.rec.AutoOpenWindowAt
+			base := &r.rec.Batches[0]
+			base.State = domain.DepsIdle
+			base.MR = 3
+			base.MRVersions = []domain.DepRef{depRef("a/mod", "v0.20.5")}
+			if failed {
+				base.State = domain.DepsFailed
+				base.MR = 0
+				base.RunUpdates = []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.5")}}
+			}
+			want := base.State
+			r.at = r.at.Add(time.Hour)
+			r.checkAgain()
+			assert.Equal(t, want, r.rec.Base().State)
+			assert.Equal(t, stamp, r.rec.AutoOpenWindowAt)
+			// Monday's fire is inclusive, even though the previous check was Saturday.
+			r.at = time.Date(2026, 10, 26, 6, 0, 0, 0, time.UTC)
+			r.checkAgain()
+			assert.Equal(t, domain.DepsQueued, r.rec.Base().State)
+			assert.Equal(t, r.at, r.rec.AutoOpenWindowAt)
+		})
+	}
+}
+
+func TestBernardAutoOpenWindowConsumedWithoutUpdates(t *testing.T) {
+	r := autoOpenRig(t)
+	r.cands = nil
+	r.daily()
+	stamp := r.at
+	assert.Equal(t, stamp, r.rec.AutoOpenWindowAt)
+	r.at = r.at.Add(time.Hour)
+	r.cands = []domain.DepCandidate{goCand("a/mod", r.old("v0.21.0"))}
+	r.checkAgain()
+	assert.Equal(t, domain.DepsIdle, r.rec.Base().State)
+	assert.Equal(t, stamp, r.rec.AutoOpenWindowAt)
+}
+
+func TestBernardAutoOpenWindowPostMerge(t *testing.T) {
+	r := autoOpenRig(t)
+	r.daily()
+	stamp := r.at
+	r.rec.Batches[0].State = domain.DepsIdle
+	r.rec.Batches[0].MR = 3
+	r.rec.Batches[0].MRVersions = r.rec.Base().Refs()
+	r.at = r.at.Add(time.Hour)
+	r.repoReads()
+	r.b.MergeForTest(domain.MergeRequest{Repo: r.repo, Number: 3})
+	assert.Zero(t, r.rec.Base().MR)
+	assert.Equal(t, domain.DepsIdle, r.rec.Base().State)
+	assert.Equal(t, stamp, r.rec.AutoOpenWindowAt)
+}
+
+func TestBernardManualOpenInsideConsumedWindow(t *testing.T) {
+	r := autoOpenRig(t)
+	r.daily()
+	stamp := r.at
+	r.rec.Batches[0].State = domain.DepsIdle
+	r.at = r.at.Add(time.Hour)
+	got, err := r.b.Open(t.Context(), domain.Owner(), r.repo, "", r.rec.Base().Refs())
+	require.NoError(t, err)
+	assert.Equal(t, domain.DepsQueued, got.Base().State)
+	assert.True(t, got.Base().Manual)
+	assert.Equal(t, stamp, got.AutoOpenWindowAt)
+}
+
+func TestBernardAutoOpenWindowSurvivesRestart(t *testing.T) {
+	r := autoOpenRig(t)
+	r.daily()
+	stamp := r.at
+	r.rec.Batches[0].State = domain.DepsIdle
+	var err error
+	r.b, err = r.b.RestartWithAutoOpenAtForTest("0 6 * * 1")
+	require.NoError(t, err)
+	r.at = r.at.Add(time.Hour)
+	r.checkAgain()
+	assert.Equal(t, domain.DepsIdle, r.rec.Base().State)
+	assert.Equal(t, stamp, r.rec.AutoOpenWindowAt)
+}
+
+func TestBernardAutoOpenWindowEveryMinute(t *testing.T) {
+	r := autoOpenRig(t)
+	var err error
+	r.b, err = r.b.RestartWithAutoOpenAtForTest("* * * * *")
+	require.NoError(t, err)
+	r.daily()
+	r.rec.Batches[0].State = domain.DepsIdle
+	r.at = r.at.Add(time.Minute)
+	r.checkAgain()
+	assert.Equal(t, domain.DepsQueued, r.rec.Base().State)
+	assert.Equal(t, r.at, r.rec.AutoOpenWindowAt)
 }

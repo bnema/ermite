@@ -69,3 +69,16 @@ func (b *Bernard) WriteDraftForTest(ctx context.Context, repo domain.RepoName, k
 	batch, _, _ := d.Batch(key)
 	return b.writeDraft(ctx, repo, batch, batch.Refs())
 }
+
+// RestartWithAutoOpenAtForTest builds a fresh Bernard over the same ports.
+func (b *Bernard) RestartWithAutoOpenAtForTest(at string) (*Bernard, error) {
+	cfg := b.cfg
+	cfg.AutoOpenAt = at
+	return NewBernard(cfg)
+}
+
+// MergeForTest processes a merge and waits for its follow-up check.
+func (b *Bernard) MergeForTest(mr domain.MergeRequest) {
+	b.onMRDone(mr, true)
+	b.wg.Wait()
+}
