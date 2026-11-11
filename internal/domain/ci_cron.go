@@ -126,7 +126,39 @@ func cronValue(s string, f cronField) (int, error) {
 // at.
 func (c Cron) Matches(t time.Time) bool {
 	t = t.UTC()
-	if c.minute&(1<<uint(t.Minute())) == 0 || c.hour&(1<<uint(t.Hour())) == 0 || c.month&(1<<uint(t.Month())) == 0 {
+	return c.minute&(1<<uint(t.Minute())) != 0 && c.hour&(1<<uint(t.Hour())) != 0 && c.matchesDay(t)
+}
+
+// Next returns the first UTC fire minute strictly after after, or false if none
+// is found within five years.
+func (c Cron) Next(after time.Time) (time.Time, bool) {
+	start := after.UTC().Truncate(time.Minute).Add(time.Minute)
+	limit := start.AddDate(5, 0, 0)
+	day := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	for ; day.Before(limit); day = day.AddDate(0, 0, 1) {
+		if !c.matchesDay(day) {
+			continue
+		}
+		for hour := 0; hour < 24; hour++ {
+			if c.hour&(1<<uint(hour)) == 0 {
+				continue
+			}
+			for minute := 0; minute < 60; minute++ {
+				if c.minute&(1<<uint(minute)) == 0 {
+					continue
+				}
+				next := day.Add(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
+				if !next.Before(start) && next.Before(limit) {
+					return next, true
+				}
+			}
+		}
+	}
+	return time.Time{}, false
+}
+
+func (c Cron) matchesDay(t time.Time) bool {
+	if c.month&(1<<uint(t.Month())) == 0 {
 		return false
 	}
 	domOK := c.dom&(1<<uint(t.Day())) != 0

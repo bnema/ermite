@@ -172,3 +172,42 @@ func TestCronScheduleDST(t *testing.T) {
 	assert.Contains(t, hourly, "2026-11-01 05:00")
 	assert.NotContains(t, hourly, "2026-11-01 06:00")
 }
+
+func TestCronNext(t *testing.T) {
+	for _, tt := range []struct {
+		spec, after, want string
+	}{
+		{"0 6 * * 1", "2026-03-01T12:00:00Z", "2026-03-02 06:00"},
+		{"0 6 * * 1", "2026-03-02T05:59:59Z", "2026-03-02 06:00"},
+		{"0 6 * * 1", "2026-03-02T06:00:00Z", "2026-03-09 06:00"},
+		{"0 6 * * 1", "2026-03-02T06:00:30Z", "2026-03-09 06:00"},
+		{"0 6 * * 1", "2026-03-02T08:00:00+02:00", "2026-03-09 06:00"},
+		{"* * * * *", "2026-12-31T23:59:59Z", "2027-01-01 00:00"},
+		{"* * * * *", "2026-03-02T06:00:00Z", "2026-03-02 06:01"},
+		{"0 0 29 2 *", "2026-03-02T06:00:00Z", "2028-02-29 00:00"},
+		{"0 0 29 2 *", "2028-02-29T00:00:00Z", "2032-02-29 00:00"},
+		{"0 0 31 2 *", "2026-01-01T00:00:00Z", ""},
+		{"0 0 13 * fri", "2026-03-13T00:00:00Z", "2026-03-20 00:00"},
+		{"0 0 13 * fri", "2026-04-12T00:00:00Z", "2026-04-13 00:00"},
+		{"5,40 3,17 * * *", "2026-03-02T03:05:00Z", "2026-03-02 03:40"},
+		{"5,40 3,17 * * *", "2026-03-02T03:40:00Z", "2026-03-02 17:05"},
+	} {
+		t.Run(tt.spec+"/"+tt.after, func(t *testing.T) {
+			c, err := domain.ParseCron(tt.spec)
+			require.NoError(t, err)
+			after, err := time.Parse(time.RFC3339, tt.after)
+			require.NoError(t, err)
+			next, ok := c.Next(after)
+			if tt.want == "" {
+				assert.False(t, ok)
+				assert.True(t, next.IsZero())
+				return
+			}
+			require.True(t, ok)
+			assert.Equal(t, at(t, tt.want), next)
+			assert.Equal(t, time.UTC, next.Location())
+			assert.True(t, next.After(after))
+			assert.True(t, c.Matches(next))
+		})
+	}
+}
