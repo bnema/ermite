@@ -370,7 +370,7 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 
 func newDepsAutoCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "auto <repo> on|off", Short: "Turn Bernard's automatic merge request on or off for a repository",
-		Long: "Turn on or off the merge request Bernard opens by itself for the patch and minor updates (the base batch) of a repository, after each check." +
+		Long: "Turn on or off the merge request Bernard opens by itself for the patch and minor updates (the base batch) of a repository, at the first check after an opening window (ERMITE_DEPS_AUTO_OPEN_AT, default 0 6 * * 1, UTC)." +
 			" Turning it on queues the base batch at once when it has updates and no current merge request. Majors are never opened by themselves. ERMITE_DEPS_AUTO_OPEN=0 turns it off for every repository." +
 			"\nJSON: repository updates; see `ermite deps --help`.",
 		Args: cobra.ExactArgs(2), ValidArgs: []string{"on", "off"}}

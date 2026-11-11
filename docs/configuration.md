@@ -69,6 +69,7 @@ The default lets crawlers index the home page, repository summaries, issues, mer
 | `ERMITE_DEPS_RUNNER_LABEL` | `ubuntu-latest` | runner label Bernard's dependency jobs ask for, not empty |
 | `ERMITE_DEPS_CONCURRENCY` | `1` | dependency runs at once across all repositories; at least 1 |
 | `ERMITE_DEPS_AUTO_OPEN` | `1` | `0` stops Bernard from opening the base merge requests by itself, whatever each repository's setting |
+| `ERMITE_DEPS_AUTO_OPEN_AT` | `0 6 * * 1` | Automatic base MR opening windows: Mondays at 06:00 UTC by default; five-field cron in UTC. Used at the next repository check; see [Automatic merge requests](bernard.md#automatic-merge-requests) |
 
 ### `ERMITE_SECRETS_KEY`
 
