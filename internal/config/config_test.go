@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/config"
 )
 
@@ -393,6 +394,7 @@ func TestDeps(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, c.DepsEnabled)
 	assert.Equal(t, "0 6 * * *", c.DepsCheckAt)
+	assert.Equal(t, "0 6 * * 1", c.DepsAutoOpenAt)
 	assert.Equal(t, 72*time.Hour, c.DepsCooldown)
 	assert.Equal(t, 168*time.Hour, c.DepsSnooze)
 	assert.Equal(t, 10*time.Minute, c.DepsJobTimeout)
@@ -403,12 +405,14 @@ func TestDeps(t *testing.T) {
 	c, err = config.Load(lookup(valid(map[string]string{
 		config.EnvDepsConcurrency: "3", config.EnvDepsAutoOpen: "0",
 		config.EnvDepsEnabled: "false", config.EnvDepsCheckAt: "*/30 1 * * 1",
-		config.EnvDepsCooldown: "24h", config.EnvDepsSnooze: "48h",
+		config.EnvDepsAutoOpenAt: " 30 5 * * 2 ",
+		config.EnvDepsCooldown:   "24h", config.EnvDepsSnooze: "48h",
 		config.EnvDepsJobTimeout: "90s", config.EnvDepsRunnerLabel: "self-hosted",
 	})))
 	require.NoError(t, err)
 	assert.False(t, c.DepsEnabled)
 	assert.Equal(t, "*/30 1 * * 1", c.DepsCheckAt)
+	assert.Equal(t, "30 5 * * 2", c.DepsAutoOpenAt)
 	assert.Equal(t, 24*time.Hour, c.DepsCooldown)
 	assert.Equal(t, 48*time.Hour, c.DepsSnooze)
 	assert.Equal(t, 90*time.Second, c.DepsJobTimeout)
@@ -437,4 +441,27 @@ func TestDepsRunnerLabelBlankFallsBack(t *testing.T) {
 	c, err := config.Load(lookup(valid(map[string]string{config.EnvDepsRunnerLabel: "   "})))
 	require.NoError(t, err)
 	assert.Equal(t, "ubuntu-latest", c.DepsRunnerLabel)
+}
+
+// Cron validation belongs to the app, just as it does for CHECK_AT.
+func TestConfigDepsAutoOpenAtInvalid(t *testing.T) {
+	for key, value := range valid(nil) {
+		t.Setenv(key, value)
+	}
+	for _, value := range []string{"not a cron", "0 0 6 * * 1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(config.EnvDepsAutoOpenAt, value)
+			err := app.Run([]string{"serve"})
+			var ce *config.Error
+			require.ErrorAs(t, err, &ce)
+			assert.Contains(t, err.Error(), config.EnvDepsAutoOpenAt)
+			assert.Contains(t, err.Error(), "must be a cron expression")
+		})
+	}
+}
+
+func TestConfigDepsAutoOpenAtBlankFallsBack(t *testing.T) {
+	c, err := config.Load(lookup(valid(map[string]string{config.EnvDepsAutoOpenAt: "   "})))
+	require.NoError(t, err)
+	assert.Equal(t, config.DefaultDepsAutoOpenAt, c.DepsAutoOpenAt)
 }
