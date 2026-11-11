@@ -80,6 +80,8 @@ const (
 	EnvDepsEnabled = "ERMITE_DEPS_ENABLED"
 	// EnvDepsCheckAt is the cron expression (UTC) of the dependency checks.
 	EnvDepsCheckAt = "ERMITE_DEPS_CHECK_AT"
+	// EnvDepsAutoOpenAt is the five-field UTC cron of automatic merge request windows.
+	EnvDepsAutoOpenAt = "ERMITE_DEPS_AUTO_OPEN_AT"
 	// EnvDepsCooldown is how long a release must exist before Bernard
 	// proposes it, EnvDepsSnooze how long a declined update stays quiet,
 	// EnvDepsJobTimeout the time budget (timeout-minutes, rounded up to the
@@ -117,6 +119,7 @@ const (
 	DefaultOwner = "owner"
 	// Defaults of the Bernard dependency checks.
 	DefaultDepsCheckAt     = "0 6 * * *"
+	DefaultDepsAutoOpenAt  = "0 6 * * 1"
 	DefaultDepsCooldown    = 72 * time.Hour
 	DefaultDepsSnooze      = 168 * time.Hour
 	DefaultDepsJobTimeout  = 10 * time.Minute
@@ -205,6 +208,8 @@ type Config struct {
 	DepsEnabled bool
 	// DepsCheckAt is the cron expression (UTC) of the dependency checks.
 	DepsCheckAt string
+	// DepsAutoOpenAt is the five-field UTC cron of automatic merge request windows.
+	DepsAutoOpenAt string
 	// DepsCooldown, DepsSnooze and DepsJobTimeout are positive durations.
 	DepsCooldown, DepsSnooze, DepsJobTimeout time.Duration
 	// DepsRunnerLabel is the runner label of the check jobs; never empty.
@@ -452,6 +457,10 @@ func loadDeps(get func(string) string, c *Config, bad func(key, format string, a
 	c.DepsCheckAt = strings.TrimSpace(get(EnvDepsCheckAt))
 	if c.DepsCheckAt == "" {
 		c.DepsCheckAt = DefaultDepsCheckAt
+	}
+	c.DepsAutoOpenAt = strings.TrimSpace(get(EnvDepsAutoOpenAt))
+	if c.DepsAutoOpenAt == "" {
+		c.DepsAutoOpenAt = DefaultDepsAutoOpenAt
 	}
 	// The cron syntax is the domain's; config imports nothing, so internal/app
 	// checks it (see loadConfig).

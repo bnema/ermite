@@ -446,7 +446,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Ecosystems: []ports.DepsEcosystem{deps.GoMod{}, deps.Actions{}, deps.NPM{}},
 			Registry:   func() ports.DepsRegistry { return depsregistry.NewCached(base) },
 			Bus:        f.Bus, Clock: clock,
-			CheckAt: cfg.DepsCheckAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,
+			CheckAt: cfg.DepsCheckAt, AutoOpenAt: cfg.DepsAutoOpenAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,
 			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
 			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
 			JobTimeout: cfg.DepsJobTimeout, Runs: f.CI, Runners: store.CI(), RunnerLabel: cfg.DepsRunnerLabel,

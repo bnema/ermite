@@ -96,6 +96,12 @@ func loadConfig(get func(string) string) (config.Config, error) {
 				config.EnvDepsCheckAt, config.DefaultDepsCheckAt, at, perr))
 		}
 	}
+	if at := strings.TrimSpace(get(config.EnvDepsAutoOpenAt)); at != "" {
+		if _, perr := domain.ParseCron(at); perr != nil {
+			problems = append(problems, fmt.Sprintf("%s: must be a cron expression such as %q (got %q): %v",
+				config.EnvDepsAutoOpenAt, config.DefaultDepsAutoOpenAt, at, perr))
+		}
+	}
 	if len(problems) > 0 {
 		return config.Config{}, &config.Error{Problems: problems}
 	}

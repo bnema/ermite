@@ -53,6 +53,8 @@ type BernardConfig struct {
 	Clock    ports.Clock
 	// CheckAt is the cron expression (UTC) of the daily check.
 	CheckAt string
+	// AutoOpenAt is the five-field UTC cron of the windows in which Bernard queues its automatic merge requests.
+	AutoOpenAt string
 	// Cooldown is how old a version must be to be proposed.
 	Cooldown time.Duration
 	// Snooze is how long a snooze hides a repository.
