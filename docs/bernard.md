@@ -24,7 +24,7 @@ The daily check preserves each batch's run and MR state. If a proposal vanishes 
 
 ### Automatic merge requests
 
-After each check (daily, after a merge, or `ermite deps check`), Bernard queues the base batch by itself when:
+Bernard queues the base batch automatically only at the first repository check after an opening window fires (`ERMITE_DEPS_AUTO_OPEN_AT`, Mondays at 06:00 UTC by default). Any check can use the window: daily, after a merge, `ermite deps check`, or Re-check. It queues when:
 
 - `ERMITE_DEPS_AUTO_OPEN` is on (the default) and the repository's setting is on (`ermite deps auto <repo> on|off`, or the Inbox toggle);
 - the repository is not snoozed;
@@ -32,7 +32,13 @@ After each check (daily, after a merge, or `ermite deps check`), Bernard queues 
 - its branch is not [adopted](#adopted-branches), and it is not queued or applying;
 - it did not fail on these same versions: a failed batch is queued again only once its versions change.
 
-Majors are never queued automatically: open them by hand. Turning the repository setting on queues the base batch at once when these conditions hold.
+Each repository records the last window it used, even when nothing was due: at most one automatic open or update per repository per window. This survives restarts and downtime; a missed window is used at the next check.
+
+Between windows, an outdated MR stays unchanged with its outdated badge; a failed batch with new versions waits, and merging a Bernard MR does not open another. Daily checks still keep the Inbox current. Updates reach an automatic MR after the cooldown plus up to one window; use Open MR for urgent updates.
+
+If the opening time is later than the daily check, opening waits for the next check (the next day with the default daily schedule). Set `ERMITE_DEPS_AUTO_OPEN_AT` to `* * * * *` to make every check a window.
+
+Open MR, Update MR, Retry and `ermite deps open` work anytime. Turning the repository setting on queues the base batch at once when the conditions above hold. Majors are never queued automatically: open them by hand.
 
 ### The queue
 
