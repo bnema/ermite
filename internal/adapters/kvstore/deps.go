@@ -258,6 +258,7 @@ func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 		CheckedAt:        encodeTime(rd.CheckedAt),
 		SnoozedUntil:     encodeTime(rd.SnoozedUntil),
 		AutoOpenDisabled: rd.AutoOpenDisabled,
+		AutoOpenWindowAt: encodeTime(rd.AutoOpenWindowAt),
 	}
 	for _, n := range rd.SplitOut {
 		pb.SplitOut = append(pb.SplitOut, &storagepb.DepName{Ecosystem: string(n.Ecosystem), Name: n.Name})
@@ -288,6 +289,7 @@ func decodeRepoDeps(val []byte) (domain.RepoDeps, error) {
 		CheckedAt:        decodeTime(pb.GetCheckedAt()),
 		SnoozedUntil:     decodeTime(pb.GetSnoozedUntil()),
 		AutoOpenDisabled: pb.GetAutoOpenDisabled(),
+		AutoOpenWindowAt: decodeTime(pb.GetAutoOpenWindowAt()),
 	}
 	for _, n := range pb.GetSplitOut() {
 		rd.SplitOut = append(rd.SplitOut, domain.DepName{Ecosystem: domain.DepsEcosystem(n.GetEcosystem()), Name: n.GetName()})
