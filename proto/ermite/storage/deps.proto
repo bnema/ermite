@@ -79,6 +79,7 @@ message RepoDeps {
   repeated DepBatch batches = 12;
   bool auto_open_disabled = 13;
   repeated DepName split_out = 14;
+  google.protobuf.Timestamp auto_open_window_at = 15;
 }
 // DepFirstSeen is global, under dseen/<ecosystem>/<name>@<version>@<sha>.
 message DepFirstSeen {

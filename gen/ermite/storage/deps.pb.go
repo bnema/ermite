@@ -499,10 +499,11 @@ type RepoDeps struct {
 	// moved into batches by the schema 12 upgrade; read only by it
 	//
 	// Deprecated: Marked as deprecated in ermite/storage/deps.proto.
-	RunUpdates       []*DepUpdate `protobuf:"bytes,11,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
-	Batches          []*DepBatch  `protobuf:"bytes,12,rep,name=batches,proto3" json:"batches,omitempty"`
-	AutoOpenDisabled bool         `protobuf:"varint,13,opt,name=auto_open_disabled,json=autoOpenDisabled,proto3" json:"auto_open_disabled,omitempty"`
-	SplitOut         []*DepName   `protobuf:"bytes,14,rep,name=split_out,json=splitOut,proto3" json:"split_out,omitempty"`
+	RunUpdates       []*DepUpdate           `protobuf:"bytes,11,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
+	Batches          []*DepBatch            `protobuf:"bytes,12,rep,name=batches,proto3" json:"batches,omitempty"`
+	AutoOpenDisabled bool                   `protobuf:"varint,13,opt,name=auto_open_disabled,json=autoOpenDisabled,proto3" json:"auto_open_disabled,omitempty"`
+	SplitOut         []*DepName             `protobuf:"bytes,14,rep,name=split_out,json=splitOut,proto3" json:"split_out,omitempty"`
+	AutoOpenWindowAt *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=auto_open_window_at,json=autoOpenWindowAt,proto3" json:"auto_open_window_at,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -643,6 +644,13 @@ func (x *RepoDeps) GetSplitOut() []*DepName {
 	return nil
 }
 
+func (x *RepoDeps) GetAutoOpenWindowAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AutoOpenWindowAt
+	}
+	return nil
+}
+
 // DepFirstSeen is global, under dseen/<ecosystem>/<name>@<version>@<sha>.
 type DepFirstSeen struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -732,7 +740,7 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\fpending_prev\x18\x12 \x01(\tR\vpendingPrev\"6\n" +
 	"\bDepDraft\x12\x10\n" +
 	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x18\n" +
-	"\acreated\x18\x02 \x01(\bR\acreated\"\xe6\x04\n" +
+	"\acreated\x18\x02 \x01(\bR\acreated\"\xb1\x05\n" +
 	"\bRepoDeps\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x127\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateB\x02\x18\x01R\aupdates\x129\n" +
@@ -751,7 +759,8 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"runUpdates\x122\n" +
 	"\abatches\x18\f \x03(\v2\x18.ermite.storage.DepBatchR\abatches\x12,\n" +
 	"\x12auto_open_disabled\x18\r \x01(\bR\x10autoOpenDisabled\x124\n" +
-	"\tsplit_out\x18\x0e \x03(\v2\x17.ermite.storage.DepNameR\bsplitOut\":\n" +
+	"\tsplit_out\x18\x0e \x03(\v2\x17.ermite.storage.DepNameR\bsplitOut\x12I\n" +
+	"\x13auto_open_window_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x10autoOpenWindowAt\":\n" +
 	"\fDepFirstSeen\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02atB/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
@@ -793,12 +802,13 @@ var file_ermite_storage_deps_proto_depIdxs = []int32{
 	2,  // 11: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
 	3,  // 12: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
 	1,  // 13: ermite.storage.RepoDeps.split_out:type_name -> ermite.storage.DepName
-	7,  // 14: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	7,  // 14: ermite.storage.RepoDeps.auto_open_window_at:type_name -> google.protobuf.Timestamp
+	7,  // 15: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_deps_proto_init() }

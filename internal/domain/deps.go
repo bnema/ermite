@@ -124,6 +124,8 @@ type RepoDeps struct {
 	SnoozedUntil time.Time
 	// AutoOpenDisabled opts out of automatic patch/minor merge requests.
 	AutoOpenDisabled bool
+	// AutoOpenWindowAt is when Bernard last evaluated an automatic merge request window for the repository; zero means never.
+	AutoOpenWindowAt time.Time
 	// SplitOut holds majors pulled out of their family batch.
 	SplitOut []DepName
 }

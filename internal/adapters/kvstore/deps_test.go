@@ -49,6 +49,31 @@ func TestDepsRoundTripAndAbsent(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestDepsAutoOpenWindowAtRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	d := openStore(t, t.TempDir()).Deps()
+	n := name(t, "window")
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+	}{
+		{"set", created.Add(time.Minute + 123*time.Nanosecond)},
+		{"zero", time.Time{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) {
+				r.AutoOpenWindowAt = tc.at
+				return true, nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.at, got.AutoOpenWindowAt)
+			got, err = d.Get(ctx, n)
+			require.NoError(t, err)
+			require.Equal(t, tc.at, got.AutoOpenWindowAt)
+		})
+	}
+}
+
 func TestDepsQueueFieldsRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	d := openStore(t, t.TempDir()).Deps()
