@@ -32,7 +32,7 @@ Bernard queues the base batch automatically only at the first repository check a
 - its branch is not [adopted](#adopted-branches), and it is not queued or applying;
 - it did not fail on these same versions: a failed batch is queued again only once its versions change.
 
-Each repository records the last window it used, even when nothing was due: at most one automatic open or update per repository per window. This survives restarts and downtime; a missed window is used at the next check.
+Each repository records the last window it used, even when nothing was due: at most one automatic open or update per repository per window. This survives restarts and downtime; a missed window is used at the next check. A repository with no recorded window (a new one, or every repository on the first check after an upgrade) uses its first check as a window.
 
 Between windows, an outdated MR stays unchanged with its outdated badge; a failed batch with new versions waits, and merging a Bernard MR does not open another. Daily checks still keep the Inbox current. Updates reach an automatic MR after the cooldown plus up to one window; use Open MR for urgent updates.
 

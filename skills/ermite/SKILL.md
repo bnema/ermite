@@ -96,7 +96,7 @@ The workflow needs `permissions: contents: write` and `GITHUB_TOKEN: ${{ secrets
 
 - `ermite journal --since 7d` lists MRs, issues, tags, releases and default-branch pushes (30 days kept).
 - `ermite watch [repo] --json` prints one event per line, reconnects by itself; a `gap` event means reload the state.
-- `ermite deps list` (owner) shows Bernard's dependency updates, one MR per batch: `deps open <repo> --batch KEY` with the BATCH column (`base` for patch and minor). Bernard opens the base batch as a draft MR at opening windows (`deps auto <repo> on|off`; see `CLI.md`); use `deps open` for urgent updates rather than waiting for the window; it turns ready once the runner's commit lands. Fix a failed draft by pushing to its branch: Bernard then leaves the branch alone. `deps split <repo> <ecosystem> <name> [--join]` moves a dependency's majors out of their family batch.
+- `ermite deps list` (owner) shows Bernard's dependency updates, one MR per batch: `deps open <repo> --batch KEY` with the BATCH column (`base` for patch and minor). Bernard opens the base batch as a draft MR by itself once per opening window (`deps auto <repo> on|off`; see `CLI.md`); it turns ready once the runner's commit lands. Use `deps open` for urgent updates. Fix a failed draft by pushing to its branch: Bernard then leaves the branch alone. `deps split <repo> <ecosystem> <name> [--join]` moves a dependency's majors out of their family batch.
 
 ## Run a server
 
