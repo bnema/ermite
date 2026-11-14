@@ -16,6 +16,12 @@ type TrafficRecorder interface {
 	Hit(domain.RepoName, domain.TrafficKind, netip.Addr, string, string)
 }
 
+// TrafficDailyReader supplies daily unique visitors, oldest first including today.
+// Separate from the recorder so recording-only integrations remain valid.
+type TrafficDailyReader interface {
+	RepoDaily(context.Context, domain.RepoName, int) ([]uint64, error)
+}
+
 // recordView runs only after HTML rendering and conditional-cache handling.
 // Match registered routes, not URL prefixes: fragments and downloads must not
 // become views when new routes are added underneath a repository page.

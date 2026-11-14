@@ -143,6 +143,9 @@ templ pulse(h *Heartbeat) {
 			<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke"></path>
 			<path class="pulse-area" d={ h.Area } fill={ "url(#" + h.GradID + ")" }></path>
 			<path class="pulse-line" d={ h.Line } vector-effect="non-scaling-stroke"></path>
+			if h.Visitors != "" {
+				<path class="pulse-visitors" d={ h.Visitors } vector-effect="non-scaling-stroke"></path>
+			}
 			<circle class="pulse-dot" cx={ h.X } cy={ h.Y } r="3.5"></circle>
 		</svg>
 	</figure>
