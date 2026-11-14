@@ -540,6 +540,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	})
 
 	gh := githttp.New(githttp.Config{
+		Traffic:         f.Traffic,
 		Auth:            f.Auth,
 		Repos:           f.Repos,
 		Pushes:          f.Pushes,

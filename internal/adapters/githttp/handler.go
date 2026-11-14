@@ -79,8 +79,15 @@ const (
 	serviceReceive = "git-receive-pack"
 )
 
+// TrafficRecorder collects admitted Git requests without blocking.
+type TrafficRecorder interface {
+	Hit(domain.RepoName, domain.TrafficKind, netip.Addr, string, string)
+}
+
 // Config configures a Handler.
 type Config struct {
+	// Traffic is optional; nil disables collection.
+	Traffic TrafficRecorder
 	Auth    ports.AuthService
 	Repos   ports.RepoLookup
 	Pushes  ports.PushService
@@ -436,6 +443,11 @@ func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route,
 	if status != 0 {
 		http.Error(w, http.StatusText(status), status)
 		return
+	}
+
+	if h.cfg.Traffic != nil && rt.suffix == serviceUpload {
+		ip, _ := netip.ParseAddr(clientlimit.ClientAddr(r, h.cfg.TrustedProxies))
+		h.cfg.Traffic.Hit(name, domain.TrafficClone, ip, r.UserAgent(), r.Referer())
 	}
 
 	(&cgi.Handler{

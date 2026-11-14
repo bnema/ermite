@@ -47,6 +47,8 @@ const requestTimeout = 30 * time.Second
 
 // Config configures a Server.
 type Config struct {
+	// Traffic is optional; nil disables collection.
+	Traffic TrafficRecorder
 	// Auth authenticates Authorization headers on release downloads only.
 	Auth ports.AuthService
 	// VideoHosts are exact external video hosts; nil uses the defaults.
@@ -443,6 +445,7 @@ func (s *Server) write(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		}
 	}
 	h.Set("Content-Length", itoa(len(body)))
+	s.recordView(ctx, r, status)
 	w.WriteHeader(status)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(body)

@@ -46,6 +46,7 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		artifacts = f.CI
 	}
 	return web.New(web.Config{
+		Traffic:       f.Traffic,
 		Auth:          f.Auth,
 		Repos:         f.Repos,
 		Browse:        f.Browse,
