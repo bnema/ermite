@@ -125,12 +125,14 @@ func parseTrafficAggKey(key string) (domain.RepoName, string, time.Time, error) 
 	return repo, parts[1], start, nil
 }
 
-// trafficKeys lists every aggregate and unique key owned by repo for repository deletion.
+// trafficKeys lists unique keys before aggregates so interrupted chunked repository
+// deletion cannot leave unique markers without their aggregates. Snapshot keys
+// are immutable and Batch.Delete copies them.
 func trafficKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
 	var keys [][]byte
-	for _, prefix := range []string{trafficAggRepoPrefix(repo), trafficUniqueRepoPrefix(repo)} {
+	for _, prefix := range []string{trafficUniqueRepoPrefix(repo), trafficAggRepoPrefix(repo)} {
 		for key := range snap.Prefix(ctx, []byte(prefix)) {
-			keys = append(keys, append([]byte(nil), key...))
+			keys = append(keys, key)
 		}
 	}
 	return keys
@@ -458,7 +460,7 @@ func scanTrafficRange(ctx context.Context, snap *kv.Snapshot, repo domain.RepoNa
 	return ctx.Err()
 }
 
-// trafficRepos lists, in name order, the repositories that have aggregates.
+// trafficRepos lists repositories with aggregates in byte order of name+"/".
 // It seeks past each repository's keys, so its cost grows with the number of
 // repositories, not of buckets.
 func trafficRepos(ctx context.Context, snap *kv.Snapshot) ([]domain.RepoName, error) {
