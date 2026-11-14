@@ -48,9 +48,8 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
-	traffic := mocks.NewTrafficRecorder(t)
 	srv := newTestServer(t, Config{
-		Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs, Traffic: traffic,
+		Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs,
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 	})
 	for _, tc := range []struct {
@@ -63,8 +62,8 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 		{path: "/proj/actions/runs/1/job/" + jobID + "/stream"},
 		{path: "/proj/actions/runs/1/job/" + jobID, hx: true},
 	} {
-		traffic.ExpectedCalls = nil
-		traffic.Calls = nil
+		traffic := mocks.NewTrafficRecorder(t)
+		srv.cfg.Traffic = traffic
 		if tc.views > 0 {
 			traffic.EXPECT().Hit(repo, domain.TrafficView, netip.MustParseAddr("198.51.100.7"), "", "").Times(tc.views)
 		}
