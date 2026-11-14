@@ -1,4 +1,8 @@
 @layer components {
+  /* Traffic labels take the spare width; numeric headers fit their values.
+     Alignment and tabular figures come from the shared .num utility. */
+  #inbox-traffic .list .num { width: 1%; white-space: nowrap; }
+
   /* tables in a card, with a row cursor (j/k) */
   .list {
     width: 100%; table-layout: auto;

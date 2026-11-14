@@ -577,19 +577,19 @@ templ InboxTraffic(v InboxTrafficView) {
 			<p class="lede dim">no traffic yet.</p>
 		} else {
 			<table class="list" aria-label="Repository traffic">
-				<thead><tr><th>Repository</th><th>Views</th><th>View uniques</th><th>Clones</th><th>Clone uniques</th><th>Bots</th></tr></thead>
+				<thead><tr><th class="c-main">Repository</th><th class="num">Views</th><th class="num">View uniques</th><th class="num">Clones</th><th class="num">Clone uniques</th><th class="num">Bots</th></tr></thead>
 				<tbody>
 					for _, r := range v.Repos {
-						<tr><td><a href={ templ.SafeURL(repoHref(r.Repo.String())) }>{ r.Repo.String() }</a></td><td class="num">{ grouped(int(r.Views)) }</td><td class="num">{ grouped(int(r.ViewUniques)) }</td><td class="num">{ grouped(int(r.Clones)) }</td><td class="num">{ grouped(int(r.CloneUniques)) }</td><td class="num">{ grouped(int(r.Bots)) }</td></tr>
+						<tr><td class="c-main"><a href={ templ.SafeURL(repoHref(r.Repo.String())) }>{ r.Repo.String() }</a></td><td class="num">{ grouped(int(r.Views)) }</td><td class="num">{ grouped(int(r.ViewUniques)) }</td><td class="num">{ grouped(int(r.Clones)) }</td><td class="num">{ grouped(int(r.CloneUniques)) }</td><td class="num">{ grouped(int(r.Bots)) }</td></tr>
 					}
 				</tbody>
 			</table>
 			<h3 class="rule-h">Top referrers</h3>
 			<table class="list" aria-label="Top referrers">
-				<thead><tr><th>Domain</th><th>Count</th></tr></thead>
+				<thead><tr><th class="c-main">Domain</th><th class="num">Count</th></tr></thead>
 				<tbody>
 					for _, r := range v.Referrers {
-						<tr><td>{ r.Domain }</td><td class="num">{ grouped(int(r.Count)) }</td></tr>
+						<tr><td class="c-main">{ r.Domain }</td><td class="num">{ grouped(int(r.Count)) }</td></tr>
 					}
 				</tbody>
 			</table>

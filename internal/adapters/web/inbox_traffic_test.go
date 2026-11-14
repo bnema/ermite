@@ -53,11 +53,16 @@ func TestInboxTraffic(t *testing.T) {
 			assert.Contains(t, body, `href="/-/inbox?tab=traffic" aria-current="page">Traffic</a>`)
 			assert.Contains(t, body, "1\u202f204 views · 312 unique · 87 clones · 14 unique · 9 bots")
 			assert.Contains(t, body, `class="list" aria-label="Repository traffic"`)
+			assert.Contains(t, body, `<th class="c-main">Repository</th>`)
+			for _, header := range []string{"Views", "View uniques", "Clones", "Clone uniques", "Bots", "Count"} {
+				assert.Contains(t, body, `<th class="num">`+header+`</th>`)
+			}
+			assert.Contains(t, body, `<th class="c-main">Domain</th>`)
 			assert.Contains(t, body, `href="/alpha">alpha</a>`)
 			assert.Less(t, strings.Index(body, `href="/beta">beta</a>`), strings.Index(body, `href="/alpha">alpha</a>`))
 			assert.Contains(t, body, `<td class="num">20</td><td class="num">12</td><td class="num">8</td>`)
 			assert.Contains(t, body, `Top referrers`)
-			assert.Contains(t, body, `<td>example.org</td><td class="num">42</td>`)
+			assert.Contains(t, body, `<td class="c-main">example.org</td><td class="num">42</td>`)
 			assert.Contains(t, body, "&lt;untrusted&gt;")
 			assert.Contains(t, body, `range=30d&amp;tab=traffic#inbox-traffic`)
 			assert.NotContains(t, body, "7 days")
