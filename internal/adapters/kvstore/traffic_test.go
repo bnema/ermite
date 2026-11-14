@@ -15,12 +15,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// trafficEpoch is a repository creation time before every hit of the tests
+// that record past traffic, so the creation-time fence keeps those hits.
+var trafficEpoch = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
 func TestTrafficMerge(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t, t.TempDir())
 	tr := s.Traffic()
 	repo := name(t, "proj")
-	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: trafficEpoch, Visibility: domain.VisibilityPrivate}))
 	at := time.Date(2026, 1, 2, 12, 30, 0, 0, time.FixedZone("offset", 3600))
 	day := at.UTC().Truncate(24 * time.Hour)
 	hit := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: at, ReferrerDomain: "example.com"}
@@ -104,7 +108,7 @@ func TestTrafficPruneAndDelete(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	a, b := name(t, "a"), name(t, "b")
 	for _, repo := range []domain.RepoName{a, b} {
-		require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: trafficEpoch, Visibility: domain.VisibilityPrivate}))
 		var hits []domain.TrafficHit
 		for _, age := range []time.Duration{91 * 24 * time.Hour, 90 * 24 * time.Hour, 49 * time.Hour, 48 * time.Hour, 0} {
 			hits = append(hits, domain.TrafficHit{Repo: repo, Kind: domain.TrafficClone, At: now.Add(-age)})
@@ -270,7 +274,7 @@ func TestTrafficRangeReadsHonorBounds(t *testing.T) {
 	repo, longer := name(t, "proj"), name(t, "proj-two")
 	day := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
 	for _, r := range []domain.RepoName{repo, longer} {
-		require.NoError(t, s.Create(ctx, domain.Repo{Name: r, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: r, CreatedAt: trafficEpoch, Visibility: domain.VisibilityPrivate}))
 		var hits []domain.TrafficHit
 		for d := range 5 {
 			hits = append(hits, domain.TrafficHit{Repo: r, Kind: domain.TrafficView, At: day.Add(time.Duration(d)*24*time.Hour + 90*time.Minute)})
@@ -313,7 +317,7 @@ func TestTrafficPruneAndDeleteRemoveUniqueKeys(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	a, b := name(t, "a"), name(t, "b")
 	for _, repo := range []domain.RepoName{a, b} {
-		require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: trafficEpoch, Visibility: domain.VisibilityPrivate}))
 		require.NoError(t, tr.Record(ctx, []domain.TrafficHit{
 			{Repo: repo, Kind: domain.TrafficView, At: now.Add(-91 * 24 * time.Hour), VisitorHash: visitor(1)},
 			{Repo: repo, Kind: domain.TrafficClone, At: now.Add(-91 * 24 * time.Hour), VisitorHash: visitor(2)},
@@ -340,4 +344,43 @@ func TestTrafficPruneAndDeleteRemoveUniqueKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, days, 1)
 	require.Equal(t, uint64(1), days[0].ViewUniques)
+}
+
+func TestTrafficFencesRecreatedRepository(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	repo := name(t, "proj")
+	t0 := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	t1, t2 := t0.Add(time.Minute), t0.Add(2*time.Minute)
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: t0, Visibility: domain.VisibilityPrivate}))
+	// A hit admitted for the first repository, still queued when it is deleted.
+	old := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: t1, VisitorHash: visitor(1), ReferrerDomain: "old.test"}
+	require.NoError(t, s.Delete(ctx, repo))
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: t2, Visibility: domain.VisibilityPublic}))
+	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{old}))
+	days, err := tr.Daily(ctx, repo, t0.Add(-24*time.Hour), t0.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Empty(t, days)
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/"))
+	// Hits admitted at or after the new creation time are kept.
+	current := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: t2, VisitorHash: visitor(2), ReferrerDomain: "new.test"}
+	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{old, current}))
+	days, err = tr.Daily(ctx, repo, t0.Add(-24*time.Hour), t0.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	require.Equal(t, uint64(1), days[0].Views)
+	require.Equal(t, map[string]uint64{"new.test": 1}, days[0].Referrers)
+}
+
+func TestTrafficImportHistoryKeepsPreCreationHits(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	repo := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	past := domain.TrafficHit{Repo: repo, Kind: domain.TrafficClone, At: created.Add(-30 * 24 * time.Hour)}
+	require.NoError(t, s.Traffic().Record(ctx, []domain.TrafficHit{past}))
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/a/"))
+	require.NoError(t, s.Traffic().ImportHistory(ctx, []domain.TrafficHit{past}))
+	require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/a/"))
 }

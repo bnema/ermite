@@ -133,7 +133,7 @@ func TestTrafficReads(t *testing.T) {
 	b, err := domain.ParseRepoName("b")
 	require.NoError(t, err)
 	for _, repo := range []domain.RepoName{a, b} {
-		require.NoError(t, db.Create(ctx, domain.Repo{Name: repo, CreatedAt: clock.t, Visibility: domain.VisibilityPrivate}))
+		require.NoError(t, db.Create(ctx, domain.Repo{Name: repo, CreatedAt: clock.t.Add(-90 * 24 * time.Hour), Visibility: domain.VisibilityPrivate}))
 	}
 	hits := []domain.TrafficHit{
 		{Repo: a, Kind: domain.TrafficView, At: clock.t, ReferrerDomain: "example.test"},
@@ -219,4 +219,24 @@ func TestTrafficForgeReferrerRanking(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, report.Referrers, 10)
 	require.Equal(t, result.Referrers[:10], report.Referrers)
+}
+
+func TestTrafficHitDoesNotReachRecreatedRepository(t *testing.T) {
+	ctx := t.Context()
+	db, err := kvstore.Open(ctx, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close(ctx)) })
+	clock := &fakeClock{t: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
+	tr := usecase.NewTraffic(usecase.TrafficConfig{Store: db.Traffic(), Clock: clock})
+	repo, err := domain.ParseRepoName("proj")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(ctx, domain.Repo{Name: repo, CreatedAt: clock.t.Add(-time.Hour), Visibility: domain.VisibilityPrivate}))
+	tr.Hit(repo, domain.TrafficView, netip.MustParseAddr("192.0.2.1"), "Mozilla", "https://old.example/")
+	require.NoError(t, db.Delete(ctx, repo))
+	require.NoError(t, db.Create(ctx, domain.Repo{Name: repo, CreatedAt: clock.t.Add(time.Minute), Visibility: domain.VisibilityPublic}))
+	tr.Close(ctx)
+	report, err := tr.RepoTraffic(ctx, repo, 24*time.Hour)
+	require.NoError(t, err)
+	require.Zero(t, report.Totals.Views)
+	require.Empty(t, report.Referrers)
 }

@@ -137,11 +137,25 @@ func trafficKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [
 }
 
 // Record merges hits into UTC daily and hourly buckets. Hits for missing
-// repositories are discarded and invalid hits reject the whole call before any
-// write. Hits are written in order in sub-batches of at most about
-// trafficBatchBudget bytes; each sub-batch is atomic and keeps both buckets of
-// a hit together, but an error leaves earlier sub-batches recorded.
+// repositories are discarded, and so are hits admitted before the current
+// repository record was created (At before its CreatedAt): they belong to a
+// deleted repository of the same name. Invalid hits reject the whole call
+// before any write. Hits are written in order in sub-batches of at most about
+// trafficBatchBudget bytes; each sub-batch is atomic, keeps both buckets of a
+// hit together and guards the repository record it checked, but an error
+// leaves earlier sub-batches recorded.
 func (t *Traffic) Record(ctx context.Context, hits []domain.TrafficHit) error {
+	return t.record(ctx, hits, true)
+}
+
+// ImportHistory is Record without the creation-time fence: it keeps hits
+// dated before their repository was created. It is for development fixtures
+// that backfill synthetic history; servers must use Record.
+func (t *Traffic) ImportHistory(ctx context.Context, hits []domain.TrafficHit) error {
+	return t.record(ctx, hits, false)
+}
+
+func (t *Traffic) record(ctx context.Context, hits []domain.TrafficHit, fence bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -151,7 +165,7 @@ func (t *Traffic) Record(ctx context.Context, hits []domain.TrafficHit) error {
 		}
 	}
 	for len(hits) > 0 {
-		n, err := t.recordPrefix(ctx, hits)
+		n, err := t.recordPrefix(ctx, hits, fence)
 		if err != nil {
 			return err
 		}
@@ -162,12 +176,12 @@ func (t *Traffic) Record(ctx context.Context, hits []domain.TrafficHit) error {
 
 // recordPrefix applies the longest prefix of hits that fits one sub-batch and
 // returns its length, retrying on write conflicts.
-func (t *Traffic) recordPrefix(ctx context.Context, hits []domain.TrafficHit) (int, error) {
+func (t *Traffic) recordPrefix(ctx context.Context, hits []domain.TrafficHit, fence bool) (int, error) {
 	for range repoMutationTries {
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
-		w := newTrafficWrite(t.db.Snapshot(ctx))
+		w := newTrafficWrite(t.db.Snapshot(ctx), fence)
 		n, err := w.addHits(ctx, hits)
 		if err != nil {
 			return 0, err
@@ -191,9 +205,10 @@ func (t *Traffic) recordPrefix(ctx context.Context, hits []domain.TrafficHit) (i
 
 // trafficRepo caches one repository read of a sub-batch.
 type trafficRepo struct {
-	item    kv.Item
-	exists  bool
-	guarded bool
+	item      kv.Item
+	exists    bool
+	createdAt time.Time
+	guarded   bool
 }
 
 // trafficWrite builds one Record sub-batch from a single snapshot. Every
@@ -202,6 +217,7 @@ type trafficRepo struct {
 // makes the batch conflict instead of counting a visitor twice.
 type trafficWrite struct {
 	snap    *kv.Snapshot
+	fence   bool
 	b       kv.Batch
 	bytes   int
 	repos   map[domain.RepoName]*trafficRepo
@@ -209,16 +225,19 @@ type trafficWrite struct {
 	uniques map[string]bool
 }
 
-func newTrafficWrite(snap *kv.Snapshot) *trafficWrite {
-	return &trafficWrite{snap: snap, repos: map[domain.RepoName]*trafficRepo{}, aggs: map[string]*trafficAggregate{}, uniques: map[string]bool{}}
+func newTrafficWrite(snap *kv.Snapshot, fence bool) *trafficWrite {
+	return &trafficWrite{snap: snap, fence: fence, repos: map[domain.RepoName]*trafficRepo{}, aggs: map[string]*trafficAggregate{}, uniques: map[string]bool{}}
 }
 
 // addHits adds hits until the next one could overflow the budget and returns
 // how many were consumed. The first hit is always taken so Record progresses.
 func (w *trafficWrite) addHits(ctx context.Context, hits []domain.TrafficHit) (int, error) {
 	for i, h := range hits {
-		r := w.repo(ctx, h.Repo)
-		if !r.exists {
+		r, err := w.repo(ctx, h.Repo)
+		if err != nil {
+			return 0, err
+		}
+		if !r.exists || (w.fence && h.At.Before(r.createdAt)) {
 			continue
 		}
 		cost := w.cost(h, r)
@@ -237,14 +256,22 @@ func (w *trafficWrite) addHits(ctx context.Context, hits []domain.TrafficHit) (i
 	return len(hits), nil
 }
 
-func (w *trafficWrite) repo(ctx context.Context, name domain.RepoName) *trafficRepo {
-	r := w.repos[name]
-	if r == nil {
-		item, ok := w.snap.Get(ctx, repoKey(name))
-		r = &trafficRepo{item: item, exists: ok}
-		w.repos[name] = r
+// repo reads and caches the repository record of name from the snapshot.
+func (w *trafficWrite) repo(ctx context.Context, name domain.RepoName) (*trafficRepo, error) {
+	if r := w.repos[name]; r != nil {
+		return r, nil
 	}
-	return r
+	item, ok := w.snap.Get(ctx, repoKey(name))
+	r := &trafficRepo{item: item, exists: ok}
+	if ok {
+		repo, err := decodeRepo(item.Value)
+		if err != nil {
+			return nil, fmt.Errorf("traffic repository %q: %w", name, err)
+		}
+		r.createdAt = repo.CreatedAt
+	}
+	w.repos[name] = r
+	return r, nil
 }
 
 // guardRepoItem is guardRepoKey for a repository item read from a snapshot.

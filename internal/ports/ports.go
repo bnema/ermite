@@ -661,7 +661,9 @@ type TreeFileLister interface {
 // makes uniques a lower bound. Daily referrers retain the first 50 domains;
 // subsequent new domains are dropped. Bots count separately from views.
 // Reads use half-open [from, to) bucket-start windows and omit empty buckets.
-// Record discards hits for missing repositories and rejects invalid hits.
+// Record discards hits for missing repositories and hits whose At (admission
+// time) is before the repository's CreatedAt, so traffic of a deleted
+// repository never lands on a new one of the same name; it rejects invalid hits.
 // A large batch may be stored in several atomic parts; an error can leave
 // earlier hits recorded, but never one bucket of a hit without the other.
 // Daily and Hourly return oldest-first buckets. Summaries returns rows ordered

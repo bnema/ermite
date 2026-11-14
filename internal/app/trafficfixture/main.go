@@ -105,7 +105,8 @@ func run(ctx context.Context, data string, o options, out io.Writer) (err error)
 	return nil
 }
 
-// seed streams bounded batches; daily windows end at now so no hit is future
+// seed streams bounded batches through ImportHistory, which keeps hits dated
+// before the repository was created; daily windows end at now so no hit is future
 // dated or older than the 90-day retention. Uniform timestamps within each
 // window also populate the last 48 hourly buckets without double-counting.
 func seed(ctx context.Context, store *kvstore.Store, repo domain.RepoName, now time.Time, o options, out io.Writer) error {
@@ -122,7 +123,7 @@ func seed(ctx context.Context, store *kvstore.Store, repo domain.RepoName, now t
 			return err
 		}
 		if !o.dry {
-			if err := store.Traffic().Record(ctx, batch); err != nil {
+			if err := store.Traffic().ImportHistory(ctx, batch); err != nil {
 				return err
 			}
 		}
