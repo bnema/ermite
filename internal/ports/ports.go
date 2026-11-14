@@ -655,3 +655,20 @@ type TreeFileLister interface {
 	// (FileSizes.Truncated tells). Unknown repository or commit: ErrNotFound.
 	ListFileSizes(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, max int) (domain.FileSizes, error)
 }
+
+// TrafficStore records privacy-preserving hits in UTC daily and hourly buckets.
+// Unique sets are capped at 10,000 per kind/bucket; overflow marks Partial and
+// makes uniques a lower bound. Daily referrers retain the first 50 domains;
+// subsequent new domains are dropped. Bots count separately from views.
+// Reads use half-open [from, to) bucket-start windows and omit empty buckets.
+// Record discards hits for missing repositories and rejects invalid hits.
+// Daily and Hourly return oldest-first buckets. Summaries returns rows ordered
+// by repository name, summing daily uniques and merging daily referrers.
+// Prune counts deleted buckets, retaining starts exactly at the cutoff.
+type TrafficStore interface {
+	Record(ctx context.Context, batch []domain.TrafficHit) error
+	Daily(ctx context.Context, repo domain.RepoName, from, to time.Time) ([]domain.TrafficBucket, error)
+	Hourly(ctx context.Context, repo domain.RepoName, from, to time.Time) ([]domain.TrafficBucket, error)
+	Summaries(ctx context.Context, from, to time.Time) ([]domain.TrafficSummary, error)
+	Prune(ctx context.Context, now time.Time) (int, error)
+}
