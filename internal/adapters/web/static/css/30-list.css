@@ -125,6 +125,7 @@
     & .pulse-stop-top { stop-color: var(--teal); stop-opacity: .32; }
     & .pulse-stop-bottom { stop-color: var(--teal); stop-opacity: 0; }
     & .pulse-line { fill: none; stroke: var(--teal); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    & .pulse-visitors { fill: none; stroke: var(--rose); stroke-width: 1.75; stroke-dasharray: 5 4; stroke-linecap: round; stroke-linejoin: round; }
     & .pulse-dot { fill: var(--teal); stroke: var(--bg-surface); stroke-width: 1.5; }
     & .repo:hover .pulse-dot, & .repo[data-cursor] .pulse-dot { stroke: var(--bg-raised); }
     & .repo-pulse:not([data-live]) .pulse-line { stroke: var(--ink-mute); }

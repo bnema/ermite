@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/a-h/templ"
 	"bnema.dev/zerowrap"
+	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -215,7 +215,17 @@ func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, n
 		}
 		return nil
 	}
-	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent), Pulse: s.pulses.get(r.Name.String(), st.Activity, st.Partial)}
+	var visitors []uint64
+	if traffic, ok := s.cfg.Traffic.(TrafficDailyReader); ok {
+		var err error
+		visitors, err = traffic.RepoDaily(ctx, r.Name, ports.ActivityDays)
+		if err != nil {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("repo", r.Name.String()).Msg("read the visitors of the home page")
+			visitors = nil
+		}
+	}
+	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent), Pulse: s.pulses.get(r.Name.String(), st.Activity, st.Partial, visitors)}
 	if st.Partial {
 		hs.Recent += "+" // a lower bound: the walk stopped at its cap
 	}

@@ -472,3 +472,46 @@ func TestReleaseEventsRefreshTheHomeRow(t *testing.T) {
 		})
 	}
 }
+
+type homeTraffic struct {
+	trafficRecorder
+	daily []uint64
+	err   error
+}
+
+func (f *homeTraffic) RepoDaily(_ context.Context, _ domain.RepoName, days int) ([]uint64, error) {
+	if days != ports.ActivityDays {
+		panic("unexpected activity window")
+	}
+	return f.daily, f.err
+}
+
+func TestHomeVisitors(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"enabled", "disabled", "failed"} {
+		t.Run(mode, func(t *testing.T) {
+			browse := mocks.NewBrowseService(t)
+			browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
+			browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 1)}, nil)
+			browse.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoStats{Activity: make([]int, ports.ActivityDays)}, nil)
+			cfg := Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse}
+			if mode != "disabled" {
+				f := &homeTraffic{daily: make([]uint64, ports.ActivityDays)}
+				f.daily[89] = 12
+				if mode == "failed" {
+					f.err = errors.New("traffic unavailable")
+				}
+				cfg.Traffic = f
+			}
+			srv := newTestServer(t, cfg)
+			out := renderRow(t, srv.homeRowOf(t.Context(), pushedRepo(t, "proj"), fixedNow, false))
+			if mode == "enabled" {
+				assert.Contains(t, out, `aria-label="Activity: 0 commits, 12 visitors in the last 90 days"`)
+				assert.Contains(t, out, `class="pulse-visitors" d="M0 `)
+			} else {
+				assert.NotContains(t, out, "pulse-visitors")
+				assert.NotContains(t, out, "visitors")
+			}
+		})
+	}
+}

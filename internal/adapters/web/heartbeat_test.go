@@ -77,3 +77,22 @@ func BenchmarkPulseCache(b *testing.B) {
 		c.get("neferwl", days, false)
 	}
 }
+
+func TestPulseVisitors(t *testing.T) {
+	t.Parallel()
+	var c pulseCache
+	days := make([]int, 90)
+	days[89] = 2
+	visitors := make([]uint64, 90)
+	visitors[10], visitors[89] = 30, 4
+	h := c.get("proj", days, false, visitors)
+	assert.Equal(t, "Activity: 2 commits, 34 visitors in the last 90 days", h.Label)
+	counts := make([]int, 90)
+	counts[10], counts[89] = 30, 4
+	assert.Equal(t, heartbeatOf("proj", counts, false).Line, h.Visitors)
+	assert.Same(t, h, c.get("proj", days, false, visitors))
+	visitors[89]++
+	assert.NotSame(t, h, c.get("proj", days, false, visitors))
+	assert.Empty(t, c.get("proj", days, false).Visitors)
+	assert.Empty(t, c.get("proj", days, false, visitors[:89]).Visitors, "misaligned data is omitted")
+}

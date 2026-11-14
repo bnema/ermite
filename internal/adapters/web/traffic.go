@@ -6,14 +6,28 @@ import (
 	"context"
 	"net/http"
 	"net/netip"
+	"time"
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/usecase"
 )
 
 // TrafficRecorder collects repository visits without blocking.
 type TrafficRecorder interface {
 	Hit(domain.RepoName, domain.TrafficKind, netip.Addr, string, string)
+}
+
+// TrafficDailyReader supplies daily unique visitors, oldest first including today.
+// Separate from the recorder so recording-only integrations remain valid.
+type TrafficDailyReader interface {
+	RepoDaily(context.Context, domain.RepoName, int) ([]uint64, error)
+}
+
+// TrafficSummaryReader supplies the repository's last 30 days of traffic.
+// Separate from the recorder so recording-only integrations remain valid.
+type TrafficSummaryReader interface {
+	RepoSummary(context.Context, domain.RepoName) (domain.TrafficCounts, error)
 }
 
 // recordView runs only after HTML rendering and conditional-cache handling.
@@ -41,4 +55,9 @@ func (s *Server) recordView(ctx context.Context, r *http.Request, status int) {
 	}
 	ip, _ := netip.ParseAddr(clientlimit.ClientAddr(r, s.cfg.TrustedProxies))
 	s.cfg.Traffic.Hit(name, domain.TrafficView, ip, r.UserAgent(), r.Referer())
+}
+
+// TrafficForgeReader supplies owner-only traffic across the forge.
+type TrafficForgeReader interface {
+	Forge(context.Context, time.Duration) (usecase.TrafficForge, error)
 }

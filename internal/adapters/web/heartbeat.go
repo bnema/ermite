@@ -15,6 +15,8 @@ import (
 type Heartbeat struct {
 	// Line is the curve, Area the same closed down to the bottom edge.
 	Line, Area string
+	// Visitors is an independently scaled daily unique-visitor curve.
+	Visitors string
 	// X and Y are where the curve ends: the pulse of today.
 	X, Y string
 	// GradID names the fill gradient of this row (ids are page-wide).
@@ -110,9 +112,10 @@ type pulseCache struct {
 }
 
 type pulseKey struct {
-	id      string
-	days    string // the counts, packed
-	partial bool
+	id       string
+	days     string // the counts, packed
+	visitors string // visitor counts, packed; empty when unavailable
+	partial  bool
 }
 
 // maxPulses bounds pulseCache; a few per repository at most are live.
@@ -120,7 +123,7 @@ const maxPulses = 4096
 
 // get is heartbeatOf, from the cache when it was drawn already. The
 // Heartbeat returned is shared: callers must not change it.
-func (c *pulseCache) get(id string, days []int, partial bool) *Heartbeat {
+func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint64) *Heartbeat {
 	if len(days) < 2 {
 		return nil
 	}
@@ -128,7 +131,15 @@ func (c *pulseCache) get(id string, days []int, partial bool) *Heartbeat {
 	for _, d := range days {
 		packed = binary.AppendUvarint(packed, uint64(max(d, 0)))
 	}
-	key := pulseKey{id: id, days: string(packed), partial: partial}
+	var daily []uint64
+	if len(visitors) > 0 && len(visitors[0]) == len(days) {
+		daily = visitors[0]
+	}
+	vp := make([]byte, 0, len(daily)*2)
+	for _, d := range daily {
+		vp = binary.AppendUvarint(vp, d)
+	}
+	key := pulseKey{id: id, days: string(packed), visitors: string(vp), partial: partial}
 	c.mu.Lock()
 	h, ok := c.m[key]
 	c.mu.Unlock()
@@ -136,6 +147,16 @@ func (c *pulseCache) get(id string, days []int, partial bool) *Heartbeat {
 		return h
 	}
 	h = heartbeatOf(id, days, partial)
+	if daily != nil {
+		counts := make([]int, len(daily))
+		var total uint64
+		for i, d := range daily {
+			counts[i] = int(min(d, uint64(math.MaxInt)))
+			total += d
+		}
+		h.Visitors = heartbeatOf(id, counts, false).Line
+		h.Label = strings.Replace(h.Label, " in the last ", ", "+strconv.FormatUint(total, 10)+" visitors in the last ", 1)
+	}
 	c.mu.Lock()
 	if c.m == nil || len(c.m) >= maxPulses {
 		c.m = make(map[pulseKey]*Heartbeat)
