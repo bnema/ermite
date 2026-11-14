@@ -162,6 +162,8 @@ type Server struct {
 	refsFan fanout
 	// pulses holds the activity curves of the home rows.
 	pulses pulseCache
+	// visitors holds the recent daily visitors of the home rows.
+	visitors visitorsCache
 }
 
 // New builds the web handler.
