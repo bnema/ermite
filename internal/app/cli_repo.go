@@ -154,7 +154,7 @@ func newRepoCmd(env *cliEnv) *cobra.Command {
 	}
 	repo.AddCommand(
 		newRepoListCmd(env), newRepoShowCmd(env), newRepoCreateCmd(env),
-		newRepoEditCmd(env), newRepoDeleteCmd(env),
+		newRepoEditCmd(env), newRepoDeleteCmd(env), newRepoTrafficCmd(env),
 	)
 	return repo
 }
