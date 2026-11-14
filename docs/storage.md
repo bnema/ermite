@@ -130,6 +130,22 @@ a background worker recomputes it after a push to the default branch and for
 every repository at startup, and deleting the repository removes it. There is
 no schema bump; a build without this key ignores it.
 
+## Traffic (`traffic/`)
+
+Repository traffic lives under two prefixes, written in batches by a background
+recorder:
+
+- `traffic/a/<repo>/<d|h>/<UTC time>`: the counts of a day (`d`, kept 90 days)
+  or an hour (`h`, kept 48 hours) and, for days, up to 50 referrer domains.
+- `traffic/u/<repo>/<d|h>/<UTC time>/<v|c>/<hash>`: one empty key per unique
+  visitor of a bucket, for views (`v`) or clones (`c`), at most 10,000 per
+  bucket; beyond, the bucket is marked partial.
+
+A pruner deletes expired buckets every hour; deleting the repository removes
+both prefixes. Hits admitted before the repository's creation time are dropped,
+so a recreated repository never inherits the traffic of the old one. There is
+no schema bump; a build without these keys ignores them.
+
 ## Schema 12: dependency batches
 
 Bernard records under `dpend/<repo>` now store application state in `batches`:

@@ -20,6 +20,14 @@ docker compose down -v   # also removes data and caches
 
 The source is mounted and [air](https://github.com/air-verse/air) rebuilds on each change to `.go`, `.templ` or web assets. The admin token is in `compose.yaml`. The container runs as root, which maps to your user under rootless Docker.
 
+To preview traffic statistics, fill the existing repositories with 90 days of synthetic traffic. The server must be stopped, since it locks the store:
+
+```sh
+docker compose stop ermite
+docker compose run --rm --no-deps ermite go run ./internal/app/trafficfixture -data /data
+docker compose up -d ermite
+```
+
 ## Docker image
 
 ```sh

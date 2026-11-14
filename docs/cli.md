@@ -50,6 +50,7 @@ It does not run:
 ermite repo list | show <name> | create <name> [--description …] [--visibility public]
 ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--allow-auto-merge] [--archived[=false]] [--issues off|owner|public]
 ermite repo delete <name> [--yes]
+ermite repo traffic <name> [--range 24h|30d] [--json]
 
 ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo …] [--branch-prefix …] [--expires 30d]
 ermite token list | revoke <id>
@@ -113,6 +114,12 @@ The web shows an **Archived** badge and hides write actions. `repo show` display
 ### Repository languages
 
 `repo show` prints the top five languages of the default branch (`Go 72.1%, TypeScript 20.3%, …`), and the repository JSON of `repo show` and `repo list` has a `languages` array of `name`, `bytes` and `percent` (`[]` when unknown). The server counts them in the background from file extensions, skipping vendored, generated and documentation paths and files over 1 MiB, and reading at most the first 100,000 files in tree order; when that cuts the tree, `languages_truncated` is true and `repo show` appends ` (partial)`; `.gitattributes` linguist attributes are ignored. It needs the `repos.languages` feature.
+
+### Repository traffic
+
+`repo traffic` prints the views and clones of a repository, with their unique visitors, over 30 days (daily points, the default) or 24 hours (`--range 24h`, hourly points), then the top 10 referrer domains of the last 30 days. Points are UTC and include the current day or hour. Anyone who may read the repository may read its traffic.
+
+A view is a successful page of the repository loaded by a visitor who is not signed in; a clone is a `git-upload-pack` over HTTP (clone or fetch). Bots, told apart by their user agent, are counted apart and shown only in the owner's inbox. A unique visitor is a hash of the client address (IPv6 by /64) and a salt that changes every UTC day and is never stored: no address is kept, and uniques add up visitor-days. Referrers keep the domain only. The web shows the same figures in the repository's About section and as a dashed curve on the home page; the inbox Traffic tab lists every repository.
 
 ### Dependency updates
 
