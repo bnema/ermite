@@ -48,23 +48,33 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+	traffic := &trafficRecorder{}
 	srv := newTestServer(t, Config{
-		Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs,
+		Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs, Traffic: traffic,
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 	})
-	for _, path := range []string{
-		"/proj/actions/runs/1/job/" + jobID,
-		"/proj/actions/runs/1/job/" + jobID + "/raw",
-		"/proj/actions/runs/1/job/" + jobID + "/stream",
+	for _, tc := range []struct {
+		path string
+		hx   bool
+	}{
+		{path: "/proj/actions/runs/1/job/" + jobID},
+		{path: "/proj/actions/runs/1/job/" + jobID + "/raw"},
+		{path: "/proj/actions/runs/1/job/" + jobID + "/stream"},
+		{path: "/proj/actions/runs/1/job/" + jobID, hx: true},
 	} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		if tc.hx {
+			req.Header.Set("HX-Request", "true")
+		}
 		req.RemoteAddr = "192.0.2.1:4000"
 		req.Header.Set("X-Forwarded-For", "198.51.100.7")
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
-		require.Equal(t, http.StatusOK, rec.Code, path)
+		require.Equal(t, http.StatusOK, rec.Code, tc.path)
+		// Only the full HTML job page counts, not raw/stream feeds or HX.
+		require.Equal(t, []trafficHit{{repo, domain.TrafficView, netip.MustParseAddr("198.51.100.7"), "", ""}}, traffic.hits, tc.path)
 	}
-	require.Len(t, seen, 3)
+	require.Len(t, seen, 4)
 	for _, c := range seen {
 		assert.Equal(t, want, c)
 	}

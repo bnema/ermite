@@ -36,7 +36,8 @@ func (s *Server) recordView(ctx context.Context, r *http.Request, status int) {
 		"GET /{repo}/issues", "GET /{repo}/issues/{$}", "GET /{repo}/issues/{n}",
 		"GET /{repo}/merge-requests", "GET /{repo}/merge-requests/{$}", "GET /{repo}/merge-requests/{n}",
 		"GET /{repo}/releases", "GET /{repo}/releases/{$}", "GET /{repo}/releases/tag/{tag...}",
-		"GET /{repo}/actions", "GET /{repo}/actions/{$}", "GET /{repo}/actions/runs/{id}":
+		"GET /{repo}/actions", "GET /{repo}/actions/{$}", "GET /{repo}/actions/runs/{id}",
+		"GET /{repo}/actions/runs/{id}/job/{job}":
 	default:
 		return
 	}
