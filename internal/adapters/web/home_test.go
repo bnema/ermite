@@ -477,6 +477,7 @@ func TestHomeVisitors(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"enabled", "disabled", "failed"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			browse := mocks.NewBrowseService(t)
 			browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
 			browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 1)}, nil)

@@ -21,6 +21,7 @@ func TestInboxTraffic(t *testing.T) {
 	t.Parallel()
 	for _, rng := range []string{"24h", "30d"} {
 		t.Run(rng, func(t *testing.T) {
+			t.Parallel()
 			svc := mocks.NewInboxService(t)
 			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil)
 			srv := inboxServer(t, svc)
@@ -77,6 +78,7 @@ func TestInboxTrafficUnavailableAndEmpty(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"nil", "recorder only", "empty", "failure"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			svc := mocks.NewInboxService(t)
 			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
 			srv := inboxServer(t, svc)
