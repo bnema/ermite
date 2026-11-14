@@ -58,7 +58,7 @@ type Config struct {
 	Auth    ports.AuthService
 	Repos   ports.RepoService
 	// Traffic serves repository traffic when set; nil answers unimplemented.
-	Traffic ports.TrafficService
+	Traffic ports.TrafficReportReader
 	Tokens  ports.TokenService
 	Browse  ports.BrowseService
 	Events  ports.EventService

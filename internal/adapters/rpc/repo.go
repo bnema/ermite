@@ -17,7 +17,7 @@ import (
 // repoService implements ermiteconnect.RepoServiceHandler.
 type repoService struct {
 	repos   ports.RepoService
-	traffic ports.TrafficService
+	traffic ports.TrafficReportReader
 }
 
 func (s *repoService) GetRepoTraffic(ctx context.Context, req *pb.GetRepoTrafficRequest) (*pb.GetRepoTrafficResponse, error) {

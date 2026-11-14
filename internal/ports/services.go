@@ -473,6 +473,12 @@ type TrafficForgeReader interface {
 	Forge(context.Context, time.Duration) (TrafficForge, error)
 }
 
+// TrafficReportReader supplies one repository's traffic report over a 24h or
+// 30-day window; other windows are domain.ErrInvalid.
+type TrafficReportReader interface {
+	RepoTraffic(ctx context.Context, repo domain.RepoName, window time.Duration) (TrafficReport, error)
+}
+
 // TrafficService records hits and reads repository and forge traffic.
 // *usecase.Traffic implements it; lifecycle management stays in the composition root.
 type TrafficService interface {
@@ -480,6 +486,6 @@ type TrafficService interface {
 	TrafficDailyReader
 	TrafficSummaryReader
 	TrafficForgeReader
+	TrafficReportReader
 	RepoHourly(ctx context.Context, repo domain.RepoName) ([]domain.TrafficBucket, error)
-	RepoTraffic(ctx context.Context, repo domain.RepoName, window time.Duration) (TrafficReport, error)
 }

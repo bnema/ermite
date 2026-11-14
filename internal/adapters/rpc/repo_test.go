@@ -3,7 +3,6 @@
 package rpc
 
 import (
-	"bnema.dev/ermite/internal/usecase"
 	"context"
 	"errors"
 	"slices"
@@ -344,37 +343,82 @@ func TestRepoToPBLanguages(t *testing.T) {
 	assert.Contains(t, Features, "repos.languages")
 }
 
-type trafficReadStore struct{ ports.TrafficStore }
-
-func (trafficReadStore) Daily(context.Context, domain.RepoName, time.Time, time.Time) ([]domain.TrafficBucket, error) {
-	return nil, nil
-}
-func (trafficReadStore) Hourly(context.Context, domain.RepoName, time.Time, time.Time) ([]domain.TrafficBucket, error) {
-	return nil, nil
-}
-
 func TestRepoTrafficRanges(t *testing.T) {
 	for _, tc := range []struct {
-		r pb.TrafficRange
-		n int
-	}{{pb.TrafficRange_TRAFFIC_RANGE_UNSPECIFIED, 30}, {pb.TrafficRange_TRAFFIC_RANGE_30D, 30}, {pb.TrafficRange_TRAFFIC_RANGE_24H, 24}, {pb.TrafficRange(99), 0}} {
-		repos := mocks.NewRepoService(t)
-		repos.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo")).Return(domain.Repo{}, nil).Once()
-		clock := mocks.NewClock(t)
-		if tc.n > 0 {
-			clock.EXPECT().Now().Return(time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
-		}
-		svc := repoService{repos: repos, traffic: usecase.NewTraffic(usecase.TrafficConfig{Store: trafficReadStore{}, Clock: clock})}
-		out, err := svc.GetRepoTraffic(ownerCtx(), &pb.GetRepoTrafficRequest{Repo: "demo", Range: tc.r})
-		if tc.n == 0 {
-			requireCode(t, connect.CodeInvalidArgument, err)
-			continue
-		}
-		require.NoError(t, err)
-		require.Len(t, out.Points, tc.n)
-		require.NotNil(t, out.Totals)
-		require.Zero(t, out.Totals.Views)
-		require.Empty(t, out.Referrers)
+		name   string
+		r      pb.TrafficRange
+		window time.Duration
+	}{
+		{"unspecified", pb.TrafficRange_TRAFFIC_RANGE_UNSPECIFIED, 30 * 24 * time.Hour},
+		{"30d", pb.TrafficRange_TRAFFIC_RANGE_30D, 30 * 24 * time.Hour},
+		{"24h", pb.TrafficRange_TRAFFIC_RANGE_24H, 24 * time.Hour},
+		{"unknown", pb.TrafficRange(99), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repos := mocks.NewRepoService(t)
+			repos.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo")).Return(domain.Repo{}, nil).Once()
+			traffic := mocks.NewTrafficReportReader(t)
+			if tc.window > 0 {
+				traffic.EXPECT().RepoTraffic(mock.Anything, mustRepoName(t, "demo"), tc.window).Return(ports.TrafficReport{}, nil).Once()
+			}
+			out, err := (&repoService{repos: repos, traffic: traffic}).GetRepoTraffic(ownerCtx(), &pb.GetRepoTrafficRequest{Repo: "demo", Range: tc.r})
+			if tc.window == 0 {
+				requireCode(t, connect.CodeInvalidArgument, err)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, out.GetTotals())
+			require.Empty(t, out.GetPoints())
+			require.Empty(t, out.GetReferrers())
+		})
+	}
+}
+
+func TestRepoTrafficMapsReport(t *testing.T) {
+	demo := mustRepoName(t, "demo")
+	start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	report := ports.TrafficReport{
+		Totals:    domain.TrafficCounts{Views: 9, ViewUniques: 4, Clones: 3, CloneUniques: 2, Bots: 7, Partial: true},
+		Points:    []domain.TrafficBucket{{Start: start, TrafficCounts: domain.TrafficCounts{Views: 9, ViewUniques: 4}}, {Start: start.Add(24 * time.Hour)}},
+		Referrers: []ports.TrafficReferrer{{Domain: "example.com", Count: 5}},
+	}
+	repos := mocks.NewRepoService(t)
+	repos.EXPECT().Get(mock.Anything, domain.Owner(), demo).Return(domain.Repo{}, nil).Once()
+	traffic := mocks.NewTrafficReportReader(t)
+	traffic.EXPECT().RepoTraffic(mock.Anything, demo, 30*24*time.Hour).Return(report, nil).Once()
+	out, err := (&repoService{repos: repos, traffic: traffic}).GetRepoTraffic(ownerCtx(), &pb.GetRepoTrafficRequest{Repo: "demo"})
+	require.NoError(t, err)
+	totals := out.GetTotals()
+	assert.Equal(t, []uint64{9, 4, 3, 2}, []uint64{totals.GetViews(), totals.GetViewUniques(), totals.GetClones(), totals.GetCloneUniques()})
+	assert.True(t, totals.GetPartial())
+	require.Len(t, out.GetPoints(), 2)
+	assert.True(t, out.GetPoints()[0].GetStart().AsTime().Equal(start))
+	assert.Equal(t, uint64(9), out.GetPoints()[0].GetCounts().GetViews())
+	assert.Equal(t, uint64(4), out.GetPoints()[0].GetCounts().GetViewUniques())
+	assert.True(t, out.GetPoints()[1].GetStart().AsTime().Equal(start.Add(24*time.Hour)))
+	require.Len(t, out.GetReferrers(), 1)
+	assert.Equal(t, "example.com", out.GetReferrers()[0].GetDomain())
+	assert.Equal(t, uint64(5), out.GetReferrers()[0].GetCount())
+}
+
+func TestRepoTrafficPropagatesErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code connect.Code
+	}{
+		{"invalid", domain.ErrInvalid, connect.CodeInvalidArgument},
+		{"internal", errors.New("disk failed"), connect.CodeInternal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			demo := mustRepoName(t, "demo")
+			repos := mocks.NewRepoService(t)
+			repos.EXPECT().Get(mock.Anything, domain.Owner(), demo).Return(domain.Repo{}, nil).Once()
+			traffic := mocks.NewTrafficReportReader(t)
+			traffic.EXPECT().RepoTraffic(mock.Anything, demo, 24*time.Hour).Return(ports.TrafficReport{}, tc.err).Once()
+			_, err := (&repoService{repos: repos, traffic: traffic}).GetRepoTraffic(ownerCtx(), &pb.GetRepoTrafficRequest{Repo: "demo", Range: pb.TrafficRange_TRAFFIC_RANGE_24H})
+			requireCode(t, tc.code, err)
+		})
 	}
 }
 
@@ -394,7 +438,12 @@ func TestRepoTrafficAccessAndUnavailable(t *testing.T) {
 			if tc.repo == "demo" {
 				repos.EXPECT().Get(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo")).Return(domain.Repo{}, tc.access).Once()
 			}
-			_, err := (&repoService{repos: repos}).GetRepoTraffic(context.Background(), &pb.GetRepoTrafficRequest{Repo: tc.repo})
+			svc := &repoService{repos: repos}
+			if tc.code != connect.CodeUnimplemented {
+				// No expectation: a hidden or invalid repository never reaches the traffic port.
+				svc.traffic = mocks.NewTrafficReportReader(t)
+			}
+			_, err := svc.GetRepoTraffic(context.Background(), &pb.GetRepoTrafficRequest{Repo: tc.repo})
 			requireCode(t, tc.code, err)
 		})
 	}
