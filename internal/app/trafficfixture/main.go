@@ -5,10 +5,10 @@
 // for -dry-run). From the dev compose directory:
 //
 //	docker compose stop ermite
-//	docker compose run --rm --no-deps ermite go run ./scripts/traffic-fixture
+//	docker compose run --rm --no-deps ermite go run ./internal/app/trafficfixture
 //	docker compose up -d ermite
 //
-// Outside Docker: GOWORK=off go run ./scripts/traffic-fixture -data /path/to/data
+// Outside Docker: GOWORK=off go run ./internal/app/trafficfixture -data /path/to/data
 // Flags: -days 90 -scale 1.0 -repos a,b -dry-run. The data root contains kv/,
 // exactly as on the server. Dry-run skips traffic writes, but opening the store
 // can initialize/upgrade metadata. Repeated runs ADD counts; use dev data only.
