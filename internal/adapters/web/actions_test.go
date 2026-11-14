@@ -48,20 +48,26 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
-	traffic := &trafficRecorder{}
+	traffic := mocks.NewTrafficRecorder(t)
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs, Traffic: traffic,
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 	})
 	for _, tc := range []struct {
-		path string
-		hx   bool
+		path  string
+		hx    bool
+		views int
 	}{
-		{path: "/proj/actions/runs/1/job/" + jobID},
+		{path: "/proj/actions/runs/1/job/" + jobID, views: 1},
 		{path: "/proj/actions/runs/1/job/" + jobID + "/raw"},
 		{path: "/proj/actions/runs/1/job/" + jobID + "/stream"},
 		{path: "/proj/actions/runs/1/job/" + jobID, hx: true},
 	} {
+		traffic.ExpectedCalls = nil
+		traffic.Calls = nil
+		if tc.views > 0 {
+			traffic.EXPECT().Hit(repo, domain.TrafficView, netip.MustParseAddr("198.51.100.7"), "", "").Times(tc.views)
+		}
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		if tc.hx {
 			req.Header.Set("HX-Request", "true")
@@ -72,7 +78,8 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 		srv.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code, tc.path)
 		// Only the full HTML job page counts, not raw/stream feeds or HX.
-		require.Equal(t, []trafficHit{{repo, domain.TrafficView, netip.MustParseAddr("198.51.100.7"), "", ""}}, traffic.hits, tc.path)
+		traffic.AssertNumberOfCalls(t, "Hit", tc.views)
+		traffic.AssertExpectations(t)
 	}
 	require.Len(t, seen, 4)
 	for _, c := range seen {
