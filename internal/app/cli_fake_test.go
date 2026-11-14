@@ -47,16 +47,17 @@ type fakeAPI struct {
 	reqs   []any         // request messages, in order
 	header []http.Header // request headers, in order
 
-	listRepos   func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error)
-	getRepo     func(*ermite.GetRepoRequest) (*ermite.GetRepoResponse, error)
-	createRepo  func(*ermite.CreateRepoRequest) (*ermite.CreateRepoResponse, error)
-	updateRepo  func(*ermite.UpdateRepoRequest) (*ermite.UpdateRepoResponse, error)
-	deleteRepo  func(*ermite.DeleteRepoRequest) (*ermite.DeleteRepoResponse, error)
-	createToken func(*ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error)
-	listTokens  func(*ermite.ListTokensRequest) (*ermite.ListTokensResponse, error)
-	revokeToken func(*ermite.RevokeTokenRequest) (*ermite.RevokeTokenResponse, error)
-	getVersion  func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
-	watch       func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error
+	listRepos      func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error)
+	getRepo        func(*ermite.GetRepoRequest) (*ermite.GetRepoResponse, error)
+	getRepoTraffic func(*ermite.GetRepoTrafficRequest) (*ermite.GetRepoTrafficResponse, error)
+	createRepo     func(*ermite.CreateRepoRequest) (*ermite.CreateRepoResponse, error)
+	updateRepo     func(*ermite.UpdateRepoRequest) (*ermite.UpdateRepoResponse, error)
+	deleteRepo     func(*ermite.DeleteRepoRequest) (*ermite.DeleteRepoResponse, error)
+	createToken    func(*ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error)
+	listTokens     func(*ermite.ListTokensRequest) (*ermite.ListTokensResponse, error)
+	revokeToken    func(*ermite.RevokeTokenRequest) (*ermite.RevokeTokenResponse, error)
+	getVersion     func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
+	watch          func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error
 
 	editMR        func(*ermite.EditMergeRequestRequest) (*ermite.EditMergeRequestResponse, error)
 	editIssue     func(*ermite.EditIssueRequest) (*ermite.EditIssueResponse, error)
@@ -137,6 +138,9 @@ func (f *fakeAPI) ListRepos(ctx context.Context, r *ermite.ListReposRequest) (*e
 }
 func (f *fakeAPI) GetRepo(ctx context.Context, r *ermite.GetRepoRequest) (*ermite.GetRepoResponse, error) {
 	return respond(ctx, f, "GetRepo", r, f.getRepo)
+}
+func (f *fakeAPI) GetRepoTraffic(ctx context.Context, r *ermite.GetRepoTrafficRequest) (*ermite.GetRepoTrafficResponse, error) {
+	return respond(ctx, f, "GetRepoTraffic", r, f.getRepoTraffic)
 }
 func (f *fakeAPI) CreateRepo(ctx context.Context, r *ermite.CreateRepoRequest) (*ermite.CreateRepoResponse, error) {
 	return respond(ctx, f, "CreateRepo", r, f.createRepo)

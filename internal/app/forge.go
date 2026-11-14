@@ -510,6 +510,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		jobArtifacts, artifacts = f.CI, f.CI
 	}
 	f.API = rpc.New(rpc.Config{
+		Traffic:         f.Traffic,
 		Auth:            f.Auth,
 		Mirrors:         f.Mirrors,
 		Repos:           f.Repos,

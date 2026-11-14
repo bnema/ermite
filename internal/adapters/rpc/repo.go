@@ -5,6 +5,10 @@ package rpc
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"bnema.dev/ermite/internal/usecase"
+	"connectrpc.com/connect/v2"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
@@ -12,7 +16,47 @@ import (
 )
 
 // repoService implements ermiteconnect.RepoServiceHandler.
-type repoService struct{ repos ports.RepoService }
+type repoService struct {
+	repos   ports.RepoService
+	traffic *usecase.Traffic
+}
+
+func (s *repoService) GetRepoTraffic(ctx context.Context, req *pb.GetRepoTrafficRequest) (*pb.GetRepoTrafficResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	if _, err := s.repos.Get(ctx, caller(ctx), name); err != nil {
+		return nil, connectError(ctx, err)
+	}
+	if s.traffic == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, "this API serves no traffic service")
+	}
+	window := 30 * 24 * time.Hour
+	switch req.GetRange() {
+	case pb.TrafficRange_TRAFFIC_RANGE_UNSPECIFIED, pb.TrafficRange_TRAFFIC_RANGE_30D:
+	case pb.TrafficRange_TRAFFIC_RANGE_24H:
+		window = 24 * time.Hour
+	default:
+		return nil, connectError(ctx, domain.ErrInvalid)
+	}
+	report, err := s.traffic.RepoTraffic(ctx, name, window)
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	out := &pb.GetRepoTrafficResponse{Totals: trafficCountsToPB(report.Totals), Points: make([]*pb.TrafficPoint, 0, len(report.Points)), Referrers: make([]*pb.TrafficReferrer, 0, len(report.Referrers))}
+	for _, b := range report.Points {
+		out.Points = append(out.Points, &pb.TrafficPoint{Start: timestamp(b.Start), Counts: trafficCountsToPB(b.TrafficCounts)})
+	}
+	for _, r := range report.Referrers {
+		out.Referrers = append(out.Referrers, &pb.TrafficReferrer{Domain: r.Domain, Count: r.Count})
+	}
+	return out, nil
+}
+
+func trafficCountsToPB(c domain.TrafficCounts) *pb.TrafficCounts {
+	return &pb.TrafficCounts{Views: c.Views, ViewUniques: c.ViewUniques, Clones: c.Clones, CloneUniques: c.CloneUniques, Partial: c.Partial}
+}
 
 func (s *repoService) ListRepos(ctx context.Context, req *pb.ListReposRequest) (*pb.ListReposResponse, error) {
 	page, err := s.repos.ListPage(ctx, caller(ctx), int(req.GetPageSize()), req.GetPageToken())

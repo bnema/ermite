@@ -16,6 +16,7 @@ import (
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/usecase"
 	"bnema.dev/zerowrap"
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -57,6 +58,8 @@ type Config struct {
 	Mirrors ports.MirrorService
 	Auth    ports.AuthService
 	Repos   ports.RepoService
+	// Traffic serves repository traffic when set; nil answers unimplemented.
+	Traffic *usecase.Traffic
 	Tokens  ports.TokenService
 	Browse  ports.BrowseService
 	Events  ports.EventService
@@ -130,7 +133,7 @@ func New(cfg Config) *API {
 	opts := []connecthttp.Option{connecthttp.WithReadMaxBytes(MaxRequestBytes)}
 	mux := http.NewServeMux()
 	server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
-	ermiteconnect.RegisterRepoServiceHandler(server, &repoService{cfg.Repos})
+	ermiteconnect.RegisterRepoServiceHandler(server, &repoService{repos: cfg.Repos, traffic: cfg.Traffic})
 	ermiteconnect.RegisterGitServiceHandler(server, &gitService{cfg.Browse})
 	ermiteconnect.RegisterTokenServiceHandler(server, &tokenService{cfg.Tokens})
 	ermiteconnect.RegisterEventServiceHandler(server, &eventService{cfg.Events})

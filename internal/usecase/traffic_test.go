@@ -147,6 +147,24 @@ func TestTrafficReads(t *testing.T) {
 		hits = append(hits, h)
 	}
 	require.NoError(t, db.Traffic().Record(ctx, hits))
+	for _, window := range []time.Duration{24 * time.Hour, 30 * 24 * time.Hour} {
+		report, err := tr.RepoTraffic(ctx, a, window)
+		require.NoError(t, err)
+		size, views := 30, uint64(2)
+		if window == 24*time.Hour {
+			size, views = 24, 1
+		}
+		require.Len(t, report.Points, size)
+		require.Equal(t, views, report.Totals.Views)
+		require.Equal(t, uint64(1), report.Totals.Clones)
+		require.Equal(t, []usecase.TrafficReferrer{{Domain: "example.test", Count: 1}}, report.Referrers)
+		require.Zero(t, report.Points[0].Views)
+		for i := 1; i < len(report.Points); i++ {
+			require.True(t, report.Points[i-1].Start.Before(report.Points[i].Start))
+		}
+	}
+	_, err = tr.RepoTraffic(ctx, a, time.Hour)
+	require.ErrorIs(t, err, domain.ErrInvalid)
 	daily, err := tr.RepoDaily(ctx, a, 4)
 	require.NoError(t, err)
 	require.Equal(t, []uint64{0, 1, 0, 2}, daily)
@@ -200,4 +218,8 @@ func TestTrafficForgeReferrerRanking(t *testing.T) {
 	require.Len(t, result.Referrers, 20)
 	require.Equal(t, usecase.TrafficReferrer{Domain: "site24.test", Count: 2}, result.Referrers[0])
 	require.Equal(t, "site00.test", result.Referrers[1].Domain)
+	report, err := tr.RepoTraffic(ctx, repo, 24*time.Hour)
+	require.NoError(t, err)
+	require.Len(t, report.Referrers, 10)
+	require.Equal(t, result.Referrers[:10], report.Referrers)
 }
