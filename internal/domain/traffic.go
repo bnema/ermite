@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -85,6 +86,9 @@ func IsBotUserAgent(ua string) bool {
 // referrer. Empty, malformed and same-host referrers are ignored. selfHost is
 // the forge's public hostname, optionally with a port, not a URL.
 func ReferrerDomain(refererURL, selfHost string) string {
+	if len(refererURL) > 2048 {
+		return ""
+	}
 	u, err := url.Parse(refererURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 		return ""
@@ -93,6 +97,22 @@ func ReferrerDomain(refererURL, selfHost string) string {
 		return strings.TrimPrefix(strings.ToLower(strings.TrimSuffix(host, ".")), "www.")
 	}
 	host := normalize(u.Hostname())
+	if _, err := netip.ParseAddr(host); err == nil {
+		return ""
+	}
+	if len(host) > 253 || !strings.Contains(host, ".") {
+		return ""
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return ""
+			}
+		}
+	}
 	self, err := url.Parse("//" + selfHost)
 	if err == nil && host == normalize(self.Hostname()) {
 		return ""

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -187,4 +188,20 @@ func TestTrafficPersistsUniqueSets(t *testing.T) {
 	require.Len(t, days, 1)
 	require.Equal(t, uint64(2), days[0].Clones)
 	require.Equal(t, uint64(1), days[0].CloneUniques)
+}
+
+func TestTrafficRejectsInvalidReferrers(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	repo := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	hosts := []string{"example.com", "127.0.0.1", "[::1]", "bad_label.test", "bad..test", strings.Repeat("a", 254) + ".test", "example.com/path"}
+	for _, host := range hosts {
+		require.NoError(t, s.Traffic().Record(ctx, []domain.TrafficHit{{Repo: repo, Kind: domain.TrafficView, At: created, ReferrerDomain: host}}))
+	}
+	days, err := s.Traffic().Daily(ctx, repo, created.Add(-24*time.Hour), created.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	require.Equal(t, map[string]uint64{"example.com": 1}, days[0].Referrers)
+	require.Equal(t, uint64(len(hosts)), days[0].Views)
 }

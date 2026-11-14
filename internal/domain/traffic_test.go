@@ -2,7 +2,10 @@
 
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestIsBotUserAgent(t *testing.T) {
 	for _, ua := range []string{"", "  ", "GoogleBOT", "crawler", "spider", "Slurp", "facebookexternalhit", "GPTBot", "ClaudeBot", "CCBot", "Bytespider", "Ahrefs", "Semrush", "PetalBot", "Yandex", "bingpreview", "HeadlessChrome"} {
@@ -37,5 +40,21 @@ func TestReferrerDomain(t *testing.T) {
 				t.Errorf("ReferrerDomain(%q, %q) = %q, want %q", tt.ref, tt.self, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReferrerDomainValidation(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "[::1]", "[::ffff:192.0.2.1]", "[fe80::1%25eth0]", "localhost", "bad_label.test", "-bad.test", "bad-.test", "bad..test", strings.Repeat("a", 64) + ".test", strings.Repeat("a.", 127) + "test"} {
+		if got := ReferrerDomain("https://"+host+"/", "forge.test"); got != "" {
+			t.Errorf("accepted %q: %q", host, got)
+		}
+	}
+	if got := ReferrerDomain("https://example.com/"+strings.Repeat("x", 2048), ""); got != "" {
+		t.Errorf("accepted oversized URL: %q", got)
+	}
+	for _, host := range []string{"xn--bcher-kva.example", strings.Repeat("a", 63) + ".test", strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)} {
+		if got := ReferrerDomain("https://"+host, ""); got != host {
+			t.Errorf("rejected valid host %q: %q", host, got)
+		}
 	}
 }

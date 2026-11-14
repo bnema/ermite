@@ -147,7 +147,9 @@ func (r *trafficRecord) add(h domain.TrafficHit, daily bool) {
 			r.Bucket.Partial = true
 		}
 	}
-	if daily && h.ReferrerDomain != "" {
+	// The port may be called without the HTTP normalization path. Only store
+	// already-normalized, valid domains, never arbitrary caller strings.
+	if daily && h.ReferrerDomain != "" && len(h.ReferrerDomain) <= 253 && domain.ReferrerDomain("https://"+h.ReferrerDomain, "") == h.ReferrerDomain {
 		if r.Bucket.Referrers == nil {
 			r.Bucket.Referrers = map[string]uint64{}
 		}
