@@ -3,7 +3,6 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -17,28 +16,19 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-// countingTraffic counts the visitor reads.
-type countingTraffic struct {
-	homeTraffic
-	calls int
-}
-
-func (f *countingTraffic) RepoDaily(ctx context.Context, repo domain.RepoName, days int) ([]uint64, error) {
-	f.calls++
-	return f.homeTraffic.RepoDaily(ctx, repo, days)
-}
-
 func TestVisitorsCache(t *testing.T) {
 	t.Parallel()
-	repo, err := domain.ParseRepoName("proj")
+	name, err := domain.ParseRepoName("proj")
 	require.NoError(t, err)
+	repo := ports.RepoView{Name: name, CreatedAt: fixedNow.Add(-time.Hour)}
 	daily := make([]uint64, ports.ActivityDays)
 	daily[89] = 12
 
 	t.Run("fresh for 30 s", func(t *testing.T) {
 		t.Parallel()
 		var c visitorsCache
-		f := &countingTraffic{homeTraffic: homeTraffic{daily: daily}}
+		f := mocks.NewTrafficService(t)
+		f.EXPECT().RepoDaily(mock.Anything, repo.Name, ports.ActivityDays).Return(daily, nil).Times(2)
 		got, err := c.get(t.Context(), f, repo, fixedNow)
 		require.NoError(t, err)
 		assert.Equal(t, daily, got)
@@ -46,35 +36,48 @@ func TestVisitorsCache(t *testing.T) {
 		got, err = c.get(t.Context(), f, repo, fixedNow.Add(29*time.Second))
 		require.NoError(t, err)
 		assert.Equal(t, uint64(12), got[89])
-		assert.Equal(t, 1, f.calls)
 		_, err = c.get(t.Context(), f, repo, fixedNow.Add(30*time.Second))
 		require.NoError(t, err)
-		assert.Equal(t, 2, f.calls)
+	})
+
+	t.Run("recreated repository", func(t *testing.T) {
+		t.Parallel()
+		var c visitorsCache
+		f := mocks.NewTrafficService(t)
+		f.EXPECT().RepoDaily(mock.Anything, repo.Name, ports.ActivityDays).Return(daily, nil).Once()
+		_, err := c.get(t.Context(), f, repo, fixedNow)
+		require.NoError(t, err)
+		recreated := repo
+		recreated.CreatedAt = fixedNow
+		f.EXPECT().RepoDaily(mock.Anything, repo.Name, ports.ActivityDays).Return([]uint64{7}, nil).Once()
+		got, err := c.get(t.Context(), f, recreated, fixedNow.Add(time.Second))
+		require.NoError(t, err)
+		assert.Equal(t, []uint64{7}, got)
 	})
 
 	t.Run("new day", func(t *testing.T) {
 		t.Parallel()
 		var c visitorsCache
-		f := &countingTraffic{homeTraffic: homeTraffic{daily: daily}}
+		f := mocks.NewTrafficService(t)
+		f.EXPECT().RepoDaily(mock.Anything, repo.Name, ports.ActivityDays).Return(daily, nil).Times(2)
 		late := time.Date(2026, 10, 12, 23, 59, 50, 0, time.UTC)
 		_, err := c.get(t.Context(), f, repo, late)
 		require.NoError(t, err)
 		_, err = c.get(t.Context(), f, repo, late.Add(15*time.Second))
 		require.NoError(t, err)
-		assert.Equal(t, 2, f.calls)
 	})
 
 	t.Run("errors are not kept", func(t *testing.T) {
 		t.Parallel()
 		var c visitorsCache
-		f := &countingTraffic{homeTraffic: homeTraffic{err: errors.New("traffic unavailable")}}
+		f := mocks.NewTrafficService(t)
+		f.EXPECT().RepoDaily(mock.Anything, repo.Name, ports.ActivityDays).Return(nil, errors.New("traffic unavailable")).Once()
 		_, err := c.get(t.Context(), f, repo, fixedNow)
 		require.Error(t, err)
-		f.err, f.daily = nil, daily
+		f.EXPECT().RepoDaily(mock.Anything, repo.Name, ports.ActivityDays).Return(daily, nil).Once()
 		got, err := c.get(t.Context(), f, repo, fixedNow.Add(time.Second))
 		require.NoError(t, err)
 		assert.Equal(t, daily, got)
-		assert.Equal(t, 2, f.calls)
 	})
 }
 
@@ -86,13 +89,12 @@ func TestHomeVisitorsCached(t *testing.T) {
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 1)}, nil)
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoStats{Activity: make([]int, ports.ActivityDays)}, nil)
 	now := fixedNow
-	f := &countingTraffic{homeTraffic: homeTraffic{daily: make([]uint64, ports.ActivityDays)}}
+	f := mocks.NewTrafficService(t)
+	f.EXPECT().RepoDaily(mock.Anything, pushedRepo(t, "proj").Name, ports.ActivityDays).Return(make([]uint64, ports.ActivityDays), nil).Times(2)
 	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Traffic: f, Now: func() time.Time { return now }})
 	for range 3 {
 		renderRow(t, srv.homeRowOf(t.Context(), pushedRepo(t, "proj"), fixedNow, false))
 	}
-	assert.Equal(t, 1, f.calls)
 	now = now.Add(time.Minute)
 	renderRow(t, srv.homeRowOf(t.Context(), pushedRepo(t, "proj"), fixedNow, false))
-	assert.Equal(t, 2, f.calls)
 }

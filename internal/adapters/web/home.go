@@ -218,7 +218,7 @@ func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, n
 	var visitors []uint64
 	if traffic, ok := s.cfg.Traffic.(TrafficDailyReader); ok {
 		var err error
-		visitors, err = s.visitors.get(ctx, traffic, r.Name, s.cfg.Now())
+		visitors, err = s.visitors.get(ctx, traffic, r, s.cfg.Now())
 		if err != nil {
 			log := zerowrap.FromCtx(ctx)
 			log.Warn().Err(err).Str("repo", r.Name.String()).Msg("read the visitors of the home page")
