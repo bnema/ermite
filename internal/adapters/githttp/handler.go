@@ -79,15 +79,10 @@ const (
 	serviceReceive = "git-receive-pack"
 )
 
-// TrafficRecorder collects admitted Git requests without blocking.
-type TrafficRecorder interface {
-	Hit(domain.RepoName, domain.TrafficKind, netip.Addr, string, string)
-}
-
 // Config configures a Handler.
 type Config struct {
-	// Traffic is optional; nil disables collection.
-	Traffic TrafficRecorder
+	// Traffic collects admitted clones without blocking; nil disables collection.
+	Traffic ports.TrafficRecorder
 	Auth    ports.AuthService
 	Repos   ports.RepoLookup
 	Pushes  ports.PushService
