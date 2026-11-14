@@ -912,23 +912,63 @@
 
 // Daily pulse values: delegated events also cover live-replaced home rows.
 (() => {
-  let active, index, bubble, guide;
+  let active, index, bubble, guide, frame = 0, nextID = 0;
+  let position;
+  const statuses = new WeakMap();
   const figure = (target) => target.closest?.('figure.repo-pulse');
   const hide = () => {
+    cancelAnimationFrame(frame); frame = 0;
     bubble?.remove(); guide?.remove();
     active = bubble = guide = null;
   };
-  const upgrade = () => document.querySelectorAll('figure.repo-pulse:not([tabindex])')
-    .forEach((el) => { el.tabIndex = 0; el.dataset.js = ''; });
-  upgrade();
-  new MutationObserver(() => {
+  const upgradeFigure = (el) => {
+    if (el.dataset.js !== undefined) return;
+    el.tabIndex = 0; el.dataset.js = '';
+    const hint = document.createElement('span');
+    hint.className = 'sr'; hint.id = 'pulse-hint-' + ++nextID;
+    hint.textContent = 'Use left and right arrow keys to read each day';
+    const status = document.createElement('span');
+    status.className = 'sr'; status.id = 'pulse-status-' + nextID;
+    status.setAttribute('aria-live', 'polite');
+    status.setAttribute('aria-atomic', 'true');
+    statuses.set(el, status);
+    el.setAttribute('aria-describedby', [el.getAttribute('aria-describedby'), hint.id, status.id].filter(Boolean).join(' '));
+    el.append(hint, status);
+  };
+  const upgrade = (root) => {
+    if (root.matches?.('figure.repo-pulse')) upgradeFigure(root);
+    root.querySelectorAll?.('figure.repo-pulse').forEach(upgradeFigure);
+  };
+  upgrade(document);
+  new MutationObserver((records) => {
     if (active && !active.isConnected) hide();
-    upgrade();
+    for (const record of records) {
+      if (record.target.closest?.('.pulse-tooltip')) continue;
+      for (const node of record.addedNodes) {
+        if (!node.closest?.('.pulse-tooltip')) upgrade(node);
+      }
+    }
   }).observe(document.body, { childList: true, subtree: true });
-  const show = (el, day, x, y) => {
+  const move = (el, x, y) => {
+    position = { el, x, y };
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (!bubble) return;
+      const { el, x, y } = position;
+      const rect = bubble.getBoundingClientRect();
+      const card = el.closest('.repo').getBoundingClientRect();
+      const left = Math.max(8, card.left);
+      const right = Math.min(innerWidth - 8, card.right);
+      bubble.style.left = Math.max(left, Math.min(x + 12, right - rect.width)) + 'px';
+      bubble.style.top = Math.max(8, Math.min(y + 16, innerHeight - rect.height - 8)) + 'px';
+    });
+  };
+  const show = (el, day, x, y, keyboard = false) => {
     const commits = el.dataset.daysCommits.split(',');
     const visitors = el.dataset.daysVisitors?.split(',');
     day = Math.max(0, Math.min(commits.length - 1, day));
+    const changed = active !== el || index !== day;
     if (active !== el) hide();
     active = el; index = day;
     if (!bubble) {
@@ -942,28 +982,33 @@
       guide.setAttribute('aria-hidden', 'true');
       el.querySelector('svg').append(guide);
     }
-    const gx = day / (commits.length - 1) * Number(el.dataset.endX);
-    guide.setAttribute('x1', gx); guide.setAttribute('x2', gx);
-    const date = new Date(el.dataset.end + 'T00:00:00Z');
-    date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
-    const heading = document.createElement('div');
-    heading.textContent = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
-    bubble.replaceChildren(heading);
-    const row = (kind, value) => {
-      const line = document.createElement('div');
-      const swatch = document.createElement('span');
-      swatch.className = 'pulse-swatch pulse-swatch-' + kind;
-      line.append(swatch, document.createTextNode(value + ' ' + kind));
-      bubble.append(line);
-    };
-    row('commits', commits[day]);
-    if (visitors) row('visitors', visitors[day]);
-    const rect = bubble.getBoundingClientRect();
-    const card = el.closest('.repo').getBoundingClientRect();
-    const left = Math.max(8, card.left);
-    const right = Math.min(innerWidth - 8, card.right);
-    bubble.style.left = Math.max(left, Math.min(x + 12, right - rect.width)) + 'px';
-    bubble.style.top = Math.max(8, Math.min(y + 16, innerHeight - rect.height - 8)) + 'px';
+    if (changed) {
+      const gx = day / (commits.length - 1) * Number(el.dataset.endX);
+      guide.setAttribute('x1', gx); guide.setAttribute('x2', gx);
+      const date = new Date(el.dataset.end + 'T00:00:00Z');
+      date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
+      const heading = document.createElement('div');
+      heading.textContent = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      bubble.replaceChildren(heading);
+      const row = (kind, value) => {
+        const line = document.createElement('div');
+        const swatch = document.createElement('span');
+        swatch.className = 'pulse-swatch pulse-swatch-' + kind;
+        line.append(swatch, document.createTextNode(value + ' ' + kind));
+        bubble.append(line);
+      };
+      row('commits', commits[day]);
+      if (visitors) row('visitors', visitors[day]);
+    }
+    if (keyboard) {
+      const date = new Date(el.dataset.end + 'T00:00:00Z');
+      date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
+      const label = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      const text = label + ': ' + commits[day] + ' commits' + (visitors ? ', ' + visitors[day] + ' visitors' : '');
+      const status = statuses.get(el);
+      if (status && status.textContent !== text) status.textContent = text;
+    }
+    move(el, x, y);
   };
   const atPointer = (e) => {
     const el = figure(e.target);
@@ -990,7 +1035,7 @@
     const n = el.dataset.daysCommits.split(',').length;
     const day = active === el ? index + (e.key === 'ArrowLeft' ? -1 : 1) : n - 1;
     const rect = el.getBoundingClientRect();
-    show(el, day, rect.left + Math.max(0, Math.min(n - 1, day)) / (n - 1) * rect.width * Number(el.dataset.endX) / 600, rect.top);
+    show(el, day, rect.left + Math.max(0, Math.min(n - 1, day)) / (n - 1) * rect.width * Number(el.dataset.endX) / 600, rect.top, true);
   });
   document.addEventListener('scroll', hide, true);
   window.addEventListener('resize', hide);
