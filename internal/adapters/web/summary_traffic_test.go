@@ -3,7 +3,6 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -18,18 +17,6 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-type summaryTrafficReader struct {
-	trafficRecorder
-	counts domain.TrafficCounts
-	err    error
-	repos  []domain.RepoName
-}
-
-func (f *summaryTrafficReader) RepoSummary(_ context.Context, repo domain.RepoName) (domain.TrafficCounts, error) {
-	f.repos = append(f.repos, repo)
-	return f.counts, f.err
-}
-
 func TestSummaryTrafficRows(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"enabled", "zero", "nil", "failed", "recorder only"} {
@@ -40,19 +27,24 @@ func TestSummaryTrafficRows(t *testing.T) {
 			browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo.Name, mock.Anything).Return(ports.RefPage{Refs: []domain.Ref{{Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch, CommitID: objectID(t, mainTip)}}}, nil)
 			browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo.Name, mock.Anything).Return(ports.HistoryPage{}, nil)
 			browse.EXPECT().GetTree(mock.Anything, mock.Anything, repo.Name, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
-			f := &summaryTrafficReader{counts: domain.TrafficCounts{Views: 1204, ViewUniques: 312, Clones: 87, CloneUniques: 14}}
+			f := mocks.NewTrafficService(t)
+			counts := domain.TrafficCounts{Views: 1204, ViewUniques: 312, Clones: 87, CloneUniques: 14}
+			var trafficErr error
 			cfg := Config{Repos: reposServing(t, repo), Browse: browse}
 			switch mode {
 			case "enabled":
 				cfg.Traffic = f
 			case "zero":
-				f.counts = domain.TrafficCounts{}
+				counts = domain.TrafficCounts{}
 				cfg.Traffic = f
 			case "failed":
-				f.err = errors.New("unavailable")
+				trafficErr = errors.New("unavailable")
 				cfg.Traffic = f
 			case "recorder only":
-				cfg.Traffic = &trafficRecorder{}
+				cfg.Traffic = mocks.NewTrafficRecorder(t)
+			}
+			if cfg.Traffic == f {
+				f.EXPECT().RepoSummary(mock.Anything, repo.Name).Return(counts, trafficErr).Once()
 			}
 			srv := newTestServer(t, cfg)
 			r := httptest.NewRequest(http.MethodGet, "/proj", nil)
@@ -71,9 +63,6 @@ func TestSummaryTrafficRows(t *testing.T) {
 			default:
 				assert.NotContains(t, out, "views (30d)")
 				assert.NotContains(t, out, "clones (30d)")
-			}
-			if mode == "enabled" || mode == "zero" || mode == "failed" {
-				assert.Equal(t, []domain.RepoName{repo.Name}, f.repos)
 			}
 		})
 	}

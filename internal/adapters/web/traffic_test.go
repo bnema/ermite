@@ -16,18 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type trafficHit struct {
-	repo    domain.RepoName
-	kind    domain.TrafficKind
-	ip      netip.Addr
-	ua, ref string
-}
-type trafficRecorder struct{ hits []trafficHit }
-
-func (f *trafficRecorder) Hit(repo domain.RepoName, kind domain.TrafficKind, ip netip.Addr, ua, ref string) {
-	f.hits = append(f.hits, trafficHit{repo, kind, ip, ua, ref})
-}
-
 func TestTrafficSummary(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, method string
@@ -42,7 +30,10 @@ func TestTrafficSummary(t *testing.T) {
 		{name: "head", path: "/r", method: "HEAD"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &trafficRecorder{}
+			f := mocks.NewTrafficRecorder(t)
+			if tc.want > 0 {
+				f.EXPECT().Hit(repoName(t, "r"), domain.TrafficView, netip.MustParseAddr("192.0.2.1"), "visitor", "https://example.org/").Times(tc.want)
+			}
 			browse := mocks.NewBrowseService(t)
 			browse.EXPECT().ListRefs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
 			browse.EXPECT().OpenBlob(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.BlobInfo{}, nil, domain.ErrNotFound).Maybe()
@@ -59,14 +50,13 @@ func TestTrafficSummary(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, r)
-			require.Len(t, f.hits, tc.want)
+			f.AssertNumberOfCalls(t, "Hit", tc.want)
 			if tc.want > 0 {
 				require.Equal(t, http.StatusOK, w.Code)
-				require.Equal(t, trafficHit{repoName(t, "r"), domain.TrafficView, netip.MustParseAddr("192.0.2.1"), "visitor", "https://example.org/"}, f.hits[0])
 				// Revalidation is not a successful 200 view.
 				r.Header.Set("If-None-Match", w.Header().Get("ETag"))
 				s.ServeHTTP(httptest.NewRecorder(), r)
-				require.Len(t, f.hits, 1)
+				f.AssertNumberOfCalls(t, "Hit", 1)
 			}
 		})
 	}

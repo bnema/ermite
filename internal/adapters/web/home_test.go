@@ -473,19 +473,6 @@ func TestReleaseEventsRefreshTheHomeRow(t *testing.T) {
 	}
 }
 
-type homeTraffic struct {
-	trafficRecorder
-	daily []uint64
-	err   error
-}
-
-func (f *homeTraffic) RepoDaily(_ context.Context, _ domain.RepoName, days int) ([]uint64, error) {
-	if days != ports.ActivityDays {
-		panic("unexpected activity window")
-	}
-	return f.daily, f.err
-}
-
 func TestHomeVisitors(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"enabled", "disabled", "failed"} {
@@ -496,11 +483,14 @@ func TestHomeVisitors(t *testing.T) {
 			browse.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoStats{Activity: make([]int, ports.ActivityDays)}, nil)
 			cfg := Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse}
 			if mode != "disabled" {
-				f := &homeTraffic{daily: make([]uint64, ports.ActivityDays)}
-				f.daily[89] = 12
+				f := mocks.NewTrafficService(t)
+				daily := make([]uint64, ports.ActivityDays)
+				daily[89] = 12
+				var trafficErr error
 				if mode == "failed" {
-					f.err = errors.New("traffic unavailable")
+					trafficErr = errors.New("traffic unavailable")
 				}
+				f.EXPECT().RepoDaily(mock.Anything, pushedRepo(t, "proj").Name, ports.ActivityDays).Return(daily, trafficErr).Once()
 				cfg.Traffic = f
 			}
 			srv := newTestServer(t, cfg)

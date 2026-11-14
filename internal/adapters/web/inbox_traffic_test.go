@@ -3,7 +3,6 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"net/url"
 	"strings"
@@ -18,18 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type inboxTrafficReader struct {
-	trafficRecorder
-	data    ports.TrafficForge
-	windows []time.Duration
-	err     error
-}
-
-func (f *inboxTrafficReader) Forge(_ context.Context, window time.Duration) (ports.TrafficForge, error) {
-	f.windows = append(f.windows, window)
-	return f.data, f.err
-}
-
 func TestInboxTraffic(t *testing.T) {
 	t.Parallel()
 	for _, rng := range []string{"24h", "30d"} {
@@ -37,14 +24,20 @@ func TestInboxTraffic(t *testing.T) {
 			svc := mocks.NewInboxService(t)
 			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil)
 			srv := inboxServer(t, svc)
-			f := &inboxTrafficReader{data: ports.TrafficForge{
+			f := mocks.NewTrafficService(t)
+			data := ports.TrafficForge{
 				Totals: domain.TrafficCounts{Views: 1204, ViewUniques: 312, Clones: 87, CloneUniques: 14, Bots: 9},
 				Repos: []domain.TrafficSummary{
 					{Repo: repoName(t, "alpha"), TrafficCounts: domain.TrafficCounts{Views: 3, ViewUniques: 2, Clones: 1, CloneUniques: 1, Bots: 1}},
 					{Repo: repoName(t, "beta"), TrafficCounts: domain.TrafficCounts{Views: 1, ViewUniques: 1, Clones: 20, CloneUniques: 12, Bots: 8}},
 				},
 				Referrers: []ports.TrafficReferrer{{Domain: "example.org", Count: 42}, {Domain: "<untrusted>", Count: 1}},
-			}}
+			}
+			window := 24 * time.Hour
+			if rng == "30d" {
+				window = 30 * 24 * time.Hour
+			}
+			f.EXPECT().Forge(mock.Anything, window).Return(data, nil).Times(2)
 			srv.cfg.Traffic = f
 			path := inboxPath + "?tab=traffic&range=" + rng
 			rec := inboxGet(srv, path, true)
@@ -66,12 +59,7 @@ func TestInboxTraffic(t *testing.T) {
 			assert.Contains(t, body, "&lt;untrusted&gt;")
 			assert.Contains(t, body, `range=30d&amp;tab=traffic#inbox-traffic`)
 			assert.NotContains(t, body, "7 days")
-			window := 24 * time.Hour
-			if rng == "30d" {
-				window = 30 * 24 * time.Hour
-			}
-			assert.Equal(t, []time.Duration{window}, f.windows)
-			assert.Equal(t, "alpha", f.data.Repos[0].Repo.String(), "sorting must not mutate reader data")
+			assert.Equal(t, "alpha", data.Repos[0].Repo.String(), "sorting must not mutate reader data")
 			q := url.Values{"view": {"inbox"}, "tab": {"traffic"}, "range": {rng}}
 			assert.True(t, srv.ownerStreamOK(withOwner(t.Context()), q))
 			assert.False(t, srv.ownerStreamOK(t.Context(), q))
@@ -80,7 +68,6 @@ func TestInboxTraffic(t *testing.T) {
 			require.Len(t, fragments, 1)
 			assert.Contains(t, fragments[0].html, `id="inbox-traffic"`)
 			assert.Contains(t, fragments[0].html, "example.org")
-			assert.Equal(t, []time.Duration{window, window}, f.windows)
 			assert.Equal(t, 404, inboxGet(srv, path, false).Code)
 		})
 	}
@@ -95,11 +82,15 @@ func TestInboxTrafficUnavailableAndEmpty(t *testing.T) {
 			srv := inboxServer(t, svc)
 			switch mode {
 			case "recorder only":
-				srv.cfg.Traffic = &trafficRecorder{}
+				srv.cfg.Traffic = mocks.NewTrafficRecorder(t)
 			case "empty":
-				srv.cfg.Traffic = &inboxTrafficReader{}
+				f := mocks.NewTrafficService(t)
+				f.EXPECT().Forge(mock.Anything, 24*time.Hour).Return(ports.TrafficForge{}, nil).Once()
+				srv.cfg.Traffic = f
 			case "failure":
-				srv.cfg.Traffic = &inboxTrafficReader{err: errors.New("unavailable")}
+				f := mocks.NewTrafficService(t)
+				f.EXPECT().Forge(mock.Anything, 24*time.Hour).Return(ports.TrafficForge{}, errors.New("unavailable")).Once()
+				srv.cfg.Traffic = f
 			}
 			rec := inboxGet(srv, inboxPath+"?tab=traffic", true)
 			switch mode {
