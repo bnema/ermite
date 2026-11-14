@@ -135,16 +135,13 @@ func TestTrafficReads(t *testing.T) {
 	for _, repo := range []domain.RepoName{a, b} {
 		require.NoError(t, db.Create(ctx, domain.Repo{Name: repo, CreatedAt: clock.t, Visibility: domain.VisibilityPrivate}))
 	}
-	var hits []domain.TrafficHit
-	for _, h := range []domain.TrafficHit{
+	hits := []domain.TrafficHit{
 		{Repo: a, Kind: domain.TrafficView, At: clock.t, ReferrerDomain: "example.test"},
 		{Repo: a, Kind: domain.TrafficClone, At: clock.t},
 		{Repo: a, Kind: domain.TrafficView, At: clock.t.Add(-48 * time.Hour)},
 		{Repo: a, Kind: domain.TrafficView, At: clock.t, Bot: true},
 		{Repo: b, Kind: domain.TrafficClone, At: clock.t.Add(-23 * time.Hour)},
 		{Repo: b, Kind: domain.TrafficClone, At: clock.t.Add(-25 * time.Hour)},
-	} {
-		hits = append(hits, h)
 	}
 	require.NoError(t, db.Traffic().Record(ctx, hits))
 	for _, window := range []time.Duration{24 * time.Hour, 30 * 24 * time.Hour} {

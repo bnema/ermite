@@ -205,3 +205,139 @@ func TestTrafficRejectsInvalidReferrers(t *testing.T) {
 	require.Equal(t, map[string]uint64{"example.com": 1}, days[0].Referrers)
 	require.Equal(t, uint64(len(hosts)), days[0].Views)
 }
+
+// visitor returns a distinct 16-byte visitor hash for n.
+func visitor(n uint64) [16]byte {
+	var h [16]byte
+	binary.BigEndian.PutUint64(h[:8], n)
+	binary.BigEndian.PutUint64(h[8:], ^n)
+	return h
+}
+
+func TestTrafficSaturatedReposInOneRecord(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	var repos []domain.RepoName
+	var hits []domain.TrafficHit
+	for r := range 12 {
+		repo := name(t, fmt.Sprintf("repo%02d", r))
+		repos = append(repos, repo)
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+		for i := range 10001 {
+			h := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: created, VisitorHash: visitor(uint64(i))}
+			hits = append(hits, h)
+		}
+	}
+	require.NoError(t, tr.Record(ctx, hits))
+	for _, repo := range repos {
+		days, err := tr.Daily(ctx, repo, created.Add(-24*time.Hour), created.Add(24*time.Hour))
+		require.NoError(t, err)
+		require.Len(t, days, 1)
+		require.Equal(t, uint64(10001), days[0].Views)
+		require.Equal(t, uint64(10000), days[0].ViewUniques)
+		require.True(t, days[0].Partial)
+	}
+	// Each saturated bucket keeps exactly the cap of unique keys.
+	require.Equal(t, 12*2*10000, s.CountKeysForTest(ctx, "traffic/u/"))
+	require.Equal(t, 12*2, s.CountKeysForTest(ctx, "traffic/a/"))
+}
+
+func TestTrafficDedupesAcrossCalls(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	repo := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	view := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: created, VisitorHash: visitor(1)}
+	clone := view
+	clone.Kind = domain.TrafficClone
+	other := view
+	other.VisitorHash = visitor(2)
+	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{view}))
+	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{view, clone}))
+	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{clone, other}))
+	days, err := tr.Daily(ctx, repo, created.Add(-24*time.Hour), created.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	require.Equal(t, domain.TrafficCounts{Views: 3, ViewUniques: 2, Clones: 2, CloneUniques: 1}, days[0].TrafficCounts)
+}
+
+func TestTrafficRangeReadsHonorBounds(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	repo, longer := name(t, "proj"), name(t, "proj-two")
+	day := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	for _, r := range []domain.RepoName{repo, longer} {
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: r, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+		var hits []domain.TrafficHit
+		for d := range 5 {
+			hits = append(hits, domain.TrafficHit{Repo: r, Kind: domain.TrafficView, At: day.Add(time.Duration(d)*24*time.Hour + 90*time.Minute)})
+		}
+		require.NoError(t, tr.Record(ctx, hits))
+	}
+	// A malformed record outside every requested range must never be read.
+	require.NoError(t, s.PutRawForTest(ctx, "traffic/a/proj/d/20260301T000000Z", []byte("not json")))
+	require.NoError(t, s.PutRawForTest(ctx, "traffic/a/proj/d/20260401T000000Z", []byte("not json")))
+	days, err := tr.Daily(ctx, repo, day.Add(24*time.Hour), day.Add(3*24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, days, 2)
+	require.Equal(t, day.Add(24*time.Hour), days[0].Start)
+	require.Equal(t, day.Add(2*24*time.Hour), days[1].Start)
+	// A sub-second bound still selects starts in [from, to).
+	days, err = tr.Daily(ctx, repo, day.Add(time.Nanosecond), day.Add(24*time.Hour+time.Nanosecond))
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	require.Equal(t, day.Add(24*time.Hour), days[0].Start)
+	hours, err := tr.Hourly(ctx, repo, day.Add(time.Hour), day.Add(2*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, hours, 1)
+	require.Equal(t, day.Add(time.Hour), hours[0].Start)
+	empty, err := tr.Daily(ctx, repo, day.Add(24*time.Hour), day.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Empty(t, empty)
+	rows, err := tr.Summaries(ctx, day, day.Add(5*24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	require.Equal(t, uint64(5), rows[0].Views)
+	require.Equal(t, uint64(5), rows[1].Views)
+	_, err = tr.Daily(ctx, repo, day.Add(-30*24*time.Hour), day)
+	require.Error(t, err)
+}
+
+func TestTrafficPruneAndDeleteRemoveUniqueKeys(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	a, b := name(t, "a"), name(t, "b")
+	for _, repo := range []domain.RepoName{a, b} {
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+		require.NoError(t, tr.Record(ctx, []domain.TrafficHit{
+			{Repo: repo, Kind: domain.TrafficView, At: now.Add(-91 * 24 * time.Hour), VisitorHash: visitor(1)},
+			{Repo: repo, Kind: domain.TrafficClone, At: now.Add(-91 * 24 * time.Hour), VisitorHash: visitor(2)},
+			{Repo: repo, Kind: domain.TrafficView, At: now, VisitorHash: visitor(3)},
+		}))
+	}
+	// Per repository: 2 old buckets (1 daily, 1 hourly) with 2 unique keys
+	// each, and 2 current buckets with 1 unique key each.
+	require.Equal(t, 2*6, s.CountKeysForTest(ctx, "traffic/u/"))
+	n, err := tr.Prune(ctx, now)
+	require.NoError(t, err)
+	require.Equal(t, 4, n)
+	require.Equal(t, 2*2, s.CountKeysForTest(ctx, "traffic/a/"))
+	require.Equal(t, 2*2, s.CountKeysForTest(ctx, "traffic/u/"))
+	require.NoError(t, s.Delete(ctx, a))
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/a/a/"))
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/u/a/"))
+	require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/a/b/"))
+	require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/u/b/"))
+	// A repository created again under the name starts without visitors.
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: a, CreatedAt: now, Visibility: domain.VisibilityPrivate}))
+	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{{Repo: a, Kind: domain.TrafficView, At: now, VisitorHash: visitor(3)}}))
+	days, err := tr.Daily(ctx, a, time.Time{}, now.Add(time.Hour))
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	require.Equal(t, uint64(1), days[0].ViewUniques)
+}

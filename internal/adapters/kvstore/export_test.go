@@ -78,3 +78,11 @@ func (s *Store) RawMirrorKey(ctx context.Context) ([]byte, bool) {
 	item, ok := s.db.Get(ctx, []byte(domain.MirrorKeyPath))
 	return item.Value, ok
 }
+
+// PutRawForTest stores value under key, bypassing every codec and guard.
+func (s *Store) PutRawForTest(ctx context.Context, key string, value []byte) error {
+	var b kv.Batch
+	b.Put([]byte(key), value)
+	_, err := s.db.Apply(ctx, &b)
+	return err
+}

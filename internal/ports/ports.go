@@ -662,6 +662,8 @@ type TreeFileLister interface {
 // subsequent new domains are dropped. Bots count separately from views.
 // Reads use half-open [from, to) bucket-start windows and omit empty buckets.
 // Record discards hits for missing repositories and rejects invalid hits.
+// A large batch may be stored in several atomic parts; an error can leave
+// earlier hits recorded, but never one bucket of a hit without the other.
 // Daily and Hourly return oldest-first buckets. Summaries returns rows ordered
 // by repository name, summing daily uniques and merging daily referrers.
 // Prune counts deleted buckets, retaining starts exactly at the cutoff.
