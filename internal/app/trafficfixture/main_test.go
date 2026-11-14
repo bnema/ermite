@@ -68,7 +68,11 @@ func TestFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close(context.Background())
+	defer func() {
+		if err := s.Close(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}()
 	daily, err = s.Traffic().Daily(ctx, a, now.Add(-91*24*time.Hour), now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +83,9 @@ func TestFixture(t *testing.T) {
 		uniques += bucket.ViewUniques
 		clones += bucket.Clones
 		bots += bucket.Bots
+		if bucket.CloneUniques > clonePool {
+			t.Fatalf("%d clone uniques on %s, pool is %d", bucket.CloneUniques, bucket.Start, clonePool)
+		}
 		if bucket.Start.Before(now.Add(-91 * 24 * time.Hour)) {
 			t.Fatal("outside retention")
 		}

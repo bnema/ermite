@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -32,6 +31,9 @@ import (
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/domain"
 )
+
+// clonePool is the number of distinct clone visitors per repository and UTC day.
+const clonePool = 3
 
 type options struct {
 	days  int
@@ -145,14 +147,14 @@ func seed(ctx context.Context, store *kvstore.Store, repo domain.RepoName, now t
 		pool := max(1, count/4)
 		for i := 0; i < count; i++ {
 			h := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: end.Add(-time.Duration(rng.Int63n(int64(24 * time.Hour))))}
-			sum := sha256.Sum256([]byte(fmt.Sprintf("fixture:%s:%s:%d", repo, h.At.UTC().Format("2006-01-02"), rng.Intn(pool))))
-			copy(h.VisitorHash[:], sum[:16])
-			// Keep clone visitors in a smaller pool too.
 			if i%15 == 0 {
+				// Clone visitors come from a small pool: every 15th hit is a
+				// clone, and its ordinal among clones picks the visitor.
 				h.Kind = domain.TrafficClone
-				binary.LittleEndian.PutUint64(h.VisitorHash[:8], uint64(i%3))
+				h.VisitorHash = visitorHash("clone", repo, h.At, (i/15)%clonePool)
 				clones++
 			} else {
+				h.VisitorHash = visitorHash("view", repo, h.At, rng.Intn(pool))
 				h.Bot = i%11 == 0
 				if h.Bot {
 					bots++
@@ -179,4 +181,13 @@ func seed(ctx context.Context, store *kvstore.Store, repo domain.RepoName, now t
 	}
 	_, err := fmt.Fprintf(out, "%s: views=%d clones=%d bots=%d days=%d dry-run=%t\n", repo, views, clones, bots, o.days, o.dry)
 	return err
+}
+
+// visitorHash derives a full 16-byte visitor hash from the visitor's identity
+// (kind and ordinal), the repository and the UTC day of at.
+func visitorHash(kind string, repo domain.RepoName, at time.Time, ordinal int) [16]byte {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("fixture:%s:%s:%s:%d", kind, repo, at.UTC().Format("2006-01-02"), ordinal)))
+	var h [16]byte
+	copy(h[:], sum[:16])
+	return h
 }
