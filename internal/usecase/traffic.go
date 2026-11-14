@@ -82,7 +82,11 @@ func (t *Traffic) Hit(repo domain.RepoName, kind domain.TrafficKind, ip netip.Ad
 		}
 		t.day = day
 	}
-	input := append(t.salt[:len(t.salt):len(t.salt)], ip.Unmap().AsSlice()...)
+	ip = ip.Unmap()
+	if ip.Is6() {
+		ip = netip.PrefixFrom(ip, 64).Masked().Addr()
+	}
+	input := append(t.salt[:len(t.salt):len(t.salt)], ip.AsSlice()...)
 	hash := sha256.Sum256(input)
 	h := domain.TrafficHit{Repo: repo, Kind: kind, At: now, Bot: kind == domain.TrafficView && domain.IsBotUserAgent(userAgent), ReferrerDomain: domain.ReferrerDomain(referer, t.cfg.SelfHost)}
 	copy(h.VisitorHash[:], hash[:16])
@@ -119,6 +123,8 @@ func (t *Traffic) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return // Preserve pending hits for the uncancelled final flush.
 		}
+		// Record may fail after applying earlier sub-batches. Drop the unapplied
+		// tail rather than retrying the batch and double counting applied hits.
 		if err := t.cfg.Store.Record(ctx, batch); err != nil {
 			log := zerowrap.FromCtx(ctx)
 			log.Error().Err(err).Msg("record traffic")

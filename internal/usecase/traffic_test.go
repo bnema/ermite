@@ -240,3 +240,49 @@ func TestTrafficHitDoesNotReachRecreatedRepository(t *testing.T) {
 	require.Zero(t, report.Totals.Views)
 	require.Empty(t, report.Referrers)
 }
+
+func TestTrafficVisitorNetworkIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		addresses []string
+		uniques   uint64
+	}{
+		{"same IPv6 subnet", []string{"2001:db8:1:2::1", "2001:db8:1:2:ffff::2"}, 1},
+		{"different IPv6 subnets", []string{"2001:db8:1:2::1", "2001:db8:1:3::1"}, 2},
+		{"different IPv4 addresses", []string{"192.0.2.1", "192.0.2.2"}, 2},
+		{"mapped IPv4", []string{"192.0.2.1", "::ffff:192.0.2.1"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			clock := &fakeClock{t: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
+			store := &trafficCapture{}
+			tr := usecase.NewTraffic(usecase.TrafficConfig{Store: store, Clock: clock})
+			repo, err := domain.ParseRepoName("proj")
+			require.NoError(t, err)
+			for _, address := range tc.addresses {
+				tr.Hit(repo, domain.TrafficView, netip.MustParseAddr(address), "Mozilla", "")
+			}
+			tr.Close(ctx)
+			var hits []domain.TrafficHit
+			for _, batch := range store.batches {
+				hits = append(hits, batch...)
+			}
+			require.Len(t, hits, 2)
+			if tc.uniques == 1 {
+				require.Equal(t, hits[0].VisitorHash, hits[1].VisitorHash)
+			} else {
+				require.NotEqual(t, hits[0].VisitorHash, hits[1].VisitorHash)
+			}
+			db, err := kvstore.Open(ctx, t.TempDir())
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close(ctx)) })
+			require.NoError(t, db.Create(ctx, domain.Repo{Name: repo, CreatedAt: clock.t.Add(-time.Hour), Visibility: domain.VisibilityPrivate}))
+			require.NoError(t, db.Traffic().Record(ctx, hits))
+			reader := usecase.NewTraffic(usecase.TrafficConfig{Store: db.Traffic(), Clock: clock})
+			counts, err := reader.RepoSummary(ctx, repo)
+			require.NoError(t, err)
+			require.Equal(t, uint64(2), counts.Views)
+			require.Equal(t, tc.uniques, counts.ViewUniques)
+		})
+	}
+}
