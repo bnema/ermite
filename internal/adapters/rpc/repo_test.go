@@ -3,10 +3,12 @@
 package rpc
 
 import (
+	"bnema.dev/ermite/internal/usecase"
 	"context"
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
@@ -69,7 +71,7 @@ func TestRepoServiceGetRepo(t *testing.T) {
 					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo, DefaultBranch: "main"}, tt.viewErr).Once()
 				}
 			}
-			svc := &repoService{repos}
+			svc := &repoService{repos: repos}
 			resp, err := svc.GetRepo(ownerCtx(), &pb.GetRepoRequest{Repo: tt.repo})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
@@ -113,7 +115,7 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
 				}
 			}
-			resp, err := (&repoService{repos}).CreateRepo(ownerCtx(), tt.req)
+			resp, err := (&repoService{repos: repos}).CreateRepo(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -179,7 +181,7 @@ func TestRepoServiceUpdateRepoValidatesMask(t *testing.T) {
 					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
 				}
 			}
-			resp, err := (&repoService{repos}).UpdateRepo(ownerCtx(), tt.req)
+			resp, err := (&repoService{repos: repos}).UpdateRepo(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -211,7 +213,7 @@ func TestRepoServiceDeleteRepo(t *testing.T) {
 			if tt.wantCall {
 				repos.EXPECT().Delete(mock.Anything, domain.Owner(), mustRepoName(t, tt.repo)).Return(tt.usecase).Once()
 			}
-			_, err := (&repoService{repos}).DeleteRepo(ownerCtx(), &pb.DeleteRepoRequest{Repo: tt.repo})
+			_, err := (&repoService{repos: repos}).DeleteRepo(ownerCtx(), &pb.DeleteRepoRequest{Repo: tt.repo})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -231,7 +233,7 @@ func TestRepoServiceListRepos(t *testing.T) {
 		repos.EXPECT().ListPage(mock.Anything, domain.Owner(), 2, "tok").Return(ports.RepoPage{Repos: []domain.Repo{a, b}, NextPageToken: "next"}, nil).Once()
 		repos.EXPECT().View(mock.Anything, a).Return(ports.RepoView{Repo: a}, nil).Once()
 		repos.EXPECT().View(mock.Anything, b).Return(ports.RepoView{Repo: b}, nil).Once()
-		resp, err := (&repoService{repos}).ListRepos(ownerCtx(), &pb.ListReposRequest{PageSize: 2, PageToken: "tok"})
+		resp, err := (&repoService{repos: repos}).ListRepos(ownerCtx(), &pb.ListReposRequest{PageSize: 2, PageToken: "tok"})
 		require.NoError(t, err)
 		require.Len(t, resp.GetRepos(), 2)
 		assert.Equal(t, "next", resp.GetNextPageToken())
@@ -248,7 +250,7 @@ func TestRepoServiceListRepos(t *testing.T) {
 			t.Parallel()
 			repos := mocks.NewRepoService(t)
 			repos.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoPage{}, tc.err).Once()
-			_, err := (&repoService{repos}).ListRepos(ownerCtx(), &pb.ListReposRequest{})
+			_, err := (&repoService{repos: repos}).ListRepos(ownerCtx(), &pb.ListReposRequest{})
 			requireCode(t, tc.code, err)
 		})
 	}
@@ -340,4 +342,60 @@ func TestRepoToPBLanguages(t *testing.T) {
 	assert.InDelta(t, 25, got.GetLanguages()[1].GetPercent(), 1e-9)
 	assert.Empty(t, repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustRepoName(t, "demo")}}).GetLanguages())
 	assert.Contains(t, Features, "repos.languages")
+}
+
+type trafficReadStore struct{ ports.TrafficStore }
+
+func (trafficReadStore) Daily(context.Context, domain.RepoName, time.Time, time.Time) ([]domain.TrafficBucket, error) {
+	return nil, nil
+}
+func (trafficReadStore) Hourly(context.Context, domain.RepoName, time.Time, time.Time) ([]domain.TrafficBucket, error) {
+	return nil, nil
+}
+
+func TestRepoTrafficRanges(t *testing.T) {
+	for _, tc := range []struct {
+		r pb.TrafficRange
+		n int
+	}{{pb.TrafficRange_TRAFFIC_RANGE_UNSPECIFIED, 30}, {pb.TrafficRange_TRAFFIC_RANGE_30D, 30}, {pb.TrafficRange_TRAFFIC_RANGE_24H, 24}, {pb.TrafficRange(99), 0}} {
+		repos := mocks.NewRepoService(t)
+		repos.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo")).Return(domain.Repo{}, nil).Once()
+		clock := mocks.NewClock(t)
+		if tc.n > 0 {
+			clock.EXPECT().Now().Return(time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
+		}
+		svc := repoService{repos: repos, traffic: usecase.NewTraffic(usecase.TrafficConfig{Store: trafficReadStore{}, Clock: clock})}
+		out, err := svc.GetRepoTraffic(ownerCtx(), &pb.GetRepoTrafficRequest{Repo: "demo", Range: tc.r})
+		if tc.n == 0 {
+			requireCode(t, connect.CodeInvalidArgument, err)
+			continue
+		}
+		require.NoError(t, err)
+		require.Len(t, out.Points, tc.n)
+		require.NotNil(t, out.Totals)
+		require.Zero(t, out.Totals.Views)
+		require.Empty(t, out.Referrers)
+	}
+}
+
+func TestRepoTrafficAccessAndUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		repo   string
+		access error
+		code   connect.Code
+	}{
+		{"invalid", "../etc", nil, connect.CodeInvalidArgument},
+		{"private hidden", "demo", domain.ErrNotFound, connect.CodeNotFound},
+		{"public unavailable", "demo", nil, connect.CodeUnimplemented},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repos := mocks.NewRepoService(t)
+			if tc.repo == "demo" {
+				repos.EXPECT().Get(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo")).Return(domain.Repo{}, tc.access).Once()
+			}
+			_, err := (&repoService{repos: repos}).GetRepoTraffic(context.Background(), &pb.GetRepoTrafficRequest{Repo: tc.repo})
+			requireCode(t, tc.code, err)
+		})
+	}
 }
