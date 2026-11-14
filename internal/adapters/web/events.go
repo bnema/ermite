@@ -120,7 +120,12 @@ func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 	if s.cfg.Inbox == nil || !SignedIn(ctx) || q.Get("view") != "inbox" {
 		return false
 	}
-	if _, err := inboxRange(q.Get("range")); err != nil {
+	if q.Get("tab") == "traffic" {
+		if _, ok := s.cfg.Traffic.(TrafficForgeReader); !ok {
+			return false
+		}
+	}
+	if _, err := inboxRange(q.Get("range"), inboxTab(q.Get("tab"))); err != nil {
 		return false
 	}
 	return true

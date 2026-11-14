@@ -6,9 +6,11 @@ import (
 	"context"
 	"net/http"
 	"net/netip"
+	"time"
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/usecase"
 )
 
 // TrafficRecorder collects repository visits without blocking.
@@ -53,4 +55,9 @@ func (s *Server) recordView(ctx context.Context, r *http.Request, status int) {
 	}
 	ip, _ := netip.ParseAddr(clientlimit.ClientAddr(r, s.cfg.TrustedProxies))
 	s.cfg.Traffic.Hit(name, domain.TrafficView, ip, r.UserAgent(), r.Referer())
+}
+
+// TrafficForgeReader supplies owner-only traffic across the forge.
+type TrafficForgeReader interface {
+	Forge(context.Context, time.Duration) (usecase.TrafficForge, error)
 }

@@ -108,6 +108,7 @@ type InboxPage struct {
 	IssueRows   []InboxRow
 	// Journal is the activity section; zero without a journal.
 	Journal JournalView
+	Traffic *InboxTrafficView
 }
 
 // JournalView is the activity section of the inbox: the range toggle, the
@@ -155,13 +156,17 @@ var journalRanges = []struct {
 	{"7d", "7 days", "7 days", 7 * 24 * time.Hour},
 }
 
-// inboxRange reads ?range=: "24h" (the default) or "7d"; anything else is a
-// page that is not there. It returns the index in journalRanges.
-func inboxRange(raw string) (int, error) {
+// inboxRange reads the tab-specific window: 24h/7d normally, 24h/30d for
+// traffic. It returns the index in that tab's ranges; unknown ranges are missing.
+func inboxRange(raw string, tab ...string) (int, error) {
+	ranges := journalRanges
+	if len(tab) > 0 && tab[0] == "traffic" {
+		ranges = trafficRanges
+	}
 	if raw == "" {
 		return 0, nil
 	}
-	for i, r := range journalRanges {
+	for i, r := range ranges {
 		if r.param == raw {
 			return i, nil
 		}
@@ -177,7 +182,11 @@ func inboxQuery(tab string, rng int) string {
 		q.Set("tab", tab)
 	}
 	if rng != 0 {
-		q.Set("range", journalRanges[rng].param)
+		ranges := journalRanges
+		if tab == "traffic" {
+			ranges = trafficRanges
+		}
+		q.Set("range", ranges[rng].param)
 	}
 	return q.Encode()
 }
@@ -274,7 +283,7 @@ func journalRow(now time.Time, e domain.JournalEntry) JournalRow {
 // inboxTab normalizes unknown or absent tabs to open work.
 func inboxTab(raw string) string {
 	switch raw {
-	case "deps", "activity", "moderation":
+	case "deps", "activity", "moderation", "traffic":
 		return raw
 	default:
 		return "work"
@@ -302,6 +311,10 @@ func inboxHref(tab string, rng int) string {
 
 // inboxPage builds the page from the overview and the journal.
 func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, tab string, rng int, dq depsQuery) InboxPage {
+	// Links to other tabs reset the traffic-specific window.
+	if tab == "traffic" {
+		rng = 0
+	}
 	now := s.cfg.Now()
 	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Tab: tab}
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
@@ -402,21 +415,40 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		p.Tabs = append(p.Tabs, InboxNavLink{Label: t.label + " (" + itoa(t.count) + ")", Href: inboxHref(t.key, rng), Current: t.key == tab})
 	}
 
+	if _, ok := s.cfg.Traffic.(TrafficForgeReader); ok {
+		p.Tabs = append(p.Tabs, InboxNavLink{Label: "Traffic", Href: inboxHref("traffic", 0), Current: tab == "traffic"})
+	}
 	return p
 }
 
 // inboxData reads what the page shows: the overview and the journal of the
 // range.
 func (s *Server) inboxData(ctx context.Context, tab string, rng int, sort depsQuery) (InboxPage, error) {
+	if tab == "traffic" {
+		if _, ok := s.cfg.Traffic.(TrafficForgeReader); !ok {
+			return InboxPage{}, errNotFound
+		}
+	}
 	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
 	if err != nil {
 		return InboxPage{}, err
 	}
-	j, err := s.cfg.Inbox.Journal(ctx, principal(ctx), journalRanges[rng].window)
+	journalRange := rng
+	if tab == "traffic" {
+		journalRange = 0
+	}
+	j, err := s.cfg.Inbox.Journal(ctx, principal(ctx), journalRanges[journalRange].window)
 	if err != nil {
 		return InboxPage{}, err
 	}
-	return s.inboxPage(ctx, ov, j, tab, rng, sort), nil
+	p := s.inboxPage(ctx, ov, j, tab, rng, sort)
+	if tab == "traffic" {
+		p.Traffic, err = s.inboxTraffic(ctx, rng)
+		if err != nil {
+			return InboxPage{}, err
+		}
+	}
+	return p, nil
 }
 
 // pendingRow is the row of a pending issue: the texts as plain strings, the
@@ -493,7 +525,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 		return nil, 0, errNotFound
 	}
 	tab := inboxTab(r.URL.Query().Get("tab"))
-	rng, err := inboxRange(r.URL.Query().Get("range"))
+	rng, err := inboxRange(r.URL.Query().Get("range"), tab)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -549,7 +581,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 		return nil, nil
 	}
 	tab := inboxTab(l.tab)
-	rng, _ := inboxRange(l.rng) // checked when the stream was opened
+	rng, _ := inboxRange(l.rng, tab) // checked when the stream was opened
 	p, err := l.s.inboxData(ctx, tab, rng, depsQuery{sort: depsSortParam(l.sort), filter: depsFilterParam(l.filter)})
 	if err != nil {
 		return nil, err
