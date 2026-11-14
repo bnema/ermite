@@ -670,5 +670,7 @@ type TrafficStore interface {
 	Daily(ctx context.Context, repo domain.RepoName, from, to time.Time) ([]domain.TrafficBucket, error)
 	Hourly(ctx context.Context, repo domain.RepoName, from, to time.Time) ([]domain.TrafficBucket, error)
 	Summaries(ctx context.Context, from, to time.Time) ([]domain.TrafficSummary, error)
+	// HourlySummaries sums hourly counts; referrers are absent.
+	HourlySummaries(ctx context.Context, from, to time.Time) ([]domain.TrafficSummary, error)
 	Prune(ctx context.Context, now time.Time) (int, error)
 }

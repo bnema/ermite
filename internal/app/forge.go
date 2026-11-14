@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,6 +153,8 @@ type forge struct {
 	Mergeability *usecase.Mergeability
 	// Languages counts the languages of each repository in the background.
 	Languages *usecase.Languages
+	// Traffic records repository traffic and serves its aggregate read models.
+	Traffic   *usecase.Traffic
 	AutoMerge *usecase.AutoMerge
 	// Signatures are the trusted keys and the commit signature checks
 	// (ADR 0030).
@@ -255,6 +258,11 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Auth = usecase.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock).WithRepoTokens(store.CI())
 	f.maint = usecase.NewMaintainer(ctx, git, opts.maintenanceDelay)
 	f.Pushes = usecase.NewPushes(store, f.Repos, git, f.Bus, clock, f.maint, f.Auth)
+	publicURL, err := url.Parse(cfg.PublicURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse traffic public URL: %w", err)
+	}
+	f.Traffic = usecase.NewTraffic(usecase.TrafficConfig{Store: store.Traffic(), Clock: clock, SelfHost: publicURL.Host})
 	// The activity journal of the inbox, written where the events are
 	// published (the bus may drop them).
 	journalStore := store.Journal()
@@ -601,6 +609,7 @@ func (f *forge) Run(ctx context.Context) error {
 func (f *forge) Serve(ctx context.Context, ln net.Listener) error {
 	f.Mirrors.Start()
 	f.Languages.Start()
+	go f.Traffic.Run(context.WithoutCancel(ctx))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	hookCtx, stopHooks := context.WithCancel(context.WithoutCancel(ctx))
@@ -631,6 +640,9 @@ func (f *forge) Close(ctx context.Context) {
 	}
 	if f.MergeRequests != nil {
 		f.MergeRequests.Wait(ctx) // its side effects use CI and Mergeability
+	}
+	if f.Traffic != nil {
+		f.Traffic.Close(ctx)
 	}
 	if f.Languages != nil {
 		f.Languages.Close(ctx) // it reads through the git reader and writes the store

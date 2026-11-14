@@ -198,11 +198,20 @@ func (t *Traffic) scan(ctx context.Context, prefix string, fn func(string, traff
 // Summaries sums daily buckets in [from, to), ordered by repository name.
 // Unique counts are sums of daily uniques, not window-wide distinct visitors.
 func (t *Traffic) Summaries(ctx context.Context, from, to time.Time) ([]domain.TrafficSummary, error) {
+	return t.summaries(ctx, "d", from, to)
+}
+
+// HourlySummaries sums hourly buckets, without referrers, for short windows.
+func (t *Traffic) HourlySummaries(ctx context.Context, from, to time.Time) ([]domain.TrafficSummary, error) {
+	return t.summaries(ctx, "h", from, to)
+}
+
+func (t *Traffic) summaries(ctx context.Context, kind string, from, to time.Time) ([]domain.TrafficSummary, error) {
 	rows := map[string]*domain.TrafficSummary{}
 	var parseErr error
 	err := t.scan(ctx, trafficPrefix, func(key string, r trafficRecord) {
 		parts := strings.Split(strings.TrimPrefix(key, trafficPrefix), "/")
-		if len(parts) != 3 || parts[1] != "d" || r.Bucket.Start.Before(from) || !r.Bucket.Start.Before(to) {
+		if len(parts) != 3 || parts[1] != kind || r.Bucket.Start.Before(from) || !r.Bucket.Start.Before(to) {
 			return
 		}
 		repo, err := domain.ParseRepoName(parts[0])
