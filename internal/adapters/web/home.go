@@ -226,6 +226,11 @@ func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, n
 		}
 	}
 	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent), Pulse: s.pulses.get(r.Name.String(), st.Activity, st.Partial, visitors)}
+	if hs.Pulse != nil {
+		pulse := *hs.Pulse // cached curves are shared and immutable
+		pulse.End = s.cfg.Now().UTC().Format("2006-01-02")
+		hs.Pulse = &pulse
+	}
 	if st.Partial {
 		hs.Recent += "+" // a lower bound: the walk stopped at its cap
 	}

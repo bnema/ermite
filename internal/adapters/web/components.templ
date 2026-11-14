@@ -132,7 +132,11 @@ templ HomeRowView(r HomeRow) {
 // is active. Nothing moves: the page stays idle. The SVG scales evenly with
 // its column, so the dot stays round.
 templ pulse(h *Heartbeat) {
-	<figure class="repo-pulse" data-live?={ h.Live }>
+	<figure class="repo-pulse" data-live?={ h.Live } data-days-commits={ h.DaysCommits } data-end={ h.End } data-end-x={ h.X }
+		if h.DaysVisitors != "" {
+			data-days-visitors={ h.DaysVisitors }
+		}
+	>
 		<svg viewBox="0 0 600 64" role="img" aria-label={ h.Label } focusable="false">
 			<defs>
 				<linearGradient id={ h.GradID } x1="0" y1="0" x2="0" y2="1">

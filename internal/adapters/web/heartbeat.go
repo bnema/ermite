@@ -15,6 +15,9 @@ import (
 type Heartbeat struct {
 	// Line is the curve, Area the same closed down to the bottom edge.
 	Line, Area string
+	// DaysCommits and DaysVisitors are raw comma-separated daily counts.
+	// End is set on a row-local copy, not on the cached curve.
+	DaysCommits, DaysVisitors, End string
 	// Visitors is an independently scaled daily unique-visitor curve.
 	Visitors string
 	// X and Y are where the curve ends: the pulse of today.
@@ -74,16 +77,21 @@ func heartbeatOf(id string, days []int, partial bool) *Heartbeat {
 			pts = append(pts, heartbeatPoint(n-1, n, smooth[n-1], peak, top, bottom))
 		}
 	}
+	raw := make([]string, len(days))
+	for i, d := range days {
+		raw[i] = strconv.Itoa(d)
+	}
 	line := curve(pts)
 	end := pts[len(pts)-1]
 	return &Heartbeat{
-		Line:   line,
-		Area:   line + " L" + num(heartbeatEndX) + " " + num(heartbeatH) + " L0 " + num(heartbeatH) + " Z",
-		X:      num(end[0]),
-		Y:      num(end[1]),
-		GradID: "hb-" + id,
-		Label:  heartbeatLabel(total, n, partial),
-		Live:   lastWeek > 0,
+		DaysCommits: strings.Join(raw, ","),
+		Line:        line,
+		Area:        line + " L" + num(heartbeatEndX) + " " + num(heartbeatH) + " L0 " + num(heartbeatH) + " Z",
+		X:           num(end[0]),
+		Y:           num(end[1]),
+		GradID:      "hb-" + id,
+		Label:       heartbeatLabel(total, n, partial),
+		Live:        lastWeek > 0,
 	}
 }
 
@@ -154,6 +162,11 @@ func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint
 			counts[i] = int(min(d, uint64(math.MaxInt)))
 			total += d
 		}
+		raw := make([]string, len(daily))
+		for i, d := range daily {
+			raw[i] = strconv.FormatUint(d, 10)
+		}
+		h.DaysVisitors = strings.Join(raw, ",")
 		h.Visitors = heartbeatOf(id, counts, false).Line
 		h.Label = strings.Replace(h.Label, " in the last ", ", "+strconv.FormatUint(total, 10)+" visitors in the last ", 1)
 	}

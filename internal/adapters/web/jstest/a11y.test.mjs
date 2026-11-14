@@ -51,6 +51,9 @@ doc.querySelector = () => null;
 
 const store = new Map();
 globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+// Pulse interactions are delegated on document, before page-wide shortcuts.
+doc.addEventListener = () => {};
+globalThis.MutationObserver = class { observe() {} };
 const listeners = {};
 globalThis.addEventListener = (type, f) => (listeners[type] ||= []).push(f);
 globalThis.removeEventListener = (type, f) => { listeners[type] = (listeners[type] || []).filter((g) => g !== f); };

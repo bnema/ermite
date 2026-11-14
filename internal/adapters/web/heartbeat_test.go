@@ -3,6 +3,8 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"strconv"
 	"strings"
 	"testing"
@@ -95,4 +97,25 @@ func TestPulseVisitors(t *testing.T) {
 	assert.NotSame(t, h, c.get("proj", days, false, visitors))
 	assert.Empty(t, c.get("proj", days, false).Visitors)
 	assert.Empty(t, c.get("proj", days, false, visitors[:89]).Visitors, "misaligned data is omitted")
+}
+
+func TestPulseMarkup(t *testing.T) {
+	for _, visitors := range [][]uint64{nil, {7, 0, 12}} {
+		t.Run(strconv.Itoa(len(visitors)), func(t *testing.T) {
+			var cache pulseCache
+			h := cache.get("repo", []int{1, 0, 3}, false, visitors)
+			h.End = "2026-11-14"
+			var b bytes.Buffer
+			require.NoError(t, pulse(h).Render(context.Background(), &b))
+			assert.Contains(t, b.String(), `data-days-commits="1,0,3"`)
+			assert.Contains(t, b.String(), `data-end="2026-11-14"`)
+			assert.Contains(t, b.String(), `data-end-x="590"`)
+			assert.NotContains(t, b.String(), `tabindex`)
+			if visitors == nil {
+				assert.NotContains(t, b.String(), "data-days-visitors")
+			} else {
+				assert.Contains(t, b.String(), `data-days-visitors="7,0,12"`)
+			}
+		})
+	}
 }

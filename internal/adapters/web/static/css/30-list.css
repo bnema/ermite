@@ -2,7 +2,7 @@
   /* tables in a card, with a row cursor (j/k) */
   .list {
     width: 100%; table-layout: auto;
-    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-s);
     border-collapse: separate; overflow: hidden;
     & th {
       height: 40px; padding: 0 var(--s3); white-space: nowrap;
@@ -64,7 +64,7 @@
   .repos {
     display: flex; flex-direction: column; gap: 0;
     margin: 0; padding: 0; list-style: none;
-    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-s); overflow: hidden;
     & .repo {
       display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas: "main head" "main recent";
       grid-template-rows: auto 1fr; column-gap: var(--s6); row-gap: var(--s3); min-width: 0;
@@ -337,7 +337,7 @@
   }
   .tree-keys { flex: none; color: var(--ink-mute); font-size: var(--fs-xs); white-space: nowrap; }
   .tree-card {
-    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-s); overflow: hidden;
   }
   .tree-head {
     display: flex; align-items: center; gap: var(--s3); min-height: 40px; padding: 0 var(--s4);
@@ -435,7 +435,7 @@
   /* empty / 404 / error / sign in: one card in the middle */
   .state {
     max-width: 560px; margin: var(--s7) auto 0 !important; padding: var(--s6);
-    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-s);
     & .eyebrow { font: 700 var(--fs-s) / 1 var(--mono); color: var(--ink-mute); text-transform: uppercase; letter-spacing: .08em; margin-bottom: var(--s2); }
     & h1 { margin-bottom: var(--s3); }
     & p.dim { color: var(--ink-dim); }
@@ -458,3 +458,21 @@
     & .copy { height: 26px; padding: 0 var(--s2); font-size: var(--fs-xs); }
   }
 }
+
+/* Kept outside the row so dense layouts and card clipping cannot hide it. */
+.pulse-tooltip {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  max-width: calc(100vw - 16px);
+  padding: var(--s2) var(--s3);
+  background: var(--bg-raised);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  font-size: .75rem;
+  font-variant-numeric: tabular-nums;
+}
+.pulse-swatch { display: inline-block; width: 1.2em; margin-right: .5em; vertical-align: middle; border-top: 2px solid var(--teal); }
+.pulse-swatch-visitors { border-color: var(--rose); border-top-style: dashed; }
+.pulse-guide { stroke: var(--ink-mute); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }

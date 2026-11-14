@@ -910,6 +910,92 @@
   });
 })();
 
+// Daily pulse values: delegated events also cover live-replaced home rows.
+(() => {
+  let active, index, bubble, guide;
+  const figure = (target) => target.closest?.('figure.repo-pulse');
+  const hide = () => {
+    bubble?.remove(); guide?.remove();
+    active = bubble = guide = null;
+  };
+  const upgrade = () => document.querySelectorAll('figure.repo-pulse:not([tabindex])')
+    .forEach((el) => { el.tabIndex = 0; el.dataset.js = ''; });
+  upgrade();
+  new MutationObserver(() => {
+    if (active && !active.isConnected) hide();
+    upgrade();
+  }).observe(document.body, { childList: true, subtree: true });
+  const show = (el, day, x, y) => {
+    const commits = el.dataset.daysCommits.split(',');
+    const visitors = el.dataset.daysVisitors?.split(',');
+    day = Math.max(0, Math.min(commits.length - 1, day));
+    if (active !== el) hide();
+    active = el; index = day;
+    if (!bubble) {
+      bubble = document.createElement('div');
+      bubble.className = 'pulse-tooltip';
+      bubble.setAttribute('aria-hidden', 'true');
+      document.body.append(bubble);
+      guide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      guide.classList.add('pulse-guide');
+      guide.setAttribute('y1', '0'); guide.setAttribute('y2', '64');
+      guide.setAttribute('aria-hidden', 'true');
+      el.querySelector('svg').append(guide);
+    }
+    const gx = day / (commits.length - 1) * Number(el.dataset.endX);
+    guide.setAttribute('x1', gx); guide.setAttribute('x2', gx);
+    const date = new Date(el.dataset.end + 'T00:00:00Z');
+    date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
+    const heading = document.createElement('div');
+    heading.textContent = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    bubble.replaceChildren(heading);
+    const row = (kind, value) => {
+      const line = document.createElement('div');
+      const swatch = document.createElement('span');
+      swatch.className = 'pulse-swatch pulse-swatch-' + kind;
+      line.append(swatch, document.createTextNode(value + ' ' + kind));
+      bubble.append(line);
+    };
+    row('commits', commits[day]);
+    if (visitors) row('visitors', visitors[day]);
+    const rect = bubble.getBoundingClientRect();
+    const card = el.closest('.repo').getBoundingClientRect();
+    const left = Math.max(8, card.left);
+    const right = Math.min(innerWidth - 8, card.right);
+    bubble.style.left = Math.max(left, Math.min(x + 12, right - rect.width)) + 'px';
+    bubble.style.top = Math.max(8, Math.min(y + 16, innerHeight - rect.height - 8)) + 'px';
+  };
+  const atPointer = (e) => {
+    const el = figure(e.target);
+    if (!el || !e.target.closest('svg')) return;
+    const svg = el.querySelector('svg');
+    const point = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    const day = Math.round(point.x / Number(el.dataset.endX) * (el.dataset.daysCommits.split(',').length - 1));
+    show(el, day, e.clientX, e.clientY);
+  };
+  document.addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch') atPointer(e); });
+  document.addEventListener('pointerout', (e) => {
+    if (e.pointerType !== 'touch' && figure(e.target) === active && !active?.contains(e.relatedTarget)) hide();
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') { hide(); atPointer(e); }
+    else if (!figure(e.target)) hide();
+  });
+  document.addEventListener('focusout', (e) => { if (figure(e.target) === active) hide(); });
+  document.addEventListener('keydown', (e) => {
+    const el = figure(e.target);
+    if (!el || !['ArrowLeft', 'ArrowRight', 'Escape'].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.key === 'Escape') return hide();
+    const n = el.dataset.daysCommits.split(',').length;
+    const day = active === el ? index + (e.key === 'ArrowLeft' ? -1 : 1) : n - 1;
+    const rect = el.getBoundingClientRect();
+    show(el, day, rect.left + Math.max(0, Math.min(n - 1, day)) / (n - 1) * rect.width * Number(el.dataset.endX) / 600, rect.top);
+  });
+  document.addEventListener('scroll', hide, true);
+  window.addEventListener('resize', hide);
+})();
+
 // ermiteLive applies the fragments of the event stream (/-/events, see
 // internal/adapters/web/events.go). A fragment is a top-level element with an
 // id: it replaces the element of the page that has the same id. A fragment
