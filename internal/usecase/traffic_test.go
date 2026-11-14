@@ -14,31 +14,39 @@ import (
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 	"bnema.dev/ermite/internal/usecase"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+// trafficCapture owns copied arguments; the generated mock implements the port.
 type trafficCapture struct {
-	ports.TrafficStore
+	*mocks.TrafficStore
 	mu      sync.Mutex
 	batches [][]domain.TrafficHit
 	pruned  int
 }
 
-func (s *trafficCapture) Record(ctx context.Context, h []domain.TrafficHit) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.batches = append(s.batches, append([]domain.TrafficHit(nil), h...))
-	return nil
-}
-func (s *trafficCapture) Prune(context.Context, time.Time) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pruned++
-	return 0, nil
+func newTrafficCapture(t *testing.T) *trafficCapture {
+	t.Helper()
+	s := &trafficCapture{TrafficStore: mocks.NewTrafficStore(t)}
+	s.EXPECT().Record(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, h []domain.TrafficHit) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.batches = append(s.batches, append([]domain.TrafficHit(nil), h...))
+		return nil
+	}).Maybe()
+	s.EXPECT().Prune(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, time.Time) (int, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.pruned++
+		return 0, nil
+	}).Maybe()
+	return s
 }
 func (s *trafficCapture) snapshot() ([][]domain.TrafficHit, int) {
 	s.mu.Lock()
@@ -48,7 +56,7 @@ func (s *trafficCapture) snapshot() ([][]domain.TrafficHit, int) {
 
 func TestTrafficRecorderPrivacyAndDrops(t *testing.T) {
 	clock := &fakeClock{t: time.Date(2026, 1, 2, 23, 59, 0, 0, time.UTC)}
-	store := &trafficCapture{}
+	store := newTrafficCapture(t)
 	tr := usecase.NewTraffic(usecase.TrafficConfig{Store: store, Clock: clock, SelfHost: "forge.test", QueueSize: 5})
 	repo, err := domain.ParseRepoName("proj")
 	require.NoError(t, err)
@@ -85,7 +93,7 @@ func TestTrafficRecorderPrivacyAndDrops(t *testing.T) {
 
 func TestTrafficBatchTimerPruneAndCancel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		store := &trafficCapture{}
+		store := newTrafficCapture(t)
 		clock := &fakeClock{t: time.Now()}
 		tr := usecase.NewTraffic(usecase.TrafficConfig{Store: store, Clock: clock, BatchSize: 2, FlushEvery: 5 * time.Second})
 		ctx, cancel := context.WithCancel(t.Context())
@@ -255,7 +263,7 @@ func TestTrafficVisitorNetworkIdentity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			clock := &fakeClock{t: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
-			store := &trafficCapture{}
+			store := newTrafficCapture(t)
 			tr := usecase.NewTraffic(usecase.TrafficConfig{Store: store, Clock: clock})
 			repo, err := domain.ParseRepoName("proj")
 			require.NoError(t, err)

@@ -610,23 +610,18 @@ func TestHandlerUsesTheFailureLimiter(t *testing.T) {
 	})
 }
 
-type trafficRecorder struct{ hits []domain.TrafficKind }
-
-func (f *trafficRecorder) Hit(_ domain.RepoName, kind domain.TrafficKind, _ netip.Addr, _, _ string) {
-	f.hits = append(f.hits, kind)
-}
-
 func TestTrafficUploadPack(t *testing.T) {
 	for _, secret := range []string{"", "reader-secret"} {
 		t.Run(secret, func(t *testing.T) {
-			f := &trafficRecorder{}
+			f := mocks.NewTrafficRecorder(t)
+			f.EXPECT().Hit(mock.Anything, domain.TrafficClone, mock.Anything, mock.Anything, mock.Anything).Once()
 			rig := newRig(t, func(c *githttp.Config) { c.Traffic = f })
 			rig.do(t, "GET", "/pub/info/refs?service=git-upload-pack", "", secret, nil, nil)
-			require.Empty(t, f.hits)
+			f.AssertNumberOfCalls(t, "Hit", 0)
 			rig.do(t, "POST", "/pub/git-upload-pack", "", secret, strings.NewReader("0000"), nil)
-			require.Equal(t, []domain.TrafficKind{domain.TrafficClone}, f.hits)
+			f.AssertNumberOfCalls(t, "Hit", 1)
 			rig.do(t, "POST", "/missing/git-upload-pack", "", secret, strings.NewReader("0000"), nil)
-			require.Len(t, f.hits, 1)
+			f.AssertNumberOfCalls(t, "Hit", 1)
 		})
 	}
 }

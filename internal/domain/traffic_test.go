@@ -58,3 +58,17 @@ func TestReferrerDomainValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestReferrerDomainURLLengthBoundary(t *testing.T) {
+	const prefix = "https://example.com/"
+	for _, size := range []int{2048, 2049} {
+		ref := prefix + strings.Repeat("x", size-len(prefix))
+		want := "example.com"
+		if size > 2048 {
+			want = ""
+		}
+		if got := ReferrerDomain(ref, ""); got != want {
+			t.Errorf("ReferrerDomain with %d bytes = %q, want %q", len(ref), got, want)
+		}
+	}
+}

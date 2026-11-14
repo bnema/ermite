@@ -83,6 +83,9 @@ func TestFixture(t *testing.T) {
 		uniques += bucket.ViewUniques
 		clones += bucket.Clones
 		bots += bucket.Bots
+		if bucket.Clones > 0 && bucket.CloneUniques == 0 {
+			t.Fatalf("clones without unique visitors on %s", bucket.Start)
+		}
 		if bucket.CloneUniques > clonePool {
 			t.Fatalf("%d clone uniques on %s, pool is %d", bucket.CloneUniques, bucket.Start, clonePool)
 		}
