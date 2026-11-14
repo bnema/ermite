@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/netip"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -448,4 +449,37 @@ type DepsService interface {
 	// Queue returns the dependency run queue: its counts and its order
 	// (domain.DepsQueueOrder).
 	Queue(ctx context.Context, p domain.Principal) (DepsQueue, []domain.DepsQueueEntry, error)
+}
+
+// TrafficRecorder collects repository visits without blocking.
+type TrafficRecorder interface {
+	Hit(domain.RepoName, domain.TrafficKind, netip.Addr, string, string)
+}
+
+// TrafficDailyReader supplies daily unique visitors, oldest first including today.
+// Separate from the recorder so recording-only integrations remain valid.
+type TrafficDailyReader interface {
+	RepoDaily(context.Context, domain.RepoName, int) ([]uint64, error)
+}
+
+// TrafficSummaryReader supplies the repository's last 30 days of traffic.
+// Separate from the recorder so recording-only integrations remain valid.
+type TrafficSummaryReader interface {
+	RepoSummary(context.Context, domain.RepoName) (domain.TrafficCounts, error)
+}
+
+// TrafficForgeReader supplies owner-only traffic across the forge.
+type TrafficForgeReader interface {
+	Forge(context.Context, time.Duration) (TrafficForge, error)
+}
+
+// TrafficService records hits and reads repository and forge traffic.
+// *usecase.Traffic implements it; lifecycle management stays in the composition root.
+type TrafficService interface {
+	TrafficRecorder
+	TrafficDailyReader
+	TrafficSummaryReader
+	TrafficForgeReader
+	RepoHourly(ctx context.Context, repo domain.RepoName) ([]domain.TrafficBucket, error)
+	RepoTraffic(ctx context.Context, repo domain.RepoName, window time.Duration) (TrafficReport, error)
 }

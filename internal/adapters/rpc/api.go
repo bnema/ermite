@@ -16,7 +16,6 @@ import (
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
-	"bnema.dev/ermite/internal/usecase"
 	"bnema.dev/zerowrap"
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -59,7 +58,7 @@ type Config struct {
 	Auth    ports.AuthService
 	Repos   ports.RepoService
 	// Traffic serves repository traffic when set; nil answers unimplemented.
-	Traffic *usecase.Traffic
+	Traffic ports.TrafficService
 	Tokens  ports.TokenService
 	Browse  ports.BrowseService
 	Events  ports.EventService

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
-	"bnema.dev/ermite/internal/usecase"
+	"bnema.dev/ermite/internal/ports"
 )
 
 var trafficRanges = []struct {
@@ -24,7 +24,7 @@ type InboxTrafficView struct {
 	Ranges    []InboxNavLink
 	Totals    domain.TrafficCounts
 	Repos     []domain.TrafficSummary
-	Referrers []usecase.TrafficReferrer
+	Referrers []ports.TrafficReferrer
 }
 
 func (s *Server) inboxTraffic(ctx context.Context, rng int) (*InboxTrafficView, error) {

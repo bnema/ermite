@@ -13,7 +13,6 @@ import (
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
-	"bnema.dev/ermite/internal/usecase"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -21,12 +20,12 @@ import (
 
 type inboxTrafficReader struct {
 	trafficRecorder
-	data    usecase.TrafficForge
+	data    ports.TrafficForge
 	windows []time.Duration
 	err     error
 }
 
-func (f *inboxTrafficReader) Forge(_ context.Context, window time.Duration) (usecase.TrafficForge, error) {
+func (f *inboxTrafficReader) Forge(_ context.Context, window time.Duration) (ports.TrafficForge, error) {
 	f.windows = append(f.windows, window)
 	return f.data, f.err
 }
@@ -38,13 +37,13 @@ func TestInboxTraffic(t *testing.T) {
 			svc := mocks.NewInboxService(t)
 			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil)
 			srv := inboxServer(t, svc)
-			f := &inboxTrafficReader{data: usecase.TrafficForge{
+			f := &inboxTrafficReader{data: ports.TrafficForge{
 				Totals: domain.TrafficCounts{Views: 1204, ViewUniques: 312, Clones: 87, CloneUniques: 14, Bots: 9},
 				Repos: []domain.TrafficSummary{
 					{Repo: repoName(t, "alpha"), TrafficCounts: domain.TrafficCounts{Views: 3, ViewUniques: 2, Clones: 1, CloneUniques: 1, Bots: 1}},
 					{Repo: repoName(t, "beta"), TrafficCounts: domain.TrafficCounts{Views: 1, ViewUniques: 1, Clones: 20, CloneUniques: 12, Bots: 8}},
 				},
-				Referrers: []usecase.TrafficReferrer{{Domain: "example.org", Count: 42}, {Domain: "<untrusted>", Count: 1}},
+				Referrers: []ports.TrafficReferrer{{Domain: "example.org", Count: 42}, {Domain: "<untrusted>", Count: 1}},
 			}}
 			srv.cfg.Traffic = f
 			path := inboxPath + "?tab=traffic&range=" + rng

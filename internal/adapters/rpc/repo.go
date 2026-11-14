@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"bnema.dev/ermite/internal/usecase"
 	"connectrpc.com/connect/v2"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
@@ -18,7 +17,7 @@ import (
 // repoService implements ermiteconnect.RepoServiceHandler.
 type repoService struct {
 	repos   ports.RepoService
-	traffic *usecase.Traffic
+	traffic ports.TrafficService
 }
 
 func (s *repoService) GetRepoTraffic(ctx context.Context, req *pb.GetRepoTrafficRequest) (*pb.GetRepoTrafficResponse, error) {

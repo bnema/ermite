@@ -28,6 +28,8 @@ type TrafficConfig struct {
 	BatchSize  int
 }
 
+var _ ports.TrafficService = (*Traffic)(nil)
+
 // Traffic records best-effort hits without storing IPs or persistent salts.
 // Run must be called once, normally in a goroutine. Close stops admission,
 // drains queued hits and waits for Run. Storage failures are logged, not retried.
@@ -196,19 +198,6 @@ func (t *Traffic) Close(ctx context.Context) {
 	<-t.done
 }
 
-// TrafficReferrer is a domain-only referral count.
-type TrafficReferrer struct {
-	Domain string
-	Count  uint64
-}
-
-// TrafficForge contains ranked repository rows, totals and top referrers.
-type TrafficForge struct {
-	Repos     []domain.TrafficSummary
-	Totals    domain.TrafficCounts
-	Referrers []TrafficReferrer
-}
-
 func addTraffic(a *domain.TrafficCounts, b domain.TrafficCounts) {
 	a.Views += b.Views
 	a.ViewUniques += b.ViewUniques
@@ -279,30 +268,30 @@ func (t *Traffic) RepoHourly(ctx context.Context, repo domain.RepoName) ([]domai
 // Exactly 24h uses the current and preceding 23 hourly buckets. Other windows
 // use daily buckets covering the window. Referrers always use covering daily
 // buckets, so 24h referrals have coarser time resolution than hourly counts.
-func (t *Traffic) Forge(ctx context.Context, window time.Duration) (TrafficForge, error) {
+func (t *Traffic) Forge(ctx context.Context, window time.Duration) (ports.TrafficForge, error) {
 	if window <= 0 || window > 90*24*time.Hour {
-		return TrafficForge{}, domain.ErrInvalid
+		return ports.TrafficForge{}, domain.ErrInvalid
 	}
 	days := int((window-1)/(24*time.Hour)) + 1
 	from, to := t.dayWindow(days)
 	daily, err := t.cfg.Store.Summaries(ctx, from, to)
 	if err != nil {
-		return TrafficForge{}, err
+		return ports.TrafficForge{}, err
 	}
 	rows := daily
 	if window == 24*time.Hour {
 		end := t.cfg.Clock.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 		rows, err = t.cfg.Store.HourlySummaries(ctx, end.Add(-24*time.Hour), end)
 		if err != nil {
-			return TrafficForge{}, err
+			return ports.TrafficForge{}, err
 		}
 		// Hourly counts can cross two UTC days; referrals cover both days.
 		daily, err = t.cfg.Store.Summaries(ctx, end.Add(-24*time.Hour).Truncate(24*time.Hour), to)
 		if err != nil {
-			return TrafficForge{}, err
+			return ports.TrafficForge{}, err
 		}
 	}
-	result := TrafficForge{Repos: rows}
+	result := ports.TrafficForge{Repos: rows}
 	refs := map[string]uint64{}
 	for _, r := range daily {
 		for host, n := range r.Referrers {
@@ -320,7 +309,7 @@ func (t *Traffic) Forge(ctx context.Context, window time.Duration) (TrafficForge
 		return a.Views+a.Clones > b.Views+b.Clones
 	})
 	for host, n := range refs {
-		result.Referrers = append(result.Referrers, TrafficReferrer{Domain: host, Count: n})
+		result.Referrers = append(result.Referrers, ports.TrafficReferrer{Domain: host, Count: n})
 	}
 	sort.Slice(result.Referrers, func(i, j int) bool {
 		a, b := result.Referrers[i], result.Referrers[j]
