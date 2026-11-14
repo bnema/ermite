@@ -28,6 +28,8 @@ git clone https://git.example.com/<repo>.git        # public: no credentials
 git push https://git.example.com/<repo>.git main    # password = token, username ignored
 ```
 
+Check repository usage with `ermite repo traffic <repo> [--range 24h|30d] --json` (default 30d); referrers always cover 30 days.
+
 Pushing to a missing name creates a private repository (`repo:write`). Names: lowercase `[a-z0-9._-]`, 1-100 chars. Private repos need `repo:read`. A token with `--branch-prefix agent/x/` may push only `refs/heads/agent/x/…`: work there and open a merge request.
 
 ## Review a merge request

@@ -23,6 +23,7 @@ Order: `ERMITE_URL` / `ERMITE_TOKEN` env, then `url` / `token.cmd` in `~/.config
 |---|---|---|
 | `repo list [--json]` | none | public + private you can read |
 | `repo show <name> [--json]` | none | |
+| `repo traffic <repo> [--range 24h\|30d] [--json]` | public: none; private: `repo:read` | default 30d; UTC hourly/daily series, including the current bucket; top 10 referrers always cover 30d |
 | `repo create <name> [--description T] [--topics a,b] [--visibility public\|private]` | `repo:write` | private by default; names `[a-z0-9._-]`, 1-100 |
 | `repo edit <name> [flags]` | `repo:admin` | only given flags change |
 | `repo delete <name> [-y]` | `repo:admin` | without `-y`, type the name; moved to server trash, no undelete |
@@ -37,6 +38,8 @@ Order: `ERMITE_URL` / `ERMITE_TOKEN` env, then `url` / `token.cmd` in `~/.config
 - `--archived[=false]` (`repos.archived` feature): read-only. Blocks pushes, MR/issue writes, merges, release writes, dispatches, reruns and crons; reads and closing still work.
 
 JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before first push), `merge_modes`, `allow_auto_merge`, `ci_auto_cancel`, `issues`, `archived`, `languages` (array of `name`, `bytes`, `percent`; `[]` when unknown; `repos.languages` feature), `languages_truncated` (true when the tree was only partly read).
+
+Traffic human output shows views/clones with unique totals, a date/hour table, and referrers. A partial-count warning marks incomplete totals. Traffic JSON: `totals` (`views`, `view_uniques`, `clones`, `clone_uniques`, `partial`), `points` (`start` as RFC 3339 UTC, `counts` with the same count fields), `referrers` (`domain`, `count`). Points are zero-filled, oldest first; empty arrays are `[]`.
 
 Languages come from the default branch head, computed in the background (may lag a push): file extensions only; vendored, generated and docs paths are excluded; files over 1 MiB are skipped; only the first 100,000 files in tree order are read (`repo show` then appends ` (partial)`); `.gitattributes` linguist attributes are ignored. `repo show` prints the top 5.
 
