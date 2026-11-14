@@ -22,6 +22,12 @@ type TrafficDailyReader interface {
 	RepoDaily(context.Context, domain.RepoName, int) ([]uint64, error)
 }
 
+// TrafficSummaryReader supplies the repository's last 30 days of traffic.
+// Separate from the recorder so recording-only integrations remain valid.
+type TrafficSummaryReader interface {
+	RepoSummary(context.Context, domain.RepoName) (domain.TrafficCounts, error)
+}
+
 // recordView runs only after HTML rendering and conditional-cache handling.
 // Match registered routes, not URL prefixes: fragments and downloads must not
 // become views when new routes are added underneath a repository page.

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a-h/templ"
 	"bnema.dev/zerowrap"
+	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -68,7 +68,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	}
 
 	p.License = s.repositoryLicense(ctx, d.repo.Name, d.head.CommitID.String())
-	p.Facts = s.facts(d, now)
+	p.Facts = append(s.facts(d, now), s.summaryTraffic(ctx, d.repo.Name)...)
 	p.Latest = s.latest(ctx, d)
 	p.Release = s.summaryRelease(ctx, d.repo.Name, now)
 	p.Actions = s.recentActions(ctx, d.repo.Name, now)
@@ -117,6 +117,25 @@ func (s *Server) facts(d *repoData, now time.Time) []Fact {
 		fs = append(fs, Fact{Key: "created", Val: absolute(c), Time: rfc3339(c)})
 	}
 	return fs
+}
+
+// summaryTraffic adds optional traffic facts after the repository access check.
+// An unavailable reader must not prevent repository browsing.
+func (s *Server) summaryTraffic(ctx context.Context, repo domain.RepoName) []Fact {
+	traffic, ok := s.cfg.Traffic.(TrafficSummaryReader)
+	if !ok {
+		return nil
+	}
+	counts, err := traffic.RepoSummary(ctx, repo)
+	if err != nil {
+		log := zerowrap.FromCtx(ctx)
+		log.Warn().Err(err).Str("repo", repo.String()).Msg("read the traffic of the summary rail")
+		return nil
+	}
+	return []Fact{
+		{Key: "views (30d)", Val: grouped(int(counts.Views)) + " · " + grouped(int(counts.ViewUniques)) + " unique"},
+		{Key: "clones (30d)", Val: grouped(int(counts.Clones)) + " · " + grouped(int(counts.CloneUniques)) + " unique"},
+	}
 }
 
 // lastPushFact is the "last push" fact of a repository; the live updates
