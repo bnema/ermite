@@ -66,7 +66,7 @@ test('keyboard days update an associated polite status; pointer moves stay silen
   assert.equal(status.className, 'sr');
   assert.equal(status.getAttribute('aria-live'), 'polite');
   assert.equal(hint.textContent, 'Use left and right arrow keys to read each day');
-  assert.equal(fig.getAttribute('aria-describedby'), `existing ${hint.id} ${status.id}`);
+  assert.equal(fig.getAttribute('aria-describedby'), `existing ${hint.id}`);
   assert.equal(fig.tabIndex, 0);
   assert.equal(status.textContent, '');
   pointer(0);
@@ -77,6 +77,10 @@ test('keyboard days update an associated polite status; pointer moves stay silen
   assert.equal(status.textContent, `${date}: 14 commits, 37 visitors`);
   key('ArrowLeft');
   assert.equal(status.textContent, `${date}: 14 commits, 37 visitors`);
+  key('Escape');
+  assert.equal(status.textContent, '');
+  pointer(0);
+  assert.equal(status.textContent, '');
 });
 
 test('same-day pointer movement preserves tooltip content and positions once per frame', () => {

@@ -919,6 +919,8 @@
   const hide = () => {
     cancelAnimationFrame(frame); frame = 0;
     bubble?.remove(); guide?.remove();
+    const status = statuses.get(active);
+    if (status) status.textContent = '';
     active = bubble = guide = null;
   };
   const upgradeFigure = (el) => {
@@ -932,7 +934,7 @@
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('aria-atomic', 'true');
     statuses.set(el, status);
-    el.setAttribute('aria-describedby', [el.getAttribute('aria-describedby'), hint.id, status.id].filter(Boolean).join(' '));
+    el.setAttribute('aria-describedby', [el.getAttribute('aria-describedby'), hint.id].filter(Boolean).join(' '));
     el.append(hint, status);
   };
   const upgrade = (root) => {
@@ -982,13 +984,17 @@
       guide.setAttribute('aria-hidden', 'true');
       el.querySelector('svg').append(guide);
     }
+    let label;
+    if (changed || keyboard) {
+      const date = new Date(el.dataset.end + 'T00:00:00Z');
+      date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
+      label = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    }
     if (changed) {
       const gx = day / (commits.length - 1) * Number(el.dataset.endX);
       guide.setAttribute('x1', gx); guide.setAttribute('x2', gx);
-      const date = new Date(el.dataset.end + 'T00:00:00Z');
-      date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
       const heading = document.createElement('div');
-      heading.textContent = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      heading.textContent = label;
       bubble.replaceChildren(heading);
       const row = (kind, value) => {
         const line = document.createElement('div');
@@ -1001,9 +1007,6 @@
       if (visitors) row('visitors', visitors[day]);
     }
     if (keyboard) {
-      const date = new Date(el.dataset.end + 'T00:00:00Z');
-      date.setUTCDate(date.getUTCDate() - (commits.length - 1 - day));
-      const label = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
       const text = label + ': ' + commits[day] + ' commits' + (visitors ? ', ' + visitors[day] + ' visitors' : '');
       const status = statuses.get(el);
       if (status && status.textContent !== text) status.textContent = text;
