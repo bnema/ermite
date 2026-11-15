@@ -1091,8 +1091,9 @@ window.ermiteLive = (() => {
   // browser refuses the focus there.
   const shown = (e) => !e.closest('[hidden]') && (!e.checkVisibility || e.checkVisibility());
   // keepOpen copies the disclosure state of old (a [data-keep-open] element)
-  // onto el, its fresh copy: the rows (li with an id) whose details were open
-  // stay open, those the user closed stay closed. The menus (details.menu) are
+  // onto el, its fresh copy: the rows (li with an id) and the details with an
+  // id whose details were open stay open, those the user closed stay closed.
+  // The menus (details.menu) are
   // not kept; it returns the id of the "more" summary (<li id>-more) of the
   // row whose open menu held the focus, or ''.
   const keepOpen = (old, el) => {
@@ -1109,6 +1110,12 @@ window.ermiteLive = (() => {
       if (li?.tagName !== 'LI' || !li.id) continue;
       const same = twin(li);
       if (!same) continue;
+      if (d.hasAttribute('open')) same.setAttribute('open', '');
+      else same.removeAttribute('open');
+    }
+    for (const d of old.querySelectorAll('details[id]:not(.menu)')) {
+      const same = el.id === d.id ? el : el.querySelector('#' + CSS.escape(d.id));
+      if (same?.tagName !== 'DETAILS') continue;
       if (d.hasAttribute('open')) same.setAttribute('open', '');
       else same.removeAttribute('open');
     }
