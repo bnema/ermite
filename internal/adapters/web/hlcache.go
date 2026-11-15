@@ -12,6 +12,9 @@ import (
 // KB of code weighs about 50 KB there, so it holds a few hundred of them.
 const hlCacheBytes = 8 << 20
 
+// codeCacheBytes is the separate budget for highlighted blob HTML.
+const codeCacheBytes = 32 << 20
+
 // hlCache keeps the colours of the files of diffs (hlData), least recently
 // used out first, within a budget of bytes. A key names the blobs the colours
 // come from (diffKey), so an entry is right for every visitor and every

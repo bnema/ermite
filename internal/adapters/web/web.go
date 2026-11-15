@@ -152,8 +152,10 @@ type Server struct {
 	// licenses holds small display results, including missing licenses.
 	licenses *pathCache
 	// hl holds the colours of highlighted diffs.
-	hl  *hlCache
-	mux *http.ServeMux
+	hl *hlCache
+	// code holds highlighted blob HTML, separately budgeted from diffs.
+	code *lruCache[codeView]
+	mux  *http.ServeMux
 	// ownerRepo is the owner login as a repository name, zero when it is not
 	// a valid one (then no repository can be named like the owner).
 	ownerRepo domain.RepoName
@@ -190,7 +192,10 @@ func New(cfg Config) (*Server, error) {
 		pathCache: newPathCache(pathCacheBytes, pathBuilds),
 		licenses:  newPathCache(1<<20, homeWorkers),
 		hl:        newHLCache(hlCacheBytes),
-		origin:    originOf(u),
+		code: newLRUCache(codeCacheBytes,
+			func(v codeView) int { return len(v.html) },
+			func(v codeView) bool { return v.lang != "" }),
+		origin: originOf(u),
 	}
 	s.ownerRepo, _ = domain.ParseRepoName(cfg.Owner)
 	s.mux = s.routes()

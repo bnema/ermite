@@ -18,6 +18,8 @@ import (
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
+
+	"bnema.dev/ermite/internal/domain"
 )
 
 // codeView is a source file ready for the code view: one <span class="line"> per
@@ -29,6 +31,28 @@ type codeView struct {
 	// lang is the name of the language the file was highlighted as, "" for
 	// plain text.
 	lang string
+}
+
+// codeViewOf is the code view of text, the content of blob id at name,
+// cached by the blob (codeKey). The caller has already authorized the read.
+func (s *Server) codeViewOf(ctx context.Context, id domain.ObjectID, name, text string) codeView {
+	cv := s.code.load(ctx, codeKey(id, name, text), func() codeView {
+		return highlightCtx(context.WithoutCancel(ctx), name, text)
+	})
+	if cv.html == "" { // a waiter whose request ended
+		return highlightPlain(text)
+	}
+	return cv
+}
+
+// codeKey names the content, base name and view length (full or truncated).
+// The lexer depends only on the base name; keying it avoids a lexer lookup.
+// Unknown blobs are not cached. Plain results are not kept by the cache.
+func codeKey(id domain.ObjectID, name, text string) string {
+	if id.IsZero() {
+		return ""
+	}
+	return "b\x00" + path.Base(name) + "\x00" + id.String() + "\x00" + strconv.Itoa(len(text))
 }
 
 // highlight renders src, the content of the file name, for the code view.

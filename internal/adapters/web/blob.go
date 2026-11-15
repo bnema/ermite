@@ -165,7 +165,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 			text = firstLines(text, maxViewLines)
 			p.Notice = fmt.Sprintf("%d lines: showing the first %d. use raw for the rest.", lines, maxViewLines)
 		}
-		cv := highlightCtx(ctx, t.path, text)
+		cv := s.codeViewOf(ctx, b.info.ID, t.path, text)
 		p.Code, p.HasCode, lang = cv.html, true, cv.lang
 		if isMarkdown(name) && size <= maxRenderBytes {
 			h, outline, err := s.md.render(src, d.name(), t.name, dir)
