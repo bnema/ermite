@@ -22,13 +22,19 @@ ermite serve
 | Variable | Default | Notes |
 |---|---|---|
 | `ERMITE_ADDR` | `:7341` | listen address |
-| `ERMITE_TRUSTED_PROXIES` | empty | comma-separated CIDRs of your TLS proxy, so login rate limits see the real client (`X-Forwarded-For`) |
+| `ERMITE_TRUSTED_PROXIES` | empty | comma-separated CIDRs of your TLS proxy, so login rate limits see the real client (`X-Forwarded-For`). The entry `self` stands for this host's own addresses (see [trusted proxies](#trusted-proxies)) |
 | `ERMITE_OWNER` | `owner` | owner login: web header, passkey name, and `<owner>` in CI (`github.repository`). Same rules as repository names |
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |
 | `ERMITE_VIDEO_HOSTS` | `github.com,user-images.githubusercontent.com,private-user-images.githubusercontent.com,github-production-user-asset-6210df.s3.amazonaws.com` | comma-separated exact external video hostnames, replacing the defaults; no URLs, wildcards or ports. The S3 host receives GitHub user-attachment redirects. |
 | `ERMITE_ROBOTS_TXT_FILE` | empty | file served as `/robots.txt` instead of the default, read once at startup. A missing, unreadable, empty or over 500 KiB file stops startup. See below |
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
+
+### Trusted proxies
+
+ermite reads the client address from `X-Forwarded-For` only when the TCP peer is in `ERMITE_TRUSTED_PROXIES`: the right-most entry that is not itself a trusted proxy. The proxy must append the address it saw, never pass the client's header on.
+
+`self` expands once, at startup, to the addresses of this host's interfaces that are up, loopback included, link-local excluded. Use it when the proxy connects from inside ermite's network namespace, as rootless Podman port forwarding does: other containers on the network keep their own address and stay untrusted. Every process that can connect from one of these addresses can then choose its client address, so do not use `self` on a host that runs untrusted local processes. An address change needs a restart.
 
 ### `/robots.txt`
 

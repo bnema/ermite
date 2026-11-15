@@ -752,18 +752,81 @@ func parseURL(raw string, allowPath bool) (string, error) {
 	return strings.TrimSuffix(u.String(), "/"), nil
 }
 
+// interfaceAddrs returns addresses only from interfaces that are up.
+var interfaceAddrs = upInterfaceAddrs
+
+func upInterfaceAddrs() ([]net.Addr, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var out []net.Addr
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, addrs...)
+	}
+	return out, nil
+}
+
+func selfPrefixes() ([]netip.Prefix, error) {
+	addrs, err := interfaceAddrs()
+	if err != nil {
+		return nil, fmt.Errorf("resolve self: %w", err)
+	}
+	var out []netip.Prefix
+	for _, addr := range addrs {
+		p, err := netip.ParsePrefix(addr.String())
+		if err != nil {
+			return nil, fmt.Errorf("resolve self address %q: %w", addr, err)
+		}
+		ip := p.Addr().Unmap()
+		if (!ip.IsGlobalUnicast() && !ip.IsLoopback()) || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		out = append(out, netip.PrefixFrom(ip, ip.BitLen()))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("self resolves to no eligible host addresses")
+	}
+	return out, nil
+}
+
 func parseCIDRs(raw string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
+	seen := make(map[netip.Prefix]bool)
+	add := func(p netip.Prefix) {
+		p = p.Masked()
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
 	for part := range strings.SplitSeq(raw, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			return nil, fmt.Errorf("empty entry in the comma-separated list")
 		}
+		if part == "self" {
+			prefixes, err := selfPrefixes()
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range prefixes {
+				add(p)
+			}
+			continue
+		}
 		p, err := netip.ParsePrefix(part)
 		if err != nil {
-			return nil, fmt.Errorf("%q is not a CIDR such as 10.0.0.0/8 or fd00::/8", part)
+			return nil, fmt.Errorf("%q is not self or a CIDR such as 10.0.0.0/8 or fd00::/8", part)
 		}
-		out = append(out, p.Masked())
+		add(p)
 	}
 	return out, nil
 }
