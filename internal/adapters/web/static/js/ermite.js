@@ -1113,9 +1113,11 @@ window.ermiteLive = (() => {
       if (d.hasAttribute('open')) same.setAttribute('open', '');
       else same.removeAttribute('open');
     }
-    for (const d of old.querySelectorAll('details[id]:not(.menu)')) {
-      const same = el.id === d.id ? el : el.querySelector('#' + CSS.escape(d.id));
-      if (same?.tagName !== 'DETAILS') continue;
+    const fresh = [el, ...el.querySelectorAll('details[id]')];
+    for (const d of old.querySelectorAll('details[id]')) {
+      if (d.matches('.menu')) continue;
+      const same = fresh.find((e) => e.tagName === 'DETAILS' && e.id === d.id);
+      if (!same) continue;
       if (d.hasAttribute('open')) same.setAttribute('open', '');
       else same.removeAttribute('open');
     }
