@@ -29,49 +29,67 @@ const hlCacheBytes = 8 << 20
 // out most of the others).
 //
 // A nil *hlCache is a valid one that keeps nothing.
-type hlCache struct {
-	mu     sync.Mutex
-	budget int
-	size   int
-	lru    *list.List // of *hlEntry, most recently used first
-	byKey  map[string]*list.Element
-	flight map[string]*hlFlight
+type hlCache struct{ *lruCache[*hlData] }
+
+func newHLCache(budget int) *hlCache {
+	return &hlCache{newLRUCache(budget,
+		func(d *hlData) int { return d.size() },
+		func(d *hlData) bool { return d != nil })}
 }
 
-type hlEntry struct {
+func (c *hlCache) cache() *lruCache[*hlData] {
+	if c == nil {
+		return nil
+	}
+	return c.lruCache
+}
+
+// lruCache keeps valid values within a byte budget, sharing concurrent builds.
+// A nil cache keeps nothing. Entries over a quarter of the budget are not kept.
+type lruCache[V any] struct {
+	mu           sync.Mutex
+	budget, size int
+	weigh        func(V) int
+	valid        func(V) bool
+	lru          *list.List // of *lruEntry[V], most recently used first
+	byKey        map[string]*list.Element
+	flight       map[string]*lruFlight[V]
+}
+
+type lruEntry[V any] struct {
 	key  string
-	data *hlData
+	data V
 	size int
 }
 
-// hlFlight is a lexing in progress; done is closed when data is set.
-type hlFlight struct {
+// lruFlight is a build in progress; done is closed when data is set.
+type lruFlight[V any] struct {
 	done    chan struct{}
-	data    *hlData
-	waiters int // callers that joined it, for the tests; guarded by hlCache.mu
+	data    V
+	waiters int // callers that joined it, for the tests; guarded by lruCache.mu
 }
 
-func newHLCache(budget int) *hlCache {
-	return &hlCache{
-		budget: budget, lru: list.New(),
-		byKey: map[string]*list.Element{}, flight: map[string]*hlFlight{},
+func newLRUCache[V any](budget int, weigh func(V) int, valid func(V) bool) *lruCache[V] {
+	return &lruCache[V]{
+		budget: budget, weigh: weigh, valid: valid, lru: list.New(),
+		byKey: map[string]*list.Element{}, flight: map[string]*lruFlight[V]{},
 	}
 }
 
 // entrySize is what an entry weighs against the budget: its data and its key.
 func entrySize(key string, d *hlData) int { return d.size() + len(key) + 64 }
 
-// load returns the colours under key: cached, or from build, which runs once
+// load returns the value under key: cached, or from build, which runs once
 // however many callers ask at the same time, in the goroutine of the first.
-// build returns nil for no colours. An empty key is not cached: build runs.
-func (c *hlCache) load(ctx context.Context, key string, build func() *hlData) *hlData {
+// Invalid values are not kept. An empty key is not cached: build runs.
+func (c *lruCache[V]) load(ctx context.Context, key string, build func() V) V {
 	if c == nil || key == "" {
 		return build()
 	}
 	c.mu.Lock()
 	if el, ok := c.byKey[key]; ok {
 		c.lru.MoveToFront(el)
-		d := el.Value.(*hlEntry).data
+		d := el.Value.(*lruEntry[V]).data
 		c.mu.Unlock()
 		return d
 	}
@@ -82,10 +100,11 @@ func (c *hlCache) load(ctx context.Context, key string, build func() *hlData) *h
 		case <-f.done:
 			return f.data
 		case <-ctx.Done():
-			return nil
+			var zero V
+			return zero
 		}
 	}
-	f := &hlFlight{done: make(chan struct{})}
+	f := &lruFlight[V]{done: make(chan struct{})}
 	c.flight[key] = f
 	c.mu.Unlock()
 
@@ -94,7 +113,7 @@ func (c *hlCache) load(ctx context.Context, key string, build func() *hlData) *h
 	defer func() {
 		c.mu.Lock()
 		delete(c.flight, key)
-		if f.data != nil {
+		if c.valid(f.data) {
 			c.putLocked(key, f.data)
 		}
 		c.mu.Unlock()
@@ -104,25 +123,25 @@ func (c *hlCache) load(ctx context.Context, key string, build func() *hlData) *h
 	return f.data
 }
 
-// putLocked stores colours, evicting the least recently used ones to stay in
-// budget. Colours over a quarter of the budget are not stored.
-func (c *hlCache) putLocked(key string, d *hlData) {
-	n := entrySize(key, d)
+// putLocked stores a value, evicting the least recently used ones to stay in
+// budget. Values over a quarter of the budget are not stored.
+func (c *lruCache[V]) putLocked(key string, d V) {
+	n := c.weigh(d) + len(key) + 64
 	if n > c.budget/4 {
 		return
 	}
 	if el, ok := c.byKey[key]; ok {
-		e := el.Value.(*hlEntry)
+		e := el.Value.(*lruEntry[V])
 		c.size += n - e.size
 		e.data, e.size = d, n
 		c.lru.MoveToFront(el)
 	} else {
-		c.byKey[key] = c.lru.PushFront(&hlEntry{key: key, data: d, size: n})
+		c.byKey[key] = c.lru.PushFront(&lruEntry[V]{key: key, data: d, size: n})
 		c.size += n
 	}
 	for c.size > c.budget {
 		el := c.lru.Back()
-		e := el.Value.(*hlEntry)
+		e := el.Value.(*lruEntry[V])
 		c.lru.Remove(el)
 		delete(c.byKey, e.key)
 		c.size -= e.size

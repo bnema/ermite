@@ -96,7 +96,7 @@ func TestHLCacheEvictsByBytes(t *testing.T) {
 	// the sum of the sizes of the entries is what is counted
 	sum := 0
 	for _, el := range c.byKey {
-		sum += el.Value.(*hlEntry).size
+		sum += el.Value.(*lruEntry[*hlData]).size
 	}
 	assert.Equal(t, sum, c.size)
 
@@ -123,7 +123,7 @@ func TestHLCacheNotKept(t *testing.T) {
 	n := 0
 	build := func() *hlData { n++; return nil }
 	var nilCache *hlCache
-	nilCache.load(ctx, "k", build)
+	nilCache.cache().load(ctx, "k", build)
 	newHLCache(1<<20).load(ctx, "", build)
 	c := newHLCache(1 << 20)
 	c.load(ctx, "k", build)

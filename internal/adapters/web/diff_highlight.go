@@ -467,7 +467,7 @@ func (c *hlCache) files(ctx context.Context, files []domain.FileDiff) []DiffFile
 		if lx == nil {
 			continue
 		}
-		d := c.load(ctx, diffKey(lx.Config().Name, f), func() *hlData {
+		d := c.cache().load(ctx, diffKey(lx.Config().Name, f), func() *hlData {
 			if size > left {
 				return nil
 			}
@@ -518,7 +518,7 @@ func (c *hlCache) highlightContext(ctx context.Context, blob, name string, lines
 	defer cancel()
 	bctx, bcancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 	defer bcancel()
-	d := c.load(ctx, key, func() *hlData {
+	d := c.cache().load(ctx, key, func() *hlData {
 		release, ok := lexingSlot()
 		if !ok {
 			return nil
