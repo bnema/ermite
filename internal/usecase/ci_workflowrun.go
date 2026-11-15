@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -82,13 +81,11 @@ func (c *CI) runEventLoop() {
 func (c *CI) planRunEvent(e runEvent) {
 	ctx := zerowrap.WithCtx(c.ctx, e.log)
 	defer func() {
-		if r := recover(); r != nil {
-			e.log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Int64("run_id", e.run.ID).Msg("ci workflow_run panicked")
-		}
 		if c.cfg.RunEventHandled != nil {
 			c.cfg.RunEventHandled(e.run.ID, e.action)
 		}
 	}()
+	defer logPanic(e.log.WithField("run_id", e.run.ID), "ci workflow_run panicked")
 	if err := c.handleRunEvent(ctx, e); err != nil && ctx.Err() == nil {
 		e.log.Error().Err(err).Int64("run_id", e.run.ID).Str("action", e.action).Msg("ci workflow_run failed")
 	}

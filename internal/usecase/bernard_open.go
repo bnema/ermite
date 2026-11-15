@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/mod/semver"
+
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -192,11 +193,7 @@ var _ ports.CIHold = (*Bernard)(nil)
 // the head Bernard wrote. Bernard's own writes publish no PushEvent.
 func (b *Bernard) onPush(e domain.PushEvent) {
 	ctx := b.ctx
-	defer func() {
-		if r := recover(); r != nil {
-			ctxLog(ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("bernard: push event panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(ctx), "bernard: push event panicked")
 	var branches []string
 	for _, u := range e.Updates {
 		branch, ok := strings.CutPrefix(u.Ref, "refs/heads/")
@@ -1172,11 +1169,7 @@ func (b *Bernard) reconcileMergeRequests() {
 func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 	ctx := b.ctx
 	log := ctxLog(ctx)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("bernard: merge request event panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(ctx), "bernard: merge request event panicked")
 	defer b.repoLock(mr.Repo)()
 	d, err := b.cfg.Store.Get(ctx, mr.Repo)
 	if err != nil {

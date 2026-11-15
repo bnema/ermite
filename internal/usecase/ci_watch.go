@@ -5,9 +5,10 @@ package usecase
 import (
 	"context"
 	"errors"
-	"runtime/debug"
 	"strconv"
 	"time"
+
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -79,11 +80,7 @@ func (c *CI) watchdog() {
 
 // guard runs fn and logs a panic instead of letting it end the worker.
 func (c *CI) guard(what string, fn func()) {
-	defer func() {
-		if r := recover(); r != nil {
-			ctxLog(c.ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("worker", what).Msg("ci worker panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(c.ctx).WithField("worker", what), "ci worker panicked")
 	fn()
 }
 

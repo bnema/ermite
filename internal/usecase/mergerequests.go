@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -1297,13 +1296,7 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	m.after.Add(1)
 	go func() {
 		defer m.after.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				log := zerowrap.FromCtx(bg)
-				log.Error().Str("repo", name.String()).Int64("number", number).
-					Str("panic", fmt.Sprint(r)).Bytes("stack", debug.Stack()).Msg("post-merge side effects panicked")
-			}
-		}()
+		defer logPanic(zerowrap.FromCtx(bg).WithField("repo", name.String()).WithField("number", number), "post-merge side effects panicked")
 		if m.afterGate != nil {
 			m.afterGate()
 		}

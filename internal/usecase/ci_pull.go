@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -655,11 +654,7 @@ func (c *CI) refreshLoop() {
 // guardPull runs fn; a panic or an error is logged and never escapes.
 func (c *CI) guardPull(log zerowrap.Logger, repo domain.RepoName, fn func(context.Context) error) {
 	ctx := zerowrap.WithCtx(c.ctx, log)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", repo.String()).Msg("ci pull request work panicked")
-		}
-	}()
+	defer logPanic(log.WithField("repo", repo.String()), "ci pull request work panicked")
 	if err := fn(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, errPullClosed) {
 		log.Error().Err(err).Str("repo", repo.String()).Msg("ci pull request work failed")
 	}

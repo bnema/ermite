@@ -6,9 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"slices"
 	"time"
+
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -55,11 +56,7 @@ func (b *Bernard) queueLoop() {
 // commit of server-side updates); a Drafted batch starts its run when a slot
 // is free. Steps run one at a time, so a slot is never given twice.
 func (b *Bernard) drain(ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			ctxLog(ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("bernard: the queue panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(ctx), "bernard: the queue panicked")
 	b.drainMu.Lock()
 	defer b.drainMu.Unlock()
 	type step struct {

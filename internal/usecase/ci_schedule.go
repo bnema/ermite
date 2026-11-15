@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -220,11 +219,7 @@ func (c *CI) scheduleLoop() {
 
 func (c *CI) guardSchedule(fn func(context.Context)) {
 	log := zerowrap.FromCtx(c.ctx)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("ci scheduler panicked")
-		}
-	}()
+	defer logPanic(log, "ci scheduler panicked")
 	fn(c.ctx)
 }
 

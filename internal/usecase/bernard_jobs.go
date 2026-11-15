@@ -8,12 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -198,11 +199,7 @@ func (b *Bernard) reconcileRuns(ctx context.Context, grace time.Duration) {
 // (the log is on the run). A run the record left (the owner closed the merge
 // request meanwhile) is dropped. It implements ports.DepsRunObserver.
 func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
-	defer func() {
-		if r := recover(); r != nil {
-			ctxLog(ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", run.Repo.String()).Msg("bernard: a dependency run panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(ctx).WithField("repo", run.Repo.String()), "bernard: a dependency run panicked")
 	b.mu.Lock()
 	closed := b.closed
 	b.mu.Unlock()

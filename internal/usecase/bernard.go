@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -214,11 +215,7 @@ func (b *Bernard) loop() {
 // tests.
 func (b *Bernard) ScheduleNow(ctx context.Context) {
 	log := ctxLog(ctx)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("bernard scheduler panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(ctx), "bernard scheduler panicked")
 	b.runMu.Lock()
 	defer b.runMu.Unlock()
 	minute := b.cfg.Clock.Now().UTC().Truncate(time.Minute)

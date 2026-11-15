@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -165,11 +164,7 @@ func (c *CI) triggerLoop() {
 func (c *CI) planPush(t ciTrigger) {
 	ctx := zerowrap.WithCtx(c.ctx, t.log)
 	defer t.done()
-	defer func() {
-		if r := recover(); r != nil {
-			t.log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", t.repo.String()).Msg("ci trigger panicked")
-		}
-	}()
+	defer logPanic(t.log.WithField("repo", t.repo.String()), "ci trigger panicked")
 	if err := c.handlePush(ctx, t); err != nil && ctx.Err() == nil {
 		t.log.Error().Err(err).Str("repo", t.repo.String()).Msg("ci trigger failed")
 	}

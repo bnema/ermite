@@ -6,9 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"sync"
 	"time"
+
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -181,11 +182,7 @@ func (l *Languages) loop() {
 func (l *Languages) runJob(repo domain.RepoName) {
 	ctx, cancel := context.WithTimeout(l.ctx, languagesJobTimeout)
 	defer cancel()
-	defer func() {
-		if r := recover(); r != nil {
-			ctxLog(ctx).Error().Str("repo", repo.String()).Str("panic", fmt.Sprint(r)).Bytes("stack", debug.Stack()).Msg("languages: job panicked")
-		}
-	}()
+	defer logPanic(zerowrap.FromCtx(ctx).WithField("repo", repo.String()), "languages: job panicked")
 	if err := l.compute(ctx, repo); err != nil && l.ctx.Err() == nil && !errors.Is(err, domain.ErrNotFound) {
 		ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Msg("languages: count the languages")
 	}
