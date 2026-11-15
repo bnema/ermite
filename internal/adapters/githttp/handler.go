@@ -132,9 +132,11 @@ const (
 
 // Handler serves the smart HTTP routes of Patterns.
 type Handler struct {
-	cfg     Config
-	limiter ports.FailureLimiter
-	maxBody int64
+	cfg             Config
+	limiter         ports.FailureLimiter
+	maxBody         int64
+	clientRefusals  *refusalLog
+	serviceRefusals *refusalLog
 
 	upload, receive chan struct{} // slots of the backends, per service
 
@@ -157,6 +159,8 @@ func New(cfg Config) *Handler {
 	h.receive = make(chan struct{}, cmp.Or(cfg.MaxReceivePacks, max(2, procs/2)))
 	h.perCli = cmp.Or(cfg.MaxPerClient, DefaultMaxPerClient)
 	h.clients = make(map[string]int)
+	h.clientRefusals = &refusalLog{now: time.Now, interval: refusalLogInterval, seen: make(map[string]*refusalEntry)}
+	h.serviceRefusals = &refusalLog{now: time.Now, interval: refusalLogInterval, seen: make(map[string]*refusalEntry)}
 	return h
 }
 
@@ -381,7 +385,9 @@ func (h *Handler) acquire(ctx context.Context, w http.ResponseWriter, rt route, 
 	h.mu.Lock()
 	if h.clients[client] >= h.perCli {
 		h.mu.Unlock()
-		logger.Warn().Str("client", client).Msg("too many git requests in progress for the client")
+		if ok, n := h.clientRefusals.allow(client); ok {
+			logger.Warn().Str("client", client).Int("refused_since_last_log", n).Msg("too many git requests in progress for the client")
+		}
 		refuse(http.StatusTooManyRequests, "too many requests in progress")
 		return nil, false
 	}
@@ -404,7 +410,9 @@ func (h *Handler) acquire(ctx context.Context, w http.ResponseWriter, rt route, 
 		return func() { <-slots; releaseClient() }, true
 	default:
 		releaseClient()
-		logger.Warn().Str("service", rt.service).Msg("all git backends busy, request refused")
+		if ok, n := h.serviceRefusals.allow(rt.service); ok {
+			logger.Warn().Str("service", rt.service).Int("refused_since_last_log", n).Msg("all git backends busy, request refused")
+		}
 		refuse(http.StatusServiceUnavailable, "server busy")
 		return nil, false
 	}
