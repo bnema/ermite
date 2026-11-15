@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -116,10 +117,42 @@ type InboxPage struct {
 type JournalView struct {
 	Ranges     []InboxNavLink
 	RangeLabel string // "24 hours" or "7 days", for the empty state
-	Unreleased []UnreleasedRow
+	Unreleased []UnreleasedGroup
 	Rows       []JournalRow
 	// Truncated tells that the window held more than the rows shown.
 	Truncated bool
+}
+
+const (
+	releaseDueCommits  = 10
+	releaseSoonCommits = 3
+	releaseOldTagAge   = 30 * 24 * time.Hour
+)
+
+type UnreleasedGroup struct {
+	Key, Label string
+	Rows       []UnreleasedRow
+	Open       bool
+}
+
+func (j JournalView) unreleasedCount() int {
+	n := 0
+	for _, g := range j.Unreleased {
+		n += len(g.Rows)
+	}
+	return n
+}
+
+func unreleasedLevel(d domain.TagDistance, now time.Time) string {
+	old := d.Tag.Name != "" && !d.Tag.At.IsZero() && now.Sub(d.Tag.At) > releaseOldTagAge
+	switch {
+	case d.More || d.Commits >= releaseDueCommits || (old && d.Commits >= releaseSoonCommits):
+		return "due"
+	case d.Commits >= releaseSoonCommits || old:
+		return "soon"
+	default:
+		return "later"
+	}
 }
 
 // UnreleasedRow is a repository whose default branch is ahead of its nearest
@@ -202,7 +235,29 @@ func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 		}
 		v.Ranges = append(v.Ranges, InboxNavLink{Label: r.label, Href: href + "#inbox-journal", Current: i == rng})
 	}
-	for _, u := range j.Unreleased {
+	groups := []UnreleasedGroup{
+		{Key: "due", Label: "Release due", Open: true},
+		{Key: "soon", Label: "Soon", Open: true},
+		{Key: "later", Label: "Nothing urgent"},
+	}
+	unreleased := append([]ports.UnreleasedRepo(nil), j.Unreleased...)
+	sort.Slice(unreleased, func(i, k int) bool {
+		a, b := unreleased[i], unreleased[k]
+		at, bt := a.Distance.Tag.At, b.Distance.Tag.At
+		ak := a.Distance.Tag.Name != "" && !at.IsZero()
+		bk := b.Distance.Tag.Name != "" && !bt.IsZero()
+		if ak != bk {
+			return ak
+		}
+		if ak && !at.Equal(bt) {
+			return at.Before(bt)
+		}
+		if a.Distance.Commits != b.Distance.Commits {
+			return a.Distance.Commits > b.Distance.Commits
+		}
+		return a.Repo.String() < b.Repo.String()
+	})
+	for _, u := range unreleased {
 		repo := u.Repo.String()
 		n := itoa(u.Distance.Commits)
 		if u.Distance.More {
@@ -218,12 +273,26 @@ func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 		}
 		if t := u.Distance.Tag; t.Name != "" {
 			row.Tag, row.TagHref = visibleText(t.Name), repoHref(repo, "tree", t.Name)
-			row.When, row.WhenAt = whenOf(now, t.At)
+			_, row.WhenAt = whenOf(now, t.At)
 			if !t.At.IsZero() {
 				row.Title = absolute(t.At)
+				row.When = itoa(max(0, int(now.Sub(t.At)/(24*time.Hour)))) + "d"
 			}
 		}
-		v.Unreleased = append(v.Unreleased, row)
+		if row.When == "" {
+			row.When = "—"
+		}
+		for i := range groups {
+			if groups[i].Key == unreleasedLevel(u.Distance, now) {
+				groups[i].Rows = append(groups[i].Rows, row)
+				break
+			}
+		}
+	}
+	for _, g := range groups {
+		if len(g.Rows) > 0 {
+			v.Unreleased = append(v.Unreleased, g)
+		}
 	}
 	for _, e := range j.Entries {
 		v.Rows = append(v.Rows, journalRow(now, e))
@@ -409,7 +478,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 	}{
 		{"deps", "Deps Updates", p.DepsUpdates},
 		{"work", "Open Issues & Merge Requests", p.MergeRequests + p.Issues},
-		{"activity", "Activity", len(p.Runs) + len(p.Journal.Rows) + len(p.Journal.Unreleased)},
+		{"activity", "Activity", len(p.Runs) + len(p.Journal.Rows) + p.Journal.unreleasedCount()},
 		{"moderation", "Awaiting Moderation", p.PendingCount},
 	} {
 		p.Tabs = append(p.Tabs, InboxNavLink{Label: t.label + " (" + itoa(t.count) + ")", Href: inboxHref(t.key, rng), Current: t.key == tab})

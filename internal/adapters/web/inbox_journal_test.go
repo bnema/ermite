@@ -81,7 +81,9 @@ func TestInboxJournalTable(t *testing.T) {
 	assert.Contains(t, sec, `<a class="u-repo" href="/ermite-api">ermite-api</a>`)
 	assert.Contains(t, sec, `href="/ermite-api/commits/main">4 commits</a>`)
 	assert.Contains(t, sec, `<span class="dim">since</span> <a class="u-tag" href="/ermite-api/tree/v0.12.0">v0.12.0</a>`)
-	assert.Contains(t, sec, "3d ago")
+	assert.Contains(t, sec, ">3d</time>")
+	assert.Contains(t, sec, `data-level="due" open`)
+	assert.Contains(t, sec, `data-level="soon" open`)
 	assert.Contains(t, sec, `href="/big/commits/trunk">500+ commits</a>`)
 	assert.Contains(t, sec, "since the last tag", "no tag met within the limit")
 	assert.NotContains(t, sec, "card")
@@ -196,4 +198,65 @@ func TestInboxJournalLive(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, none)
 	assert.True(t, liveEvent(ports.WatchEvent{Event: domain.JournalUpdated{}}))
+}
+
+func TestJournalUnreleasedUrgency(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name                   string
+		commits, days          int
+		more, unknown, unnamed bool
+		want                   string
+	}{
+		{name: "ten", commits: 10, want: "due"},
+		{name: "nine", commits: 9, want: "soon"},
+		{name: "three-old", commits: 3, days: 31, want: "due"},
+		{name: "two-old", commits: 2, days: 31, want: "soon"},
+		{name: "exact-thirty", commits: 3, days: 30, want: "soon"},
+		{name: "three", commits: 3, want: "soon"},
+		{name: "two", commits: 2, want: "later"},
+		{name: "capped", commits: 1, more: true, want: "due"},
+		{name: "unknown", commits: 2, unknown: true, want: "later"},
+		{name: "unnamed", commits: 2, days: 31, unnamed: true, want: "later"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tag := domain.TagInfo{Name: "v1", At: now.Add(-time.Duration(tc.days) * 24 * time.Hour)}
+			if tc.unknown {
+				tag.At = time.Time{}
+			}
+			if tc.unnamed {
+				tag.Name = ""
+			}
+			assert.Equal(t, tc.want, unreleasedLevel(domain.TagDistance{Commits: tc.commits, More: tc.more, Tag: tag}, now))
+		})
+	}
+	svc := mocks.NewInboxService(t)
+	srv := journalServer(t, svc)
+	srv.cfg.Now = func() time.Time { return now }
+	j := ports.InboxJournal{}
+	for _, tc := range []struct {
+		name          string
+		commits, days int
+	}{
+		{"unknown", 12, -1}, {"zeta", 10, 31}, {"beta", 11, 31}, {"alpha", 11, 31}, {"oldest", 10, 40}, {"soon", 3, 1}, {"later", 1, 1},
+	} {
+		tag := domain.TagInfo{Name: "v1", At: now.Add(-time.Duration(tc.days) * 24 * time.Hour)}
+		if tc.days < 0 {
+			tag.At = time.Time{}
+		}
+		j.Unreleased = append(j.Unreleased, ports.UnreleasedRepo{Repo: repoName(t, tc.name), Branch: "main", Distance: domain.TagDistance{Commits: tc.commits, Tag: tag}})
+	}
+	v := srv.journalView(j, 0)
+	require.Len(t, v.Unreleased, 3)
+	assert.Equal(t, 7, v.unreleasedCount())
+	for i, key := range []string{"due", "soon", "later"} {
+		assert.Equal(t, key, v.Unreleased[i].Key)
+		assert.Equal(t, i != 2, v.Unreleased[i].Open)
+	}
+	var names []string
+	for _, row := range v.Unreleased[0].Rows {
+		names = append(names, row.Repo)
+	}
+	assert.Equal(t, []string{"oldest", "alpha", "beta", "zeta", "unknown"}, names)
+	assert.Equal(t, "unknown", j.Unreleased[0].Repo.String(), "input order is preserved")
 }

@@ -67,25 +67,26 @@ templ InboxJournal(p InboxPage) {
 				}
 			</nav>
 		</div>
-		if len(j.Unreleased) > 0 {
-			<ul class="unreleased" aria-label="Unreleased commits">
-				for _, u := range j.Unreleased {
-					<li>
-						<span class="u-mark" aria-hidden="true">⚠</span>
-						<a class="u-repo" href={ templ.SafeURL(u.RepoHref) }>{ u.Repo }</a>
-						<span class="mute">—</span>
-						<a class="num" href={ templ.SafeURL(u.CommitsHref) }>{ u.Commits }</a>
-						if u.Tag != "" {
-							<span class="dim">since</span> <a class="u-tag" href={ templ.SafeURL(u.TagHref) }>{ u.Tag }</a>
-							if u.WhenAt != "" {
-								<span class="mute">·</span> <time class="dim" datetime={ u.WhenAt } title={ u.Title }>{ u.When }</time>
+		for _, group := range j.Unreleased {
+			<details class="unreleased-group" data-level={ group.Key } open?={ group.Open }>
+				<summary>{ group.Label } <span class="num">{ itoa(len(group.Rows)) }</span></summary>
+				<ul class="unreleased" aria-label="Unreleased commits">
+					for _, u := range group.Rows {
+						<li>
+							<time class="u-age dim" datetime={ u.WhenAt } title={ u.Title }>{ u.When }</time>
+							<span class="u-mark" aria-hidden="true">⚠</span>
+							<a class="u-repo" href={ templ.SafeURL(u.RepoHref) }>{ u.Repo }</a>
+							<span class="mute">—</span>
+							<a class="num" href={ templ.SafeURL(u.CommitsHref) }>{ u.Commits }</a>
+							if u.Tag != "" {
+								<span class="dim">since</span> <a class="u-tag" href={ templ.SafeURL(u.TagHref) }>{ u.Tag }</a>
+							} else {
+								<span class="dim">since the last tag</span>
 							}
-						} else {
-							<span class="dim">since the last tag</span>
-						}
-					</li>
-				}
-			</ul>
+						</li>
+					}
+				</ul>
+			</details>
 		}
 		if len(j.Rows) > 0 {
 			<table class="list journal-list" aria-label="Activity">

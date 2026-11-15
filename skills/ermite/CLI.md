@@ -298,4 +298,4 @@ Passkeys need an https (or localhost) public URL with a host name, not an IP; ot
 
 Full list: `docs/configuration.md` in the ermite repo.
 
-The owner’s web inbox (`/-/inbox`) uses `?tab=deps|work|activity|moderation`; absent or unknown tabs show open issues and merge requests (`work`). Tabs cover all repositories. Activity includes queued/running CI, journal entries and unreleased-commit notices; its journal window is `?range=24h|7d` (default `24h`).
+The owner’s web inbox (`/-/inbox`) uses `?tab=deps|work|activity|moderation`; absent or unknown tabs show open issues and merge requests (`work`). Tabs cover all repositories. Activity includes queued/running CI, journal entries and unreleased-commit notices; unreleased notices group by release urgency (Release due, Soon, collapsed Nothing urgent), oldest known tags first within each group; its journal window is `?range=24h|7d` (default `24h`).

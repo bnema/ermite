@@ -539,7 +539,13 @@
     & .unreleased li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
     & .unreleased a { text-decoration: none; }
     & .unreleased a:hover { text-decoration: underline; }
-    & .u-mark { color: var(--red); }
+    & .unreleased-group { margin-top: var(--s3); --urgency: var(--ink-mute); }
+    & .unreleased-group[data-level="due"] { --urgency: var(--red); }
+    & .unreleased-group[data-level="soon"] { --urgency: light-dark(#805b00, #d9ad50); }
+    & .unreleased-group summary { cursor: pointer; font-size: var(--fs-s); font-weight: 600; color: var(--urgency); }
+    & .unreleased-group summary .num { margin-left: var(--s2); }
+    & .u-age { flex: 0 0 5ch; text-align: right; font-variant-numeric: tabular-nums; }
+    & .u-mark { color: var(--urgency); }
     & .u-repo { color: var(--ink-hi); font-weight: 600; }
     & .u-tag, & .j-ref { font-family: var(--mono); font-size: var(--fs-s); }
     & .journal-more { margin-top: var(--s2); font-size: var(--fs-s); }
