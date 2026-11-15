@@ -131,3 +131,21 @@ jobs:
         run: |
           docker run --rm ermite:ci version | tee /dev/stderr | grep -qF "ermite $(git describe --tags --always --dirty)"
           docker run --rm --entrypoint git ermite:ci --version
+
+  fuzz:
+    name: Fuzz
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Domain parsers
+        run: |
+          listing=$(go test -list '^Fuzz' ./internal/domain/)
+          targets=$(printf '%s\n' "$listing" | grep '^Fuzz')
+          for f in $targets; do
+            go test -run '^$' -fuzz "^${f}\$" -fuzztime 15s ./internal/domain/
+          done
