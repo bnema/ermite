@@ -1167,11 +1167,13 @@ func TestArchiveTokenIsRevokedWithTheJobAfterARestart(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 
 	// Restart: the tokens are in the store, the secrets in memory are gone.
+	// The new server counts the deadline from its boot: keep it long enough for
+	// the first request to land before it on a loaded runner.
 	cfg, hookExe := c.forge.cfg, binary(t)
 	c.srv.Close()
 	c.forge.Close(c.ctx)
 	f2, err := newForge(c.ctx, cfg, options{hookExe: hookExe, remoteLister: newFakeRemote(t).m, ci: func(cc *usecase.CIConfig) {
-		cc.HeartbeatDeadline, cc.Tick = 600*time.Millisecond, 20*time.Millisecond
+		cc.HeartbeatDeadline, cc.Tick = 3*time.Second, 20*time.Millisecond
 	}})
 	require.NoError(t, err)
 	t.Cleanup(func() { f2.Close(context.WithoutCancel(c.ctx)) })
@@ -1190,7 +1192,7 @@ func TestArchiveTokenIsRevokedWithTheJobAfterARestart(t *testing.T) {
 
 	// The runner is gone: the heartbeat deadline of the new server passes, the
 	// job is lost and its tokens with it.
-	require.Eventually(t, func() bool { return get(arch) == http.StatusUnauthorized }, 10*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { return get(arch) == http.StatusUnauthorized }, 15*time.Second, 50*time.Millisecond)
 	assert.Equal(t, http.StatusUnauthorized, get(job.GetGithubToken()), "the job's own token as well")
 	api := newClients(srv.URL+"/-/api", adminToken)
 	res, err := api.run.GetRun(c.ctx, &pb.GetRunRequest{Repo: "proj", RunId: job.GetRunId()})
