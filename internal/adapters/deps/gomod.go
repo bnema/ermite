@@ -179,7 +179,7 @@ func moduleDir(p string) string {
 
 // Detect reads requirements, skipping replaced and unresolvable modules.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter parses module syntax and resolves versions through the registry port; update policy stays in domain.PickUpdate
+//hexcheck:ignore suspicious-business-logic-in-adapter parses module syntax and resolves versions through the registry port; update policy stays in domain.PickUpdates
 func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
 	var out []domain.DepCandidate
 	for _, p := range filePaths(files) {
@@ -225,7 +225,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 				return nil, nil, err
 			}
 			// Indirect requirements are not imported: a new major path
-			// would never be used.
+			// would never be used. PickUpdates drops their in-place majors.
 			var paths []string
 			if !r.Indirect {
 				paths, err = reg.GoMajorPaths(ctx, r.Mod.Path)
@@ -246,7 +246,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 				}
 				versions = append(versions, more...)
 			}
-			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective})
+			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective, Indirect: r.Indirect})
 		}
 	}
 	return out, nil, nil
