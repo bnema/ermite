@@ -130,7 +130,7 @@
     & .pulse-stop-bottom { stop-color: var(--teal); stop-opacity: 0; }
     & .pulse-line { fill: none; stroke: var(--teal); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
     /* the visitors per day under the curve: one cell a day, darker with more */
-    & .repo-pulse svg.pulse-strip { display: block; width: 100%; height: 6px; margin-top: var(--s1); border-radius: 2px; }
+    & .repo-pulse svg.pulse-strip { display: block; width: 100%; height: 6px; margin-top: var(--s1); border-radius: 2px; overflow: hidden; }
     & .pulse-strip rect { fill: var(--rose); }
     & .pulse-strip rect.none { fill: var(--border); }
     & .pulse-dot { fill: var(--teal); stroke: var(--bg-surface); stroke-width: 1.5; }

@@ -231,7 +231,7 @@ func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, n
 		pulse := *hs.Pulse // cached curves are shared and immutable
 		pulse.End = s.cfg.Now().UTC().Format("2006-01-02")
 		hs.Pulse = &pulse
-		if pulse.Strip != nil {
+		if pulse.Visitors {
 			hs.Visitors = grouped(int(min(pulse.RecentVisitors, math.MaxInt)))
 		}
 	}

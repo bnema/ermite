@@ -19,8 +19,10 @@ type Heartbeat struct {
 	// DaysCommits and DaysVisitors are raw comma-separated daily counts.
 	// End is set on a row-local copy, not on the cached curve.
 	DaysCommits, DaysVisitors, End string
+	// Visitors is set when the row has visitor data.
+	Visitors bool
 	// Strip is the daily unique visitors as a heat band under the curve, one
-	// cell a day; nil without visitor data.
+	// cell a day with visitors.
 	Strip []StripCell
 	// RecentVisitors sums the daily unique visitors of the last 30 days.
 	RecentVisitors uint64
@@ -161,18 +163,19 @@ func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint
 	h = heartbeatOf(id, days, partial)
 	if daily != nil {
 		var total uint64
-		for _, d := range daily {
+		for i, d := range daily {
 			total += d
+			if i >= len(daily)-recentDays {
+				h.RecentVisitors += d
+			}
 		}
 		raw := make([]string, len(daily))
 		for i, d := range daily {
 			raw[i] = strconv.FormatUint(d, 10)
 		}
 		h.DaysVisitors = strings.Join(raw, ",")
+		h.Visitors = true
 		h.Strip = stripOf(daily)
-		for _, d := range daily[max(len(daily)-recentDays, 0):] {
-			h.RecentVisitors += d
-		}
 		h.Label = strings.Replace(h.Label, " in the last ", ", "+strconv.FormatUint(total, 10)+" visitors in the last ", 1)
 	}
 	c.mu.Lock()
@@ -187,9 +190,9 @@ func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint
 // recentDays is the window of the recent figures of a row.
 const recentDays = 30
 
-// StripCell is one day of the visitor strip, in the units of the curve: X and
-// W place it under its day, Level is its fill opacity ("" for a day without
-// visitors).
+// StripCell is a day of the visitor strip, in the units of the curve: X and W
+// place it under its day, Level is its fill opacity. Days without visitors
+// have no cell: the background of the strip shows.
 type StripCell struct {
 	X, W, Level string
 }
@@ -204,16 +207,24 @@ func stripOf(daily []uint64) []StripCell {
 	}
 	peak := slices.Max(daily)
 	w := heartbeatEndX / float64(n-1)
-	cells := make([]StripCell, n)
-	for i, d := range daily {
-		// rounded ends, shared by neighbours: no seam between two cells
-		x0 := math.Round(max(float64(i)*w-w/2, 0)*10) / 10
-		x1 := math.Round(min(float64(i)*w+w/2, heartbeatW)*10) / 10
-		c := StripCell{X: num(x0), W: num(x1 - x0)}
-		if d > 0 {
-			c.Level = strconv.FormatFloat(0.15+0.85*float64(d)/float64(peak), 'f', 2, 64)
+	// edge k is between days k-1 and k, rounded once: neighbours share it,
+	// so no seam; the last cell runs to the end of the box
+	edge := func(k int) float64 {
+		if k == n {
+			return heartbeatW
 		}
-		cells[i] = c
+		return math.Round(max(float64(k)*w-w/2, 0)*10) / 10
+	}
+	var cells []StripCell
+	for i, d := range daily {
+		if d == 0 {
+			continue
+		}
+		x0, x1 := edge(i), edge(i+1)
+		cells = append(cells, StripCell{
+			X: num(x0), W: num(x1 - x0),
+			Level: strconv.FormatFloat(0.15+0.85*float64(d)/float64(peak), 'f', 2, 64),
+		})
 	}
 	return cells
 }

@@ -86,36 +86,45 @@ func TestPulseVisitors(t *testing.T) {
 	days := make([]int, 90)
 	days[89] = 2
 	visitors := make([]uint64, 90)
-	visitors[10], visitors[89] = 30, 4
+	visitors[10], visitors[59], visitors[60], visitors[89] = 30, 100, 1000, 4
 	h := c.get("proj", days, false, visitors)
-	assert.Equal(t, "Activity: 2 commits, 34 visitors in the last 90 days", h.Label)
+	assert.Equal(t, "Activity: 2 commits, 1134 visitors in the last 90 days", h.Label)
 	assert.Equal(t, stripOf(visitors), h.Strip)
-	assert.Equal(t, uint64(4), h.RecentVisitors, "only the last 30 days")
+	assert.True(t, h.Visitors)
+	assert.Equal(t, uint64(1004), h.RecentVisitors, "only the last 30 days")
 	assert.Same(t, h, c.get("proj", days, false, visitors))
 	visitors[89]++
 	assert.NotSame(t, h, c.get("proj", days, false, visitors))
-	assert.Nil(t, c.get("proj", days, false).Strip)
-	assert.Nil(t, c.get("proj", days, false, visitors[:89]).Strip, "misaligned data is omitted")
+	assert.False(t, c.get("proj", days, false).Visitors)
+	assert.False(t, c.get("proj", days, false, visitors[:89]).Visitors, "misaligned data is omitted")
 }
 
 func TestStripOf(t *testing.T) {
 	t.Parallel()
 	assert.Nil(t, stripOf([]uint64{5}))
 	cells := stripOf([]uint64{0, 1, 50, 100})
-	require.Len(t, cells, 4)
-	assert.Equal(t, StripCell{X: "0", W: "98.3"}, cells[0], "a quiet day has no level")
-	assert.Equal(t, "0.16", cells[1].Level, "one visitor is faint but seen")
-	assert.Equal(t, "0.57", cells[2].Level)
-	assert.Equal(t, "1.00", cells[3].Level, "the busiest day of the row")
-	for i := 1; i < len(cells); i++ {
-		end, _ := strconv.ParseFloat(cells[i-1].X, 64)
-		w, _ := strconv.ParseFloat(cells[i-1].W, 64)
-		start, _ := strconv.ParseFloat(cells[i].X, 64)
-		assert.InDelta(t, start, end+w, 1e-9, "no seam between cells")
+	require.Len(t, cells, 3, "a quiet day has no cell")
+	assert.Equal(t, StripCell{X: "98.3", W: "196.7", Level: "0.16"}, cells[0], "one visitor is faint but seen")
+	assert.Equal(t, "0.57", cells[1].Level)
+	assert.Equal(t, "1.00", cells[2].Level, "the busiest day of the row")
+	at := func(s string) float64 {
+		f, err := strconv.ParseFloat(s, 64)
+		require.NoError(t, err)
+		return f
 	}
-	last, _ := strconv.ParseFloat(cells[3].X, 64)
-	lw, _ := strconv.ParseFloat(cells[3].W, 64)
-	assert.LessOrEqual(t, last+lw, heartbeatW)
+	for _, n := range []int{2, 13, 90, 365} {
+		daily := make([]uint64, n)
+		for i := range daily {
+			daily[i] = 1
+		}
+		cells := stripOf(daily)
+		require.Len(t, cells, n)
+		assert.Zero(t, at(cells[0].X))
+		for i := 1; i < n; i++ {
+			assert.InDelta(t, at(cells[i].X), at(cells[i-1].X)+at(cells[i-1].W), 1e-9, "no seam: n=%d, cell %d", n, i)
+		}
+		assert.InDelta(t, heartbeatW, at(cells[n-1].X)+at(cells[n-1].W), 1e-9, "to the end of the box: n=%d", n)
+	}
 }
 
 func TestPulseMarkup(t *testing.T) {

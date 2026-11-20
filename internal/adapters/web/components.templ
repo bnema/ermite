@@ -152,14 +152,11 @@ templ pulse(h *Heartbeat) {
 			<path class="pulse-line" d={ h.Line } vector-effect="non-scaling-stroke"></path>
 			<circle class="pulse-dot" cx={ h.X } cy={ h.Y } r="3.5"></circle>
 		</svg>
-		if len(h.Strip) > 0 {
-			<svg class="pulse-strip" viewBox="0 0 600 1" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+		if h.Visitors {
+			<svg class="pulse-strip" viewBox="0 0 600 1" preserveAspectRatio="none" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+				<rect class="none" width="600" height="1"></rect>
 				for _, c := range h.Strip {
-					if c.Level != "" {
-						<rect x={ c.X } width={ c.W } height="1" fill-opacity={ c.Level }></rect>
-					} else {
-						<rect class="none" x={ c.X } width={ c.W } height="1"></rect>
-					}
+					<rect x={ c.X } width={ c.W } height="1" fill-opacity={ c.Level }></rect>
 				}
 			</svg>
 		}
