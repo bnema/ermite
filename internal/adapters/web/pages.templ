@@ -8,7 +8,7 @@ import "fmt"
 templ Home(l Layout, p HomePage) {
 	@Shell(l, nil) {
 		<h1 class="sr">Repositories</h1>
-		<div class="home" data-layout="cards">
+		<div class="home" data-layout="cards" data-traffic?={ p.Traffic }>
 			<section class="home-repos" aria-label="Repositories">
 				<div class="home-bar">
 					<div class="filter">

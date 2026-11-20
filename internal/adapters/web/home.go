@@ -104,7 +104,8 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	sortRepos(repos, key, desc)
 
 	now := s.cfg.Now()
-	p := HomePage{Sort: key, Desc: desc}
+	_, traffic := s.cfg.Traffic.(TrafficDailyReader)
+	p := HomePage{Sort: key, Desc: desc, Traffic: traffic}
 	for _, c := range homeSorts {
 		sl := SortLink{Label: c.label}
 		next := "asc"

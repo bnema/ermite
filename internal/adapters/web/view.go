@@ -154,6 +154,9 @@ type HomePage struct {
 	Desc  bool
 	Sorts []SortLink
 	Rows  []HomeRow
+	// Traffic is set when the rows draw visitors: a row without a pulse keeps
+	// the room of the visitor strip too.
+	Traffic bool
 }
 
 // InboxButton is the link to the inbox with the number of open items; Count is

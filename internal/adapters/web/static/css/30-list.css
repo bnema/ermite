@@ -245,6 +245,11 @@
     .home[data-layout="split"] .repos { grid-template-columns: minmax(0, 1fr); }
   }
 
+  /* with traffic, a row without a pulse keeps the room of the visitor strip
+     too (its height and its margin, per layout; compact draws none) */
+  .home[data-traffic][data-layout="cards"] div.repo-pulse { padding-bottom: calc(var(--s1) + 6px); }
+  .home[data-traffic][data-layout="split"] div.repo-pulse { height: 18px; }
+
   /* compact: a line per repository. Name, description, figures, CI mark and
      a small pulse sit in one grid row; the commits and topics are left out.
      The rows share the columns of the list (subgrid): the name column is as

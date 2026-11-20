@@ -494,6 +494,22 @@ func TestReleaseEventsRefreshTheHomeRow(t *testing.T) {
 	}
 }
 
+// With traffic, the page says so: a row without a pulse keeps the room of
+// the visitor strip.
+func TestHomeMarksTraffic(t *testing.T) {
+	t.Parallel()
+	browse := homeBrowse(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+	traffic := mocks.NewTrafficService(t)
+	traffic.EXPECT().RepoDaily(mock.Anything, mock.Anything, ports.ActivityDays).Return(make([]uint64, ports.ActivityDays), nil).Maybe()
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Traffic: traffic})
+
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `<div class="home" data-layout="cards" data-traffic>`)
+}
+
 func TestHomeVisitors(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"enabled", "disabled", "failed"} {
