@@ -51,7 +51,7 @@ func newMarkdown(hosts ...string) *markdown {
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(util.Prioritized(altRenderer{}, 100), util.Prioritized(fencedRenderer{}, 100)),
+			renderer.WithNodeRenderers(util.Prioritized(altRenderer{}, 100), util.Prioritized(fencedRenderer{}, 100), util.Prioritized(alertRenderer{}, 100)),
 			// No html.WithUnsafe(): raw HTML blocks and inline tags are dropped.
 			// Table alignment as an align attribute: the CSP forbids style="".
 			extension.WithTableCellAlignMethod(extension.TableCellAlignAttribute),
@@ -114,6 +114,7 @@ func (m *markdown) renderUntrusted(source []byte, idPrefix string, numbers func(
 func (m *markdown) renderPolicy(source []byte, pol linkPolicy, res refResolver) (template.HTML, []Heading, error) {
 	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: pol.idPrefix, inner: parser.NewContext().IDs()}))
 	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
+	alerts(doc, source)
 	pol.source = source
 	pol.videoHosts = m.videoHosts
 	// Collect eligible text before the policy unwraps rejected links: their

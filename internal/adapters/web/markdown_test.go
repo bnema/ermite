@@ -487,3 +487,57 @@ func TestMarkdownUntrustedNoNewReferences(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "<p>f25742a !37</p>\n", string(h))
 }
+
+func TestMarkdownAlerts(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"note", "tip", "important", "warning", "caution"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			out, _ := renderMD(t, "> [!"+strings.ToUpper(kind)+"]\n> Be **careful**.\n> Second line.\n")
+			assert.Contains(t, out, `<div class="md-alert md-alert-`+kind+`" role="note">`)
+			assert.Contains(t, out, `<span class="ico i-alert-`+kind+`" aria-hidden="true"></span>`)
+			assert.Contains(t, out, "<p>Be <strong>careful</strong>.\nSecond line.</p>")
+			assert.NotContains(t, out, "[!")
+			assert.NotContains(t, out, "<blockquote>")
+		})
+	}
+
+	t.Run("lowercase marker and blocks after it", func(t *testing.T) {
+		t.Parallel()
+		out, _ := renderMD(t, "> [!warning]\n>\n> - one\n> - two\n")
+		assert.Contains(t, out, `md-alert-warning`)
+		assert.Contains(t, out, "<li>one</li>")
+	})
+
+	t.Run("marker with trailing spaces", func(t *testing.T) {
+		t.Parallel()
+		out, _ := renderMD(t, "> [!TIP]  \n> text\n")
+		assert.Contains(t, out, `md-alert-tip`)
+		assert.Contains(t, out, "<p>text</p>")
+	})
+
+	t.Run("marker then a block", func(t *testing.T) {
+		t.Parallel()
+		out, _ := renderMD(t, "> [!NOTE]\n>\n> text\n")
+		assert.Contains(t, out, `md-alert-note`)
+		assert.NotContains(t, out, "<p></p>")
+		assert.Contains(t, out, "<p>text</p>")
+	})
+
+	for name, src := range map[string]string{
+		"unknown kind":        "> [!DANGER]\n> text\n",
+		"text on marker line": "> [!NOTE] text\n",
+		"not first line":      "> text\n> [!NOTE]\n",
+		"nested in a list":    "- > [!NOTE]\n  > text\n",
+		"not a quote":         "[!NOTE]\ntext\n",
+		"marker alone":        "> [!NOTE]\n",
+		"marker and blank":    "> [!NOTE]\n>\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			out, _ := renderMD(t, src)
+			assert.NotContains(t, out, "md-alert")
+			assert.Contains(t, out, "[!")
+		})
+	}
+}

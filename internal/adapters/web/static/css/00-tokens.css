@@ -70,6 +70,7 @@
     --teal-2:  light-dark(#355f5f, #5a8585);
     --red:     light-dark(#a8404b, #d96c75);
     --rose:    light-dark(#6b6570, #a7a2a9);
+    --amber:   light-dark(#7a5c10, #d4b062); /* Markdown warnings only */
 
     --syn-plain:   var(--ink);
     --syn-keyword: var(--teal);

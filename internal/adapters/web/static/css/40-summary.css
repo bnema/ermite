@@ -55,6 +55,19 @@
       color: var(--ink-hi);
     }
     & blockquote { padding-left: var(--s4); border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border-strong)); color: var(--ink-dim); }
+    /* GitHub alerts: > [!NOTE], [!TIP], [!IMPORTANT], [!WARNING], [!CAUTION] */
+    & .md-alert {
+      --alert: var(--teal);
+      margin-top: var(--s4); padding: var(--s2) var(--s4);
+      border-left: 3px solid var(--alert); border-radius: 0 var(--r-s) var(--r-s) 0;
+      background: color-mix(in srgb, var(--alert) 7%, transparent);
+      & > .md-alert-title { display: flex; align-items: center; gap: var(--s2); margin-top: 0; font-weight: 600; color: var(--alert); }
+      & > :nth-child(2) { margin-top: var(--s1); }
+    }
+    & .md-alert-tip { --alert: var(--rose); }
+    & .md-alert-important { --alert: var(--ink-hi); }
+    & .md-alert-warning { --alert: var(--amber); }
+    & .md-alert-caution { --alert: var(--red); }
     /* the box fits its columns, and scrolls when they overflow the text */
     & table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-s); font-size: var(--fs-s); line-height: 20px; }
     & th, & td { padding: 6px var(--s3); white-space: nowrap; vertical-align: top; border-top: 1px solid var(--border); }

@@ -39,6 +39,11 @@
   .i-shield-check { --i: url(icons/shield-check.svg); }
   .i-shield-alert { --i: url(icons/shield-alert.svg); }
   .i-shield-x { --i: url(icons/shield-x.svg); }
+  .i-alert-note { --i: url(icons/alert-note.svg); }
+  .i-alert-tip { --i: url(icons/alert-tip.svg); }
+  .i-alert-important { --i: url(icons/alert-important.svg); }
+  .i-alert-warning { --i: url(icons/alert-warning.svg); }
+  .i-alert-caution { --i: url(icons/alert-caution.svg); }
 
   .pill {
     display: inline-flex; align-items: center; height: 18px; padding: 0 var(--s2); margin-left: var(--s1);
