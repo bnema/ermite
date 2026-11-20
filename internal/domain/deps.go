@@ -74,10 +74,6 @@ type DepCandidate struct {
 	Current     string
 	Versions    []DepVersion
 	GoDirective string // go directive of the module in Directory; Go only, empty when absent
-	// Indirect marks a Go "// indirect" requirement. The repository does not
-	// import it, so it gets no major update: only its dependents use it, and
-	// a major would break them.
-	Indirect bool
 }
 
 // GoDirectiveFits reports whether a dependency whose go.mod declares dep can
@@ -195,9 +191,6 @@ func PickUpdates(c DepCandidate, now time.Time, cooldown time.Duration, firstSee
 			continue
 		}
 		if c.Ecosystem == EcosystemActions && floatingMajor(v.Version) != floating {
-			continue
-		}
-		if c.Indirect && semver.Major(v.Version) != semver.Major(c.Current) {
 			continue
 		}
 		if semver.Prerelease(c.Current) == "" && semver.Prerelease(v.Version) != "" {

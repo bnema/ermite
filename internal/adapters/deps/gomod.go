@@ -177,7 +177,7 @@ func moduleDir(p string) string {
 	return d
 }
 
-// Detect reads requirements, skipping replaced and unresolvable modules.
+// Detect reads direct requirements, skipping replaced and unresolvable modules.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses module syntax and resolves versions through the registry port; update policy stays in domain.PickUpdates
 func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
@@ -214,7 +214,10 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			}
 		}
 		for _, r := range f.Require {
-			if replaced[r.Mod.Path] {
+			// Indirect requirements belong to the modules that need them: go get
+			// raises them with their direct parent, and a version the repository
+			// picks on its own can only break that parent.
+			if replaced[r.Mod.Path] || r.Indirect {
 				continue
 			}
 			versions, err := reg.GoVersions(ctx, r.Mod.Path, r.Mod.Version)
@@ -224,14 +227,9 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			if err != nil {
 				return nil, nil, err
 			}
-			// Indirect requirements are not imported: a new major path
-			// would never be used. PickUpdates drops their in-place majors.
-			var paths []string
-			if !r.Indirect {
-				paths, err = reg.GoMajorPaths(ctx, r.Mod.Path)
-				if err != nil {
-					return nil, nil, err
-				}
+			paths, err := reg.GoMajorPaths(ctx, r.Mod.Path)
+			if err != nil {
+				return nil, nil, err
 			}
 			for _, next := range paths {
 				more, err := reg.GoVersions(ctx, next, r.Mod.Version)
@@ -246,7 +244,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 				}
 				versions = append(versions, more...)
 			}
-			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective, Indirect: r.Indirect})
+			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective})
 		}
 	}
 	return out, nil, nil

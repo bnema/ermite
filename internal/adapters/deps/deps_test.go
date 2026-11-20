@@ -49,24 +49,20 @@ func TestGoModDetect(t *testing.T) {
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/a", "v1.0.0").Return([]domain.DepVersion{{Version: "v1.1.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/b/v2", "v2.0.0").Return([]domain.DepVersion{{Version: "v2.1.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "private.org/m", "v1.0.0").Return(nil, domain.ErrNotFound).Once()
-	// No GoMajorPaths for an indirect requirement: it is not imported.
-	reg.EXPECT().GoVersions(mock.Anything, "example.org/ind", "v0.10.0").Return([]domain.DepVersion{{Version: "v0.11.0"}}, nil).Once()
+	// No lookup for example.org/ind: indirect requirements are left alone.
 	files := map[domain.TreePath][]byte{
-		tp(t, "go.mod"):     []byte("module example.org/root\ngo 1.27\nrequire (\nexample.org/a v1.0.0\nexample.org/ind v0.10.0 // indirect\nexample.org/replaced v1.0.0\nprivate.org/m v1.0.0\n)\nreplace example.org/replaced => ../local\n"),
+		tp(t, "go.mod"):     []byte("module example.org/root\ngo 1.27\nrequire (\nexample.org/a v1.0.0\nexample.org/ind v1.0.0 // indirect\nexample.org/replaced v1.0.0\nprivate.org/m v1.0.0\n)\nreplace example.org/replaced => ../local\n"),
 		tp(t, "sub/go.mod"): []byte("module example.org/sub\ngo 1.25.3\nrequire example.org/b/v2 v2.0.0\n"),
 	}
 	got, _, err := (GoMod{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
-	require.Len(t, got, 3)
+	require.Len(t, got, 2)
 	assert.Equal(t, domain.DepVersion{Version: "v2.0.0", Path: "example.org/a/v2"}, got[0].Versions[1])
 	assert.Equal(t, "", got[0].Directory)
-	assert.Equal(t, "example.org/ind", got[1].Name)
-	assert.True(t, got[1].Indirect)
-	assert.False(t, got[0].Indirect)
-	assert.Equal(t, "sub", got[2].Directory)
-	assert.Equal(t, "example.org/b/v2", got[2].Name)
+	assert.Equal(t, "sub", got[1].Directory)
+	assert.Equal(t, "example.org/b/v2", got[1].Name)
 	assert.Equal(t, "1.27", got[0].GoDirective)
-	assert.Equal(t, "1.25.3", got[2].GoDirective, "each candidate carries the go directive of its own module")
+	assert.Equal(t, "1.25.3", got[1].GoDirective, "each candidate carries the go directive of its own module")
 	assert.False(t, (GoMod{}).ApplyInServer())
 	_, err = (GoMod{}).Apply(files, nil)
 	require.Error(t, err)

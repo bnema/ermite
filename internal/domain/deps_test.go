@@ -409,34 +409,6 @@ func TestRepoDepsBase(t *testing.T) {
 	}
 }
 
-func TestPickUpdatesIndirectSkipsMajors(t *testing.T) {
-	now := time.Now()
-	old := now.Add(-time.Hour)
-	for _, tc := range []struct {
-		name, current string
-		indirect      bool
-		want          []string
-	}{
-		{"indirect v0", "v0.10.0", true, []string{"v0.11.0"}},
-		{"indirect pseudo-version", "v0.0.0-20250101000000-abcdefabcdef", true, []string{"v0.11.0"}},
-		{"indirect incompatible", "v2.0.0+incompatible", true, []string{"v2.1.0+incompatible"}},
-		{"direct v0", "v0.10.0", false, []string{"v3.0.0+incompatible", "v2.1.0+incompatible", "v1.0.1", "v0.11.0"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var vs []DepVersion
-			for _, v := range []string{"v0.11.0", "v1.0.1", "v2.1.0+incompatible", "v3.0.0+incompatible"} {
-				vs = append(vs, DepVersion{Version: v, Published: old})
-			}
-			c := DepCandidate{Ecosystem: EcosystemGoMod, Name: "example.org/ind", Current: tc.current, Indirect: tc.indirect, Versions: vs}
-			var got []string
-			for _, u := range PickUpdates(c, now, 0, nil, nil) {
-				got = append(got, u.Version)
-			}
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 func TestPickUpdatesPathMajor(t *testing.T) {
 	now := time.Now()
 	for _, path := range []string{"", "example.com/pkg", "example.com/pkg/v2"} {
