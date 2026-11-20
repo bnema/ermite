@@ -123,6 +123,9 @@ type HomeStats struct {
 	// Tag is the latest tag, "" without tags; TagHref links its tree, TagWhen
 	// tells when it was made.
 	Tag, TagHref, TagWhen string
+	// Visitors sums the daily unique visitors of the last 30 days; "" without
+	// visitor data.
+	Visitors string
 	// Pulse is the activity curve; nil when it could not be drawn.
 	Pulse *Heartbeat
 }

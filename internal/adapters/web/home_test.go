@@ -399,6 +399,27 @@ func TestActivityEventsRefreshTheHomeRow(t *testing.T) {
 	}
 }
 
+// The latest tag is marked when the latest release shows it already, so
+// that the compact layout leaves it out.
+func TestHomeTagReleased(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		release  *LatestRelease
+		released bool
+	}{
+		{nil, false},
+		{&LatestRelease{Tag: "v1.1.0"}, false},
+		{&LatestRelease{Tag: "v1.2.0"}, true},
+	} {
+		out := renderRow(t, HomeRow{Name: "proj", Release: tc.release, Stats: &HomeStats{Tag: "v1.2.0"}})
+		if tc.released {
+			assert.Contains(t, out, `<div class="rs-tag released">`)
+		} else {
+			assert.Contains(t, out, `<div class="rs-tag">`)
+		}
+	}
+}
+
 func TestHomeReleaseAndLicensePills(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -498,9 +519,10 @@ func TestHomeVisitors(t *testing.T) {
 			out := renderRow(t, srv.homeRowOf(t.Context(), pushedRepo(t, "proj"), fixedNow, false))
 			if mode == "enabled" {
 				assert.Contains(t, out, `aria-label="Activity: 0 commits, 12 visitors in the last 90 days"`)
-				assert.Contains(t, out, `class="pulse-visitors" d="M0 `)
+				assert.Contains(t, out, `class="pulse-strip"`)
+				assert.Contains(t, out, `<div class="rs-visitors"><dt>visitors</dt><dd title="Daily unique visitors, summed over the last 30 days">12</dd></div>`)
 			} else {
-				assert.NotContains(t, out, "pulse-visitors")
+				assert.NotContains(t, out, "pulse-strip")
 				assert.NotContains(t, out, "visitors")
 			}
 		})

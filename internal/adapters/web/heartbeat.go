@@ -5,6 +5,7 @@ package web
 import (
 	"encoding/binary"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,8 +19,11 @@ type Heartbeat struct {
 	// DaysCommits and DaysVisitors are raw comma-separated daily counts.
 	// End is set on a row-local copy, not on the cached curve.
 	DaysCommits, DaysVisitors, End string
-	// Visitors is an independently scaled daily unique-visitor curve.
-	Visitors string
+	// Strip is the daily unique visitors as a heat band under the curve, one
+	// cell a day; nil without visitor data.
+	Strip []StripCell
+	// RecentVisitors sums the daily unique visitors of the last 30 days.
+	RecentVisitors uint64
 	// X and Y are where the curve ends: the pulse of today.
 	X, Y string
 	// GradID names the fill gradient of this row (ids are page-wide).
@@ -156,10 +160,8 @@ func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint
 	}
 	h = heartbeatOf(id, days, partial)
 	if daily != nil {
-		counts := make([]int, len(daily))
 		var total uint64
-		for i, d := range daily {
-			counts[i] = int(min(d, uint64(math.MaxInt)))
+		for _, d := range daily {
 			total += d
 		}
 		raw := make([]string, len(daily))
@@ -167,7 +169,10 @@ func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint
 			raw[i] = strconv.FormatUint(d, 10)
 		}
 		h.DaysVisitors = strings.Join(raw, ",")
-		h.Visitors = heartbeatOf(id, counts, false).Line
+		h.Strip = stripOf(daily)
+		for _, d := range daily[max(len(daily)-recentDays, 0):] {
+			h.RecentVisitors += d
+		}
 		h.Label = strings.Replace(h.Label, " in the last ", ", "+strconv.FormatUint(total, 10)+" visitors in the last ", 1)
 	}
 	c.mu.Lock()
@@ -177,6 +182,40 @@ func (c *pulseCache) get(id string, days []int, partial bool, visitors ...[]uint
 	c.m[key] = h
 	c.mu.Unlock()
 	return h
+}
+
+// recentDays is the window of the recent figures of a row.
+const recentDays = 30
+
+// StripCell is one day of the visitor strip, in the units of the curve: X and
+// W place it under its day, Level is its fill opacity ("" for a day without
+// visitors).
+type StripCell struct {
+	X, W, Level string
+}
+
+// stripOf draws the daily visitors as cells centred on the days of the curve.
+// The scale is linear and the row's own, its busiest day at full strength, so
+// that a spike stands out; the figures of the row tell the size.
+func stripOf(daily []uint64) []StripCell {
+	n := len(daily)
+	if n < 2 {
+		return nil
+	}
+	peak := slices.Max(daily)
+	w := heartbeatEndX / float64(n-1)
+	cells := make([]StripCell, n)
+	for i, d := range daily {
+		// rounded ends, shared by neighbours: no seam between two cells
+		x0 := math.Round(max(float64(i)*w-w/2, 0)*10) / 10
+		x1 := math.Round(min(float64(i)*w+w/2, heartbeatW)*10) / 10
+		c := StripCell{X: num(x0), W: num(x1 - x0)}
+		if d > 0 {
+			c.Level = strconv.FormatFloat(0.15+0.85*float64(d)/float64(peak), 'f', 2, 64)
+		}
+		cells[i] = c
+	}
+	return cells
 }
 
 // gaussian blurs the values with a gaussian of the given width, the edges

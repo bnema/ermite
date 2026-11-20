@@ -89,14 +89,33 @@ func TestPulseVisitors(t *testing.T) {
 	visitors[10], visitors[89] = 30, 4
 	h := c.get("proj", days, false, visitors)
 	assert.Equal(t, "Activity: 2 commits, 34 visitors in the last 90 days", h.Label)
-	counts := make([]int, 90)
-	counts[10], counts[89] = 30, 4
-	assert.Equal(t, heartbeatOf("proj", counts, false).Line, h.Visitors)
+	assert.Equal(t, stripOf(visitors), h.Strip)
+	assert.Equal(t, uint64(4), h.RecentVisitors, "only the last 30 days")
 	assert.Same(t, h, c.get("proj", days, false, visitors))
 	visitors[89]++
 	assert.NotSame(t, h, c.get("proj", days, false, visitors))
-	assert.Empty(t, c.get("proj", days, false).Visitors)
-	assert.Empty(t, c.get("proj", days, false, visitors[:89]).Visitors, "misaligned data is omitted")
+	assert.Nil(t, c.get("proj", days, false).Strip)
+	assert.Nil(t, c.get("proj", days, false, visitors[:89]).Strip, "misaligned data is omitted")
+}
+
+func TestStripOf(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, stripOf([]uint64{5}))
+	cells := stripOf([]uint64{0, 1, 50, 100})
+	require.Len(t, cells, 4)
+	assert.Equal(t, StripCell{X: "0", W: "98.3"}, cells[0], "a quiet day has no level")
+	assert.Equal(t, "0.16", cells[1].Level, "one visitor is faint but seen")
+	assert.Equal(t, "0.57", cells[2].Level)
+	assert.Equal(t, "1.00", cells[3].Level, "the busiest day of the row")
+	for i := 1; i < len(cells); i++ {
+		end, _ := strconv.ParseFloat(cells[i-1].X, 64)
+		w, _ := strconv.ParseFloat(cells[i-1].W, 64)
+		start, _ := strconv.ParseFloat(cells[i].X, 64)
+		assert.InDelta(t, start, end+w, 1e-9, "no seam between cells")
+	}
+	last, _ := strconv.ParseFloat(cells[3].X, 64)
+	lw, _ := strconv.ParseFloat(cells[3].W, 64)
+	assert.LessOrEqual(t, last+lw, heartbeatW)
 }
 
 func TestPulseMarkup(t *testing.T) {
@@ -113,8 +132,11 @@ func TestPulseMarkup(t *testing.T) {
 			assert.NotContains(t, b.String(), `tabindex`)
 			if visitors == nil {
 				assert.NotContains(t, b.String(), "data-days-visitors")
+				assert.NotContains(t, b.String(), "pulse-strip")
 			} else {
 				assert.Contains(t, b.String(), `data-days-visitors="7,0,12"`)
+				assert.Contains(t, b.String(), `class="pulse-strip"`)
+				assert.Equal(t, 1, strings.Count(b.String(), `<rect class="none"`))
 			}
 		})
 	}

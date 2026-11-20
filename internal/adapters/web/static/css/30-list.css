@@ -129,7 +129,10 @@
     & .pulse-stop-top { stop-color: var(--teal); stop-opacity: .32; }
     & .pulse-stop-bottom { stop-color: var(--teal); stop-opacity: 0; }
     & .pulse-line { fill: none; stroke: var(--teal); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-    & .pulse-visitors { fill: none; stroke: var(--rose); stroke-width: 1.75; stroke-dasharray: 5 4; stroke-linecap: round; stroke-linejoin: round; }
+    /* the visitors per day under the curve: one cell a day, darker with more */
+    & .repo-pulse svg.pulse-strip { display: block; width: 100%; height: 6px; margin-top: var(--s1); border-radius: 2px; }
+    & .pulse-strip rect { fill: var(--rose); }
+    & .pulse-strip rect.none { fill: var(--border); }
     & .pulse-dot { fill: var(--teal); stroke: var(--bg-surface); stroke-width: 1.5; }
     & .repo:hover .pulse-dot, & .repo[data-cursor] .pulse-dot { stroke: var(--bg-raised); }
     & .repo-pulse:not([data-live]) .pulse-line { stroke: var(--ink-mute); }
@@ -234,6 +237,7 @@
     & .repo-stats dd { font-size: var(--fs-s); }
     & div.repo-pulse { height: 13px; }
     & .pulse-dot { r: 8px; }
+    & .repo-pulse svg.pulse-strip { height: 3px; margin-top: 2px; border-radius: 1px; }
     & .repo-commits { grid-area: recent; min-height: calc(var(--lh) + 4px); }
     & .repo-commits li:nth-child(n+2) { display: none; }
   }
@@ -266,6 +270,9 @@
     & .repo-pulse { height: 100%; min-height: 18px; }
     & .repo-pulse svg { position: relative; top: 50%; transform: translateY(-50%); }
     & .pulse-dot { r: 9px; }
+    & .repo-pulse svg.pulse-strip { display: none; }
+    /* the release pill beside the name tells the same tag */
+    & .repo-stats .rs-tag.released { display: none; }
   }
   @media (max-width: 1100px) {
     .home[data-layout="compact"] .repos { grid-template-columns: fit-content(14rem) minmax(0, 1fr) auto auto 96px; column-gap: var(--s3); }
@@ -278,7 +285,7 @@
       grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name ci" "desc desc" "stats stats"; column-gap: var(--s3); row-gap: 2px;
     }
     .home[data-layout="compact"] .repo-pulse { display: none; }
-    .home[data-layout="compact"] .repo-stats .rs-tag { display: flex; }
+    .home[data-layout="compact"] .repo-stats .rs-tag:not(.released) { display: flex; }
   }
   /* a filter that leaves no row hides the surface too (after the layouts,
      which set its display) */
@@ -478,5 +485,5 @@
   font-variant-numeric: tabular-nums;
 }
 .pulse-swatch { display: inline-block; width: 1.2em; margin-right: .5em; vertical-align: middle; border-top: 2px solid var(--teal); }
-.pulse-swatch-visitors { border-color: var(--rose); border-top-style: dashed; }
+.pulse-swatch-visitors { height: .6em; border: 0; border-radius: 2px; background: var(--rose); }
 .pulse-guide { stroke: var(--ink-mute); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }

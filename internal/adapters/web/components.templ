@@ -82,6 +82,9 @@ templ HomeRowView(r HomeRow) {
 				if s := r.Stats; s != nil {
 					<div><dt>commits</dt><dd>{ s.Commits }</dd></div>
 					<div><dt>last 30 days</dt><dd>{ s.Recent }</dd></div>
+					if s.Visitors != "" {
+						<div class="rs-visitors"><dt>visitors</dt><dd title="Daily unique visitors, summed over the last 30 days">{ s.Visitors }</dd></div>
+					}
 				}
 				<div class="rs-active">
 					<dt>last activity</dt>
@@ -92,7 +95,7 @@ templ HomeRowView(r HomeRow) {
 					}
 				</div>
 				if s := r.Stats; s != nil && s.Tag != "" {
-					<div class="rs-tag">
+					<div class={ "rs-tag", templ.KV("released", r.Release != nil && r.Release.Tag == s.Tag) }>
 						<dt>last tag</dt>
 						if s.TagHref != "" {
 							<dd><a href={ templ.SafeURL(s.TagHref) } title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</a></dd>
@@ -147,11 +150,19 @@ templ pulse(h *Heartbeat) {
 			<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke"></path>
 			<path class="pulse-area" d={ h.Area } fill={ "url(#" + h.GradID + ")" }></path>
 			<path class="pulse-line" d={ h.Line } vector-effect="non-scaling-stroke"></path>
-			if h.Visitors != "" {
-				<path class="pulse-visitors" d={ h.Visitors } vector-effect="non-scaling-stroke"></path>
-			}
 			<circle class="pulse-dot" cx={ h.X } cy={ h.Y } r="3.5"></circle>
 		</svg>
+		if len(h.Strip) > 0 {
+			<svg class="pulse-strip" viewBox="0 0 600 1" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+				for _, c := range h.Strip {
+					if c.Level != "" {
+						<rect x={ c.X } width={ c.W } height="1" fill-opacity={ c.Level }></rect>
+					} else {
+						<rect class="none" x={ c.X } width={ c.W } height="1"></rect>
+					}
+				}
+			</svg>
+		}
 	</figure>
 }
 
