@@ -154,6 +154,11 @@ func TestReleasePages(t *testing.T) {
 		assert.Equal(t, 404, f.request("GET", path, "", "").Code)
 	}
 	assert.Equal(t, 200, f.request("GET", "/proj/releases/tag/unpublished", "tok", "").Code)
+	f.draft.TargetCommitish = "main"
+	draft := f.request("GET", "/proj/releases/tag/unpublished", "tok", "").Body.String()
+	assert.Contains(t, draft, "<dt>target</dt>")
+	assert.Contains(t, draft, "<code>main</code>")
+	assert.NotContains(t, draft, `href="/proj/commit/main"`)
 	latest := f.request("GET", "/proj/releases/latest", "", "")
 	assert.Equal(t, 303, latest.Code)
 	assert.Equal(t, "/proj/releases/tag/stable/v1", latest.Header().Get("Location"))

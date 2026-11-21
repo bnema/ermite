@@ -137,14 +137,23 @@ func (r *Releases) resolve(ctx context.Context, repo domain.RepoName, rev string
 	return got.CommitID, err
 }
 
+// resolveTarget resolves a requested target_commitish to a commit.
+func (r *Releases) resolveTarget(ctx context.Context, repo domain.RepoName, target string) (domain.ObjectID, error) {
+	oid, err := r.resolve(ctx, repo, target)
+	if err != nil && !errors.Is(err, domain.ErrUnavailable) {
+		return oid, fmt.Errorf("%w: target_commitish %q: %v", domain.ErrInvalid, target, err)
+	}
+	return oid, err
+}
+
 // bind resolves the release tag. A draft of a missing tag keeps the requested
-// target; publishing creates the tag there.
-func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Release, target string) error {
+// target, checked only when given (check); publishing creates the tag there.
+func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Release, target string, check bool) error {
 	oid, err := r.resolve(ctx, rel.Repo, "refs/tags/"+rel.Tag)
 	if errors.Is(err, domain.ErrNotFound) {
 		if rel.Draft {
-			if target != "" {
-				if _, err = r.resolve(ctx, rel.Repo, target); err != nil {
+			if check && target != "" {
+				if _, err = r.resolveTarget(ctx, rel.Repo, target); err != nil {
 					return err
 				}
 			}
@@ -157,7 +166,7 @@ func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Rel
 		if r.pushes == nil {
 			return fmt.Errorf("%w: release tag notifications are not configured", domain.ErrUnavailable)
 		}
-		oid, err = r.resolve(ctx, rel.Repo, target)
+		oid, err = r.resolveTarget(ctx, rel.Repo, target)
 		if err != nil {
 			return err
 		}
@@ -238,7 +247,7 @@ func (r *Releases) CreateRelease(ctx context.Context, p domain.Principal, name d
 	} else if !errors.Is(err, domain.ErrNotFound) {
 		return rel, err
 	}
-	if err = r.bind(ctx, p, &rel, params.TargetCommitish); err != nil {
+	if err = r.bind(ctx, p, &rel, params.TargetCommitish, true); err != nil {
 		return rel, err
 	}
 	if rel.Draft {
@@ -402,14 +411,14 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		if params.MakeLatest != nil {
 			rel.MakeLatest = *params.MakeLatest
 		}
-		target := ""
-		if params.TargetCommitish != nil {
+		// A draft keeps its stored target unless this call names one or renames the tag.
+		target, given := "", params.TargetCommitish != nil
+		if given {
 			target = *params.TargetCommitish
-		}
-		if target == "" && wasDraft {
+		} else if wasDraft && params.Tag == nil {
 			target = rel.TargetCommitish
 		}
-		if err = r.bind(ctx, p, &rel, target); err != nil {
+		if err = r.bind(ctx, p, &rel, target, given); err != nil {
 			return err
 		}
 		kind = "updated"
@@ -482,15 +491,17 @@ func (r *Releases) OnRefsMoved(ctx context.Context, name domain.RepoName, update
 			if err != nil {
 				return err
 			}
-			if rel.Draft {
+			if rel.Draft && rel.TargetCommitish == "" {
 				return nil
 			}
+			// The target is cleared so publishing never silently recreates the tag.
+			changed = !rel.Draft
+			rel.TargetCommitish = ""
 			rel.Draft = true
 			rel.MakeLatest = false
 			rel.PublishedAt = time.Time{}
 			rel.UpdatedAt = r.clock.Now()
 			w.PutReleases = []domain.Release{rel}
-			changed = true
 			return nil
 		})
 		if errors.Is(err, domain.ErrNotFound) {

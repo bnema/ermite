@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,4 +63,25 @@ func TestReleaseCLIEndToEnd(t *testing.T) {
 	c.url = srv.URL
 	_, stderr, code = c.bin(t, adminToken, "release", "list", "proj")
 	requireOneLineError(t, stderr, code, "the server has no releases (it lacks the releases feature)")
+}
+
+func TestReleaseCLIDraftPublishesStoredTarget(t *testing.T) {
+	c := newCLIHarness(t)
+	c.cli(t, adminToken, "repo", "create", "proj", "--visibility", "public").ok(t)
+	wt := c.workTree("main", "README.md")
+	c.mustGit(wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "main")
+	head := strings.TrimSpace(c.mustGit(wt, "rev-parse", "HEAD"))
+	bin := func(args ...string) string {
+		t.Helper()
+		out, stderr, code := c.bin(t, adminToken, args...)
+		require.Equal(t, 0, code, stderr)
+		return out
+	}
+	draft := decode[jsonRelease](t, bin("release", "create", "proj", "v2", "--draft", "--target", "main", "--json"))
+	assert.Equal(t, "main", draft.TargetCommitish)
+	bin("release", "edit", "proj", "v2", "--publish")
+	got := decode[jsonRelease](t, bin("release", "view", "proj", "v2", "--json"))
+	assert.False(t, got.Draft)
+	assert.Equal(t, head, got.TargetCommitish)
+	assert.Contains(t, c.mustGit(wt, "ls-remote", c.urlAuth(adminToken, "/proj.git"), "refs/tags/v2"), head)
 }

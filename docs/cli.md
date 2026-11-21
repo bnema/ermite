@@ -160,7 +160,9 @@ ermite release download <repo> <tag|id|latest> [--pattern GLOB]… [--name N]…
 All-digit selectors are release ids; other selectors are tags. `latest` selects
 the latest release for view/download. `--latest` pins a release as latest.
 Non-draft releases require an existing tag, or `--target` to create one; an
-existing tag is never moved. `--notes-file -` reads Markdown from standard input.
+existing tag is never moved. A draft keeps its requested `--target` and
+publishes with it; a branch target is resolved at publish time. Deleting a tag
+clears the target. `--notes-file -` reads Markdown from standard input.
 Edit changes only supplied fields: `--title=''` and `--notes=''` clear them;
 `--publish` and `--no-prerelease` clear the corresponding flags.
 

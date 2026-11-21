@@ -377,4 +377,15 @@ func TestGitHubReleaseDraftKeepsTarget(t *testing.T) {
 	b, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"draft":false}`))
 	require.NoError(t, err)
 	require.Contains(t, string(b), `"target_commitish":"`+oidA+`"`)
+
+	r.resolve(t, "v2", domain.ErrNotFound)
+	b, err = g.CreateRelease(r.ctx, domain.Root(), "acme", repo, []byte(`{"tag_name":"v2","draft":true,"target_commitish":"main"}`))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, &got))
+	b, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"target_commitish":""}`))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"target_commitish":""`)
+	r.resolveRev(t, "nope", oidA, domain.ErrNotFound)
+	_, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"target_commitish":"nope"}`))
+	require.ErrorIs(t, err, domain.ErrInvalid)
 }

@@ -43,7 +43,7 @@ type ReleaseAssetRow struct{ Name, Href, Size, ContentType string }
 type ReleaseDetailPage struct {
 	ReleaseRow
 	Notes                       template.HTML
-	SHA, CommitHref, SourceHref string
+	SHA, CommitHref, SourceHref, Target string
 	Assets                      []ReleaseAssetRow
 }
 
@@ -119,9 +119,12 @@ func (s *Server) releaseShow(ctx context.Context, r *http.Request) (templ.Compon
 		return nil, 0, err
 	}
 	p := ReleaseDetailPage{ReleaseRow: releaseRow(d.name(), rel, latest), Notes: notes, SourceHref: repoHref(d.name(), "tree", rel.Tag)}
-	if rel.TargetCommitish != "" {
+	// A draft of a missing tag may hold a requested revision, not a commit.
+	if _, err := domain.ParseObjectID(rel.TargetCommitish); err == nil {
 		p.SHA = short(rel.TargetCommitish)
 		p.CommitHref = repoHref(d.name(), "commit", rel.TargetCommitish)
+	} else if rel.TargetCommitish != "" {
+		p.Target = rel.TargetCommitish
 	}
 	for _, a := range assets {
 		p.Assets = append(p.Assets, ReleaseAssetRow{Name: a.Name, Href: releaseAssetHref(d.name(), a.ID), Size: humanSize(a.Size), ContentType: a.ContentType})

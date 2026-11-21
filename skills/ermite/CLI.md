@@ -132,7 +132,7 @@ Needs the `releases` feature. Reads follow repo visibility; drafts need write ac
 
 | Command | Notes |
 |---|---|
-| `release create <repo> <tag> [--title T] [--notes T\|--notes-file F\|-] [--target REF] [--draft] [--prerelease] [--latest] [--asset FILE[#LABEL]]…` | existing tags never move; `--target` creates a missing tag (a draft keeps it until publish) |
+| `release create <repo> <tag> [--title T] [--notes T\|--notes-file F\|-] [--target REF] [--draft] [--prerelease] [--latest] [--asset FILE[#LABEL]]…` | existing tags never move; `--target` creates a missing tag (a draft keeps it and publishes with it; deleting the tag clears it) |
 | `release list <repo> [--limit 30]` | newest first |
 | `release view <repo> <tag\|id\|latest> [--notes]` | `--notes` prints only Markdown |
 | `release edit <repo> <tag\|id> [--title] [--notes\|--notes-file] [--tag T] [--target] [--draft\|--publish] [--prerelease\|--no-prerelease] [--latest]` | only given fields change |

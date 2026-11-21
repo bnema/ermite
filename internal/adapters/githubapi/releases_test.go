@@ -230,6 +230,7 @@ func TestReleaseErrors(t *testing.T) {
 		{"duplicate upload", "release-upload", domain.Root(), domain.ErrAlreadyExists, 422, `{"message":"Validation Failed","errors":[{"resource":"ReleaseAsset","code":"already_exists","field":"name"}],"documentation_url":"https://docs.github.com/rest/releases/assets#upload-a-release-asset"}`},
 		{"invalid field", "release-list", domain.Root(), fmt.Errorf("%w: make_latest", domain.ErrInvalid), 422, `{"message":"Validation Failed","errors":[{"resource":"Release","code":"invalid","field":"make_latest"}]}`},
 		{"invalid", "release-list", domain.Root(), domain.ErrInvalid, 422, `{"message":"Validation Failed","errors":[{"resource":"Release","code":"invalid"}]}`},
+		{"bad target", "release-id", domain.Root(), fmt.Errorf("%w: target_commitish %q: %v", domain.ErrInvalid, "gone", domain.ErrNotFound), 422, `{"message":"Validation Failed","errors":[{"resource":"Release","code":"invalid","field":"target_commitish"}]}`},
 		{"tag missing", "release-id", domain.Root(), domain.ErrPreconditionFailed, 422, `{"message":"Validation Failed","errors":[{"resource":"Release","code":"invalid","field":"target_commitish"}]}`},
 		{"size", "release-upload", domain.Root(), fmt.Errorf("%w: asset size limit", domain.ErrResourceExhausted), 422, `{"message":"resource exhausted: asset size limit"}`},
 		{"count", "release-upload", domain.Root(), fmt.Errorf("%w: release asset count limit is 1000", domain.ErrResourceExhausted), 422, `{"message":"resource exhausted: release asset count limit is 1000"}`},

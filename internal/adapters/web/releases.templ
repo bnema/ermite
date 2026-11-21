@@ -49,6 +49,9 @@ templ ReleaseDetail(l Layout, p ReleaseDetailPage) {
 					if p.SHA != "" {
 						<dt>commit</dt>
 						<dd><a href={ templ.SafeURL(p.CommitHref) }><code>{ p.SHA }</code></a></dd>
+					} else if p.Target != "" {
+						<dt>target</dt>
+						<dd><code>{ p.Target }</code></dd>
 					}
 					<dt>published</dt>
 					<dd>{ p.Published }</dd>
