@@ -64,7 +64,7 @@ Presets (add up with `--scope`): `cli` every scope, `mr:force-merge` included (o
 | `mr:force-merge` | `--ignore-checks` |
 | `issue:write` | create, comment, edit, close, resolve, reopen issues |
 | `release:write` | release writes (refused for branch-limited tokens) |
-| `release:draft` | create drafts, edit drafts that stay drafts and their assets; no publish, delete or published changes (`token.release_draft` feature) |
+| `release:draft` | create drafts, edit never-published drafts and their assets; no publish, delete or change to a once-published release (`token.release_draft` feature) |
 | `journal:read` | `journal`, `release pending` |
 | `ci:write` | `run cancel/rerun`, `workflow run` |
 | `secrets:write` | secrets, variables, environments |

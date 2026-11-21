@@ -76,10 +76,10 @@ func releaseWriter(p domain.Principal, name domain.RepoName) bool {
 // so a concurrent publish makes them retry and fail.
 type releaseAccess struct{ draftOnly bool }
 
-// draft refuses a draft-only writer a release that is not a draft.
+// draft refuses a draft-only writer a release that is, or ever was, published.
 func (a releaseAccess) draft(rel domain.Release) error {
-	if a.draftOnly && !rel.Draft {
-		return fmt.Errorf("%w: release:draft only changes draft releases", domain.ErrForbidden)
+	if a.draftOnly && (!rel.Draft || rel.EverPublished) {
+		return fmt.Errorf("%w: release:draft only changes never-published drafts", domain.ErrForbidden)
 	}
 	return nil
 }
@@ -289,6 +289,7 @@ func (r *Releases) CreateRelease(ctx context.Context, p domain.Principal, name d
 		rel.MakeLatest = false
 	} else {
 		rel.PublishedAt = r.clock.Now()
+		rel.EverPublished = true
 	}
 	rel.ID, err = r.store.NextReleaseID(ctx)
 	if err != nil {
@@ -469,6 +470,9 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		} else if wasDraft {
 			rel.PublishedAt = r.clock.Now()
 			kind = "published"
+		}
+		if !rel.Draft {
+			rel.EverPublished = true
 		}
 		rel.UpdatedAt = r.clock.Now()
 		if err = r.pin(ctx, w, rel); err != nil {

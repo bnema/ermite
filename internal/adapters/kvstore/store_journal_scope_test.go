@@ -162,3 +162,24 @@ func TestSchema14ReleaseDraftTokenUpgrade(t *testing.T) {
 		})
 	}
 }
+
+// Schema 14 marks every stored release as ever published: an unpublished
+// draft kept no trace of its publication.
+func TestSchema14MarksReleasesEverPublished(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 13}))
+	putRaw(t, dir, "rel/proj/"+fmt.Sprintf("%020d", 1), mustProto(t, &storagepb.Release{Id: 1, Repo: "proj", Tag: "v1", Draft: true}))
+	s, err := kvstore.Open(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, s.Close(ctx))
+	db, err := kv.Open(ctx, dir, kv.Options{})
+	require.NoError(t, err)
+	defer func() { _ = db.Close(ctx) }()
+	item, ok := db.Get(ctx, []byte("rel/proj/"+fmt.Sprintf("%020d", 1)))
+	require.True(t, ok)
+	var pb storagepb.Release
+	require.NoError(t, proto.Unmarshal(item.Value, &pb))
+	assert.True(t, pb.GetEverPublished())
+	assert.True(t, pb.GetDraft())
+}

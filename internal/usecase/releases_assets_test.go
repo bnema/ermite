@@ -285,7 +285,7 @@ func TestReleaseAssetQuotaAcrossReleasesAndWrongRepository(t *testing.T) {
 	other := name(t, "other")
 	require.NoError(t, r.store.Create(r.ctx, domain.Repo{Name: other, Visibility: domain.VisibilityPublic, CreatedAt: now}))
 	_, err = r.svc.UploadAsset(r.ctx, domain.Root(), other, ports.UploadAssetParams{ReleaseID: b.ID, Name: "wrong"}, bytes.NewReader(nil))
-	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 func TestReleaseAssetDownloadZeroBytes(t *testing.T) {

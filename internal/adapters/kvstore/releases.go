@@ -71,6 +71,7 @@ func encodeRelease(r domain.Release) []byte {
 		CreatedAt:       encodeTime(r.CreatedAt),
 		PublishedAt:     encodeTime(r.PublishedAt),
 		UpdatedAt:       encodeTime(r.UpdatedAt),
+		EverPublished:   r.EverPublished,
 	})
 }
 func decodeRelease(item kv.Item) (domain.Release, error) {
@@ -96,6 +97,7 @@ func decodeRelease(item kv.Item) (domain.Release, error) {
 		CreatedAt:       decodeTime(pb.GetCreatedAt()),
 		PublishedAt:     decodeTime(pb.GetPublishedAt()),
 		UpdatedAt:       decodeTime(pb.GetUpdatedAt()),
+		EverPublished:   pb.GetEverPublished(),
 	}, nil
 }
 func encodeReleaseAsset(r domain.ReleaseAsset) []byte {

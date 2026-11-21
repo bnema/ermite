@@ -157,7 +157,8 @@ func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 		return nil
 	}
 	for _, s := range tok.Scopes {
-		if !p.HasScope(s) {
+		// release:write covers release:draft.
+		if !p.HasScope(s) && (s != domain.ScopeReleaseDraft || !p.HasScope(domain.ScopeReleaseWrite)) {
 			return fmt.Errorf("%w: scope %s exceeds the creating token", domain.ErrForbidden, s)
 		}
 	}

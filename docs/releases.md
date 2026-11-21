@@ -32,8 +32,8 @@ replaces a same-named asset; REST publishers delete it then upload again.
 
 Writes require `release:write` (included in the `cli` preset), or a CI job token
 with `permissions: contents: write` for that repository. `release:draft` only
-creates and edits drafts and their assets; publishing and any change to a
-published release need `release:write` (see [tokens](tokens.md)). Branch-limited tokens
+creates and edits never-published drafts and their assets; publishing and any
+change to a release that was ever published need `release:write` (see [tokens](tokens.md)). Branch-limited tokens
 cannot write releases. Read access to a private repository needs `repo:read`;
 unreadable releases, including drafts, answer not found. Older servers without
 the `releases` feature are refused by the CLI.

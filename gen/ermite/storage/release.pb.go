@@ -40,8 +40,10 @@ type Release struct {
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	PublishedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=published_at,json=publishedAt,proto3" json:"published_at,omitempty"`
 	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// ever_published is set on the first publication and never cleared.
+	EverPublished bool `protobuf:"varint,14,opt,name=ever_published,json=everPublished,proto3" json:"ever_published,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Release) Reset() {
@@ -163,6 +165,13 @@ func (x *Release) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Release) GetEverPublished() bool {
+	if x != nil {
+		return x.EverPublished
+	}
+	return false
 }
 
 // ReleaseAsset stores release metadata, not object contents.
@@ -363,7 +372,7 @@ var File_ermite_storage_release_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_release_proto_rawDesc = "" +
 	"\n" +
-	"\x1cermite/storage/release.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xba\x03\n" +
+	"\x1cermite/storage/release.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe1\x03\n" +
 	"\aRelease\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x10\n" +
@@ -383,7 +392,8 @@ const file_ermite_storage_release_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
 	"\fpublished_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vpublishedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xaf\x03\n" +
+	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
+	"\x0eever_published\x18\x0e \x01(\bR\reverPublished\"\xaf\x03\n" +
 	"\fReleaseAsset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
 	"\n" +

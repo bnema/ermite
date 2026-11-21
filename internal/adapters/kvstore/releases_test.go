@@ -22,7 +22,7 @@ func TestReleaseStorage(t *testing.T) {
 	st := s.Releases()
 	id, err := st.NextReleaseID(ctx)
 	require.NoError(t, err)
-	r := domain.Release{ID: id, Repo: repo, Tag: "v1", Title: "title", Notes: "notes", MakeLatest: true, TargetCommitish: "abc", Author: "owner", CreatedAt: created, PublishedAt: created, UpdatedAt: created}
+	r := domain.Release{ID: id, Repo: repo, Tag: "v1", Title: "title", Notes: "notes", MakeLatest: true, TargetCommitish: "abc", Author: "owner", CreatedAt: created, PublishedAt: created, UpdatedAt: created, EverPublished: true}
 	assetID, err := st.NextReleaseID(ctx)
 	require.NoError(t, err)
 	a := domain.ReleaseAsset{ID: assetID, ReleaseID: id, Repo: repo, Name: "binary", Label: "label", ContentType: "application/octet-stream", Size: 3, Digest: "sha256:abc", State: domain.ReleaseAssetUploading, Uploader: "owner", Charged: 3, MultipartID: "multipart", CreatedAt: created, UpdatedAt: created}

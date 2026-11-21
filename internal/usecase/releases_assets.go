@@ -54,7 +54,7 @@ func (r *Releases) UploadAsset(ctx context.Context, p domain.Principal, name dom
 			if errors.Is(err, domain.ErrNotFound) {
 				owner, lookupErr := r.store.ReleaseRepo(ctx, a.ReleaseID)
 				if lookupErr == nil && owner != name {
-					return fmt.Errorf("%w: release belongs to another repository", domain.ErrPreconditionFailed)
+					return fmt.Errorf("%w: release belongs to another repository", domain.ErrNotFound)
 				}
 			}
 			return err

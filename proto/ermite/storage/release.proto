@@ -20,6 +20,8 @@ message Release {
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp published_at = 12;
   google.protobuf.Timestamp updated_at = 13;
+  // ever_published is set on the first publication and never cleared.
+  bool ever_published = 14;
 }
 
 // ReleaseAsset stores release metadata, not object contents.

@@ -24,7 +24,10 @@ type Release struct {
 	TargetCommitish                   string
 	Author                            string
 	CreatedAt, PublishedAt, UpdatedAt time.Time
-	Version                           uint64
+	// EverPublished is set on the first publication and never cleared, even
+	// when deleting the tag turns the release back into a draft.
+	EverPublished bool
+	Version       uint64
 }
 
 // ReleaseAssetState distinguishes reserved uploads from visible assets.

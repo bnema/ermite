@@ -66,7 +66,8 @@ import (
 // upgradeDepsFamilies.
 // Version 14 adds release:draft: unrestricted tokens holding all fourteen
 // previous scopes get it, so they keep the owner rights (see
-// upgradeReleaseDraftTokens).
+// upgradeReleaseDraftTokens), and marks every existing release as
+// ever published (see upgradeReleasesEverPublished).
 const SchemaVersion = 14
 
 const schemaKey = "meta/schema"
@@ -219,6 +220,11 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
+			if target == SchemaVersion && sv.GetVersion() >= 6 && sv.GetVersion() < 14 {
+				if err := s.upgradeReleasesEverPublished(ctx, &b); err != nil {
+					return err
+				}
+			}
 			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: target}))
 			_, err := s.db.Apply(ctx, &b)
 			if errors.Is(err, kv.ErrConflict) {
@@ -344,6 +350,27 @@ func (s *Store) upgradeTokenScopes(ctx context.Context, b *kv.Batch, required, a
 		if !added {
 			continue
 		}
+		b.RequireVersion(slices.Clone(key), item.Version)
+		b.Put(slices.Clone(key), mustMarshal(pb))
+	}
+	return nil
+}
+
+// upgradeReleasesEverPublished marks every release stored before schema 14 as
+// ever published. A draft unpublished by a tag deletion kept no trace of its
+// publication, so it cannot be told apart from a never-published draft; no
+// token held release:draft before schema 14, so marking them all only keeps
+// release:draft away from those older drafts.
+func (s *Store) upgradeReleasesEverPublished(ctx context.Context, b *kv.Batch) error {
+	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte("rel/")) {
+		pb := &storagepb.Release{}
+		if err := proto.Unmarshal(item.Value, pb); err != nil {
+			return fmt.Errorf("upgrade release %s: %w", key, err)
+		}
+		if pb.GetEverPublished() {
+			continue
+		}
+		pb.EverPublished = true
 		b.RequireVersion(slices.Clone(key), item.Version)
 		b.Put(slices.Clone(key), mustMarshal(pb))
 	}

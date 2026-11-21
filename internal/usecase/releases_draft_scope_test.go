@@ -144,3 +144,60 @@ func TestReleaseDraftScopeUploadRacesPublish(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, usage.Used)
 }
+
+func draftToken(repos ...domain.RepoName) domain.Principal {
+	return domain.TokenPrincipal(domain.Token{ID: "d", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeReleaseDraft}, Repos: repos})
+}
+
+// Deleting the tag of a published release turns it back into a draft, but
+// release:draft still cannot touch it.
+func TestReleaseDraftScopeRefusesOncePublished(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{AssetMax: 100, AssetsMax: 10, Quota: 1000})
+	rel := r.create(t, "v1", false)
+	require.True(t, rel.EverPublished)
+	r.svc.OnRefsMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/tags/v1", Old: oidA, New: domain.ZeroOID}})
+	got, err := r.svc.GetRelease(r.ctx, domain.Root(), r.repo, ports.ReleaseRef{ID: rel.ID})
+	require.NoError(t, err)
+	require.True(t, got.Draft)
+	require.True(t, got.EverPublished, "kept by the unpublish")
+	p := draftToken()
+	notes := "swapped"
+	_, err = r.svc.UpdateRelease(r.ctx, p, r.repo, rel.ID, ports.UpdateReleaseParams{Notes: &notes})
+	require.ErrorIs(t, err, domain.ErrForbidden)
+	_, err = r.svc.UploadAsset(r.ctx, p, r.repo, ports.UploadAssetParams{ReleaseID: rel.ID, Name: "x.bin", Size: 1}, bytes.NewReader([]byte("x")))
+	require.ErrorIs(t, err, domain.ErrForbidden)
+	writer := domain.TokenPrincipal(domain.Token{ID: "w", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeReleaseWrite}})
+	_, err = r.svc.UpdateRelease(r.ctx, writer, r.repo, rel.ID, ports.UpdateReleaseParams{Notes: &notes})
+	require.NoError(t, err)
+}
+
+func TestReleaseDraftScopeAssetRename(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{AssetMax: 100, AssetsMax: 10, Quota: 1000})
+	p := draftToken()
+	r.resolve(t, "d1", nil)
+	draft, err := r.svc.CreateRelease(r.ctx, p, r.repo, ports.CreateReleaseParams{Tag: "d1", Draft: true})
+	require.NoError(t, err)
+	a, err := r.svc.UploadAsset(r.ctx, p, r.repo, ports.UploadAssetParams{ReleaseID: draft.ID, Name: "a.bin", Size: 1}, bytes.NewReader([]byte("a")))
+	require.NoError(t, err)
+	renamed := "b.bin"
+	_, err = r.svc.UpdateAsset(r.ctx, p, r.repo, a.ID, ports.UpdateAssetParams{Name: &renamed})
+	require.NoError(t, err)
+	pub := r.create(t, "v1", false)
+	pa := r.upload(t, pub, "p.bin", []byte("p"))
+	_, err = r.svc.UpdateAsset(r.ctx, p, r.repo, pa.ID, ports.UpdateAssetParams{Name: &renamed})
+	require.ErrorIs(t, err, domain.ErrForbidden)
+}
+
+func TestReleaseDraftScopeOtherRepo(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{AssetMax: 100, AssetsMax: 10, Quota: 1000})
+	other := name(t, "elsewhere")
+	require.NoError(t, r.store.Create(r.ctx, domain.Repo{Name: other, Visibility: domain.VisibilityPrivate, CreatedAt: now}))
+	p := draftToken(other)
+	r.resolve(t, "d1", nil)
+	_, err := r.svc.CreateRelease(r.ctx, p, r.repo, ports.CreateReleaseParams{Tag: "d1", Draft: true})
+	require.ErrorIs(t, err, domain.ErrForbidden, "public repo outside the list: readable, not writable")
+	// A private repository outside the list is not found.
+	p = draftToken(r.repo)
+	_, err = r.svc.CreateRelease(r.ctx, p, other, ports.CreateReleaseParams{Tag: "d1", Draft: true})
+	require.ErrorIs(t, err, domain.ErrNotFound)
+}

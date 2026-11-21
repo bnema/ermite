@@ -25,11 +25,14 @@ that scope. CI jobs publish using their job token with `contents: write` under
 
 `release:draft` only submits drafts: it creates draft releases, edits drafts
 that stay drafts (title, notes, tag, target) and uploads, replaces or deletes
-their assets. It cannot publish, unpublish, change a published release or its
-assets, nor delete a release; those answer forbidden (REST 403). It sees the
-drafts of the repositories it can read. Pair it with a trusted publisher holding
-`release:write`. It needs the `token.release_draft` server feature; the `cli`
-preset includes it, and owner rights need it like every scope.
+their assets. It cannot publish, unpublish or delete a release, nor touch a
+release that was ever published or its assets, even after deleting its tag
+turned it back into a draft; those answer forbidden (REST 403). Releases stored
+before this scope existed count as published. It sees the drafts of the
+repositories it can read. Pair it with a trusted publisher holding
+`release:write`, which can also create `release:draft` tokens. It needs the
+`token.release_draft` server feature; the `cli` preset includes it, and owner
+rights need it like every scope.
 
 ## Activity journal
 
