@@ -142,7 +142,7 @@ func (r *Releases) resolve(ctx context.Context, repo domain.RepoName, rev string
 func (r *Releases) resolveTarget(ctx context.Context, repo domain.RepoName, target string) (domain.ObjectID, error) {
 	oid, err := r.resolve(ctx, repo, target)
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrInvalidRevision) {
-		return oid, fmt.Errorf("%w: target_commitish %q: %w", domain.ErrInvalid, target, err)
+		return oid, fmt.Errorf("%w: target_commitish %q: %v", domain.ErrInvalid, target, err)
 	}
 	return oid, err
 }
