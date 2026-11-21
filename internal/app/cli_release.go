@@ -30,6 +30,19 @@ import (
 
 var errNoReleases = errors.New("the server has no releases (it lacks the releases feature)")
 
+var errNoReleaseDraft = errors.New("the server has no release:draft scope (it lacks the token.release_draft feature)")
+
+func requireReleaseDraft(ctx context.Context, c *client.Client) error {
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
+	if err != nil {
+		return c.Describe(err)
+	}
+	if !slices.Contains(res.GetFeatures(), client.FeatureTokenReleaseDraft) {
+		return errNoReleaseDraft
+	}
+	return nil
+}
+
 func requireReleases(ctx context.Context, c *client.Client) error {
 	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
@@ -91,7 +104,7 @@ func toJSONRelease(r *ermite.Release) jsonRelease {
 }
 
 func newReleaseCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Manage tagged releases. Reads follow repository visibility; writes need release:write. The server must support releases. Select by tag, numeric id, or latest (view/download).\n" + jsonFieldsHelp("a release", jsonRelease{}) + " list prints an array."}
+	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Manage tagged releases. Reads follow repository visibility; writes need release:write (release:draft: drafts only). The server must support releases. Select by tag, numeric id, or latest (view/download).\n" + jsonFieldsHelp("a release", jsonRelease{}) + " list prints an array."}
 	cmd.AddCommand(newReleaseCreateCmd(env), newReleaseListCmd(env), newReleaseViewCmd(env), newReleaseEditCmd(env), newReleaseDeleteCmd(env), newReleaseUploadCmd(env), newReleaseDownloadCmd(env), newReleasePendingCmd(env))
 	return cmd
 }

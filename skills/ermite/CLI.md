@@ -64,6 +64,7 @@ Presets (add up with `--scope`): `cli` every scope, `mr:force-merge` included (o
 | `mr:force-merge` | `--ignore-checks` |
 | `issue:write` | create, comment, edit, close, resolve, reopen issues |
 | `release:write` | release writes (refused for branch-limited tokens) |
+| `release:draft` | create drafts, edit drafts that stay drafts and their assets; no publish, delete or published changes (`token.release_draft` feature) |
 | `journal:read` | `journal`, `release pending` |
 | `ci:write` | `run cancel/rerun`, `workflow run` |
 | `secrets:write` | secrets, variables, environments |
@@ -128,7 +129,7 @@ JSON: `repo`, `url`, `number`, `title`, `body`, `state`, `author`, `created_at`,
 
 ## Releases
 
-Needs the `releases` feature. Reads follow repo visibility; drafts need write access. Writes need `release:write` (not branch-limited) or a CI job with `contents: write`. Select a release by tag or id; `view` and `download` also accept `latest`.
+Needs the `releases` feature. Reads follow repo visibility; drafts need write access. Writes need `release:write` (not branch-limited) or a CI job with `contents: write`; `release:draft` only manages drafts. Select a release by tag or id; `view` and `download` also accept `latest`.
 
 | Command | Notes |
 |---|---|

@@ -117,6 +117,7 @@ var featureUse = map[string]string{
 	client.FeatureMergeability:        "`ermite mr show` uses to show whether the request merges: the line is missing",
 	client.FeatureSigningKey:          "`ermite signing-key show` needs: the command will fail on this server",
 	client.FeatureSession:             "`ermite web login` needs: the command will fail on this server",
+	client.FeatureTokenReleaseDraft:   "`ermite token create` needs for release:draft: the `cli` preset drops it and an explicit scope is refused",
 	client.FeatureTokenBranchPrefixes: "`ermite token create --branch-prefix` needs: the command is refused, and `token list` does not show the limits",
 	client.FeatureCIRuns:              "`ermite run` needs: the commands will fail on this server",
 	client.FeatureCIRunners:           "`ermite runner` needs: the commands will fail on this server",

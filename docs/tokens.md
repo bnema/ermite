@@ -23,6 +23,14 @@ also need `repo:read`. Branch-limited tokens cannot write releases, even with
 that scope. CI jobs publish using their job token with `contents: write` under
 `permissions`, not a stored-token scope. See [releases](releases.md).
 
+`release:draft` only submits drafts: it creates draft releases, edits drafts
+that stay drafts (title, notes, tag, target) and uploads, replaces or deletes
+their assets. It cannot publish, unpublish, change a published release or its
+assets, nor delete a release; those answer forbidden (REST 403). It sees the
+drafts of the repositories it can read. Pair it with a trusted publisher holding
+`release:write`. It needs the `token.release_draft` server feature; the `cli`
+preset includes it, and owner rights need it like every scope.
+
 ## Activity journal
 
 `journal:read` lets a token read the activity journal and the unreleased commits

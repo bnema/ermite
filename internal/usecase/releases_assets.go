@@ -19,7 +19,7 @@ import (
 
 // UploadAsset reserves quota before reading, stores bytes, then publishes metadata.
 func (r *Releases) UploadAsset(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.UploadAssetParams, body io.Reader) (result domain.ReleaseAsset, err error) {
-	repo, err := r.writable(ctx, p, name)
+	repo, access, err := r.writable(ctx, p, name)
 	if err != nil {
 		return result, err
 	}
@@ -49,13 +49,17 @@ func (r *Releases) UploadAsset(ctx context.Context, p domain.Principal, name dom
 	var replaced []domain.ReleaseAsset
 	err = r.updateReleases(ctx, name, func(w *ports.ReleaseWrite) error {
 		replaced = nil
-		if _, err := r.store.GetRelease(ctx, name, a.ReleaseID); err != nil {
+		rel, err := r.store.GetRelease(ctx, name, a.ReleaseID)
+		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				owner, lookupErr := r.store.ReleaseRepo(ctx, a.ReleaseID)
 				if lookupErr == nil && owner != name {
 					return fmt.Errorf("%w: release belongs to another repository", domain.ErrPreconditionFailed)
 				}
 			}
+			return err
+		}
+		if err = access.draft(rel); err != nil {
 			return err
 		}
 		all, err := r.store.ListAssets(ctx, name, a.ReleaseID)
@@ -174,6 +178,10 @@ func (r *Releases) UploadAsset(ctx context.Context, p domain.Principal, name dom
 		if current.State != domain.ReleaseAssetUploading {
 			return domain.ErrConflict
 		}
+		// The release may have been published while the bytes were streamed.
+		if err := r.draftRelease(ctx, access, name, current.ReleaseID); err != nil {
+			return err
+		}
 		current.State = domain.ReleaseAssetUploaded
 		current.Digest = a.Digest
 		current.MultipartID = ""
@@ -232,6 +240,20 @@ func releaseBodyEnd(body io.Reader) error {
 	}
 	return err
 }
+
+// draftRelease refuses a draft-only writer an asset change on a release that is
+// not a draft. Call it inside a versioned release write.
+func (r *Releases) draftRelease(ctx context.Context, access releaseAccess, repo domain.RepoName, id int64) error {
+	if !access.draftOnly {
+		return nil
+	}
+	rel, err := r.store.GetRelease(ctx, repo, id)
+	if err != nil {
+		return err
+	}
+	return access.draft(rel)
+}
+
 func (r *Releases) changeAsset(ctx context.Context, id int64, repo domain.RepoName, fn func(*domain.ReleaseAsset) error) error {
 	return r.updateReleases(ctx, repo, func(w *ports.ReleaseWrite) error {
 		a, err := r.store.GetAsset(ctx, id)
@@ -252,6 +274,16 @@ func (r *Releases) changeAsset(ctx context.Context, id int64, repo domain.RepoNa
 // removeAssetRecord conditionally removes the current record; sweep predicates
 // are evaluated again after a conflict so a just-completed upload is protected.
 func (r *Releases) removeAssetRecord(ctx context.Context, a domain.ReleaseAsset, predicate func(domain.ReleaseAsset) bool) error {
+	return r.removeAssetRecordWith(ctx, a, predicate, nil)
+}
+
+// removeAssetRecordChecked removes the current record when check, run inside
+// the versioned write, allows it.
+func (r *Releases) removeAssetRecordChecked(ctx context.Context, a domain.ReleaseAsset, check func(domain.ReleaseAsset) error) error {
+	return r.removeAssetRecordWith(ctx, a, nil, check)
+}
+
+func (r *Releases) removeAssetRecordWith(ctx context.Context, a domain.ReleaseAsset, predicate func(domain.ReleaseAsset) bool, check func(domain.ReleaseAsset) error) error {
 	return r.updateReleases(ctx, a.Repo, func(w *ports.ReleaseWrite) error {
 		current, err := r.store.GetAsset(ctx, a.ID)
 		if err != nil {
@@ -262,6 +294,11 @@ func (r *Releases) removeAssetRecord(ctx context.Context, a domain.ReleaseAsset,
 		}
 		if predicate != nil && !predicate(current) {
 			return domain.ErrConflict
+		}
+		if check != nil {
+			if err := check(current); err != nil {
+				return err
+			}
 		}
 		w.DeleteAssets = []domain.ReleaseAsset{current}
 		w.Used -= current.Charged
@@ -319,7 +356,7 @@ func (r *Releases) GetAsset(ctx context.Context, p domain.Principal, repo domain
 
 // UpdateAsset changes an uploaded asset's name and label without moving bytes.
 func (r *Releases) UpdateAsset(ctx context.Context, p domain.Principal, repo domain.RepoName, id int64, params ports.UpdateAssetParams) (domain.ReleaseAsset, error) {
-	meta, err := r.writable(ctx, p, repo)
+	meta, access, err := r.writable(ctx, p, repo)
 	if err != nil {
 		return domain.ReleaseAsset{}, err
 	}
@@ -343,6 +380,9 @@ func (r *Releases) UpdateAsset(ctx context.Context, p domain.Principal, repo dom
 	err = r.changeAsset(ctx, id, repo, func(current *domain.ReleaseAsset) error {
 		if current.State != domain.ReleaseAssetUploaded {
 			return domain.ErrNotFound
+		}
+		if err := r.draftRelease(ctx, access, repo, current.ReleaseID); err != nil {
+			return err
 		}
 		if params.Name != nil {
 			current.Name = newName
@@ -368,7 +408,7 @@ func (r *Releases) UpdateAsset(ctx context.Context, p domain.Principal, repo dom
 
 // DeleteAsset refunds quota before deleting the blob.
 func (r *Releases) DeleteAsset(ctx context.Context, p domain.Principal, repo domain.RepoName, id int64) error {
-	meta, err := r.writable(ctx, p, repo)
+	meta, access, err := r.writable(ctx, p, repo)
 	if err != nil {
 		return err
 	}
@@ -376,7 +416,11 @@ func (r *Releases) DeleteAsset(ctx context.Context, p domain.Principal, repo dom
 	if err != nil {
 		return err
 	}
-	if err = r.removeAssetRecord(ctx, a, nil); err != nil {
+	var guard func(domain.ReleaseAsset) error
+	if access.draftOnly {
+		guard = func(current domain.ReleaseAsset) error { return r.draftRelease(ctx, access, repo, current.ReleaseID) }
+	}
+	if err = r.removeAssetRecordChecked(ctx, a, guard); err != nil {
 		return err
 	}
 	r.removeAssetBlobs(context.WithoutCancel(ctx), []domain.ReleaseAsset{a})

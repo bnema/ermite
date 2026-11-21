@@ -50,9 +50,13 @@ const (
 	// ScopeJournalRead reads the activity journal and the unreleased commits
 	// of every repository within the token's list, private ones included.
 	ScopeJournalRead Scope = "journal:read"
+	// ScopeReleaseDraft creates draft releases, edits drafts that stay drafts
+	// and manages their assets. It never publishes, unpublishes or changes a
+	// published release, nor deletes releases.
+	ScopeReleaseDraft Scope = "release:draft"
 )
 
-// AllScopes returns the fourteen scopes in a stable order.
+// AllScopes returns the fifteen scopes in a stable order.
 func AllScopes() []Scope {
 	return []Scope{
 		ScopeRepoRead, ScopeRepoWrite, ScopeRepoAdmin,
@@ -60,6 +64,7 @@ func AllScopes() []Scope {
 		ScopeCIWrite, ScopeSecretsWrite, ScopeRunnerRegister,
 		ScopeTokenAdmin,
 		ScopeIssueWrite, ScopeReleaseWrite, ScopeJournalRead,
+		ScopeReleaseDraft,
 	}
 }
 

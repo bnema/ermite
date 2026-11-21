@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -133,6 +134,7 @@ func TestReleaseFeatureAndMount(t *testing.T) {
 			res, err := server.GetVersion(context.Background(), &pb.GetVersionRequest{})
 			require.NoError(t, err)
 			assert.Equal(t, enabled, containsReleaseFeature(res.Features))
+			assert.Equal(t, enabled, slices.Contains(res.Features, FeatureTokenReleaseDraft))
 			assert.NotContains(t, Features, FeatureReleases)
 			if !enabled {
 				_, err := c.GetReleaseUsage(context.Background(), &pb.GetReleaseUsageRequest{Repo: "demo"})

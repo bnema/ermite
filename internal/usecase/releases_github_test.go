@@ -419,3 +419,23 @@ func TestGitHubReleaseDraftSameTagKeepsTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(b), `"target_commitish":""`, "a real rename drops the target")
 }
+
+func TestGitHubReleaseDraftScope(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	g := releaseGitHub(t, r)
+	repo := r.repo.String()
+	p := domain.TokenPrincipal(domain.Token{ID: "d", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeReleaseDraft}})
+	r.resolve(t, "v1", nil)
+	_, err := g.CreateRelease(r.ctx, p, "acme", repo, []byte(`{"tag_name":"v1"}`))
+	require.ErrorIs(t, err, domain.ErrForbidden)
+	b, err := g.CreateRelease(r.ctx, p, "acme", repo, []byte(`{"tag_name":"v1","draft":true}`))
+	require.NoError(t, err)
+	var got struct {
+		ID int64 `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(b, &got))
+	_, err = g.UpdateRelease(r.ctx, p, "acme", repo, got.ID, []byte(`{"name":"t"}`))
+	require.NoError(t, err)
+	_, err = g.UpdateRelease(r.ctx, p, "acme", repo, got.ID, []byte(`{"draft":false}`))
+	require.ErrorIs(t, err, domain.ErrForbidden)
+}

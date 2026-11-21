@@ -46,6 +46,9 @@ const (
 	// refuses when it is missing (the main guard), and also checks the token it
 	// gets back (a backstop).
 	FeatureTokenBranchPrefixes = "token.branch_prefixes"
+	// FeatureTokenReleaseDraft is the release:draft scope. An older server
+	// refuses or drops it: `token create` checks the features first.
+	FeatureTokenReleaseDraft = "token.release_draft"
 	// FeatureCIRuns is RunService (`ermite run`), FeatureCIRunners its runner
 	// calls (`ermite runner`).
 	FeatureCIRuns    = "ci.runs"
@@ -78,7 +81,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureIssueEdit, FeatureMREdit, FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge, FeatureJournal}
+	return []string{FeatureIssueEdit, FeatureMREdit, FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureTokenReleaseDraft, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge, FeatureJournal}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

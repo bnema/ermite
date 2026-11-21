@@ -30,6 +30,7 @@ func TestScopeWireNames(t *testing.T) {
 		ermite.Scope_SCOPE_ISSUE_WRITE:     "issue:write",
 		ermite.Scope_SCOPE_RELEASE_WRITE:   "release:write",
 		ermite.Scope_SCOPE_JOURNAL_READ:    "journal:read",
+		ermite.Scope_SCOPE_RELEASE_DRAFT:   "release:draft",
 	}
 	for s, name := range want {
 		assert.Equal(t, name, client.ScopeName(s))

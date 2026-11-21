@@ -114,3 +114,51 @@ func TestFullTokenKeepsOwnerRights(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, domain.TokenPrincipal(tok).HasOwnerRights())
 }
+
+// Schema 14 grants release:draft to the tokens that had the owner rights. From
+// schemas 6 to 9 it is granted with journal:read in the same batch.
+func TestSchema14ReleaseDraftTokenUpgrade(t *testing.T) {
+	ctx := context.Background()
+	var previous []string
+	for _, sc := range domain.AllScopes() {
+		if sc != domain.ScopeReleaseDraft {
+			previous = append(previous, sc.String())
+		}
+	}
+	withoutJournal := slices.DeleteFunc(slices.Clone(previous), func(s string) bool { return s == "journal:read" })
+	ids := []string{"full", "pre-journal", "partial", "repo", "branch"}
+	for _, from := range []uint32{6, 9, 10, 13} {
+		t.Run(fmt.Sprint(from), func(t *testing.T) {
+			dir := t.TempDir()
+			putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: from}))
+			for _, tc := range []struct {
+				id              string
+				scopes          []string
+				repos, prefixes []string
+			}{
+				{id: "full", scopes: previous},
+				{id: "pre-journal", scopes: withoutJournal},
+				{id: "partial", scopes: []string{"repo:read", "release:write"}},
+				{id: "repo", scopes: previous, repos: []string{"a"}},
+				{id: "branch", scopes: previous, prefixes: []string{"bot/"}},
+			} {
+				putRaw(t, dir, "token/"+tc.id, mustProto(t, &storagepb.Token{Id: tc.id, Scopes: tc.scopes, Repos: tc.repos, BranchPrefixes: tc.prefixes}))
+			}
+			s, err := kvstore.Open(ctx, dir)
+			require.NoError(t, err)
+			require.NoError(t, s.Close(ctx))
+			assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+			got := readTokenScopes(t, dir, ids...)
+			assert.Contains(t, got["full"], "release:draft")
+			assert.Len(t, got["full"], len(domain.AllScopes()), "not added twice")
+			if from < 10 {
+				assert.Len(t, got["pre-journal"], len(domain.AllScopes()), "journal:read and release:draft together")
+			} else {
+				assert.NotContains(t, got["pre-journal"], "release:draft", "had no owner rights at this schema")
+			}
+			for _, id := range []string{"partial", "repo", "branch"} {
+				assert.NotContains(t, got[id], "release:draft", id)
+			}
+		})
+	}
+}

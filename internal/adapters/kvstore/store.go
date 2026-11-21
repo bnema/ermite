@@ -64,7 +64,10 @@ import (
 // preserves the legacy base batch and fails interrupted dependency runs.
 // Version 13 groups the major batches by family (domain.FamilyBatchKey), see
 // upgradeDepsFamilies.
-const SchemaVersion = 13
+// Version 14 adds release:draft: unrestricted tokens holding all fourteen
+// previous scopes get it, so they keep the owner rights (see
+// upgradeReleaseDraftTokens).
+const SchemaVersion = 14
 
 const schemaKey = "meta/schema"
 
@@ -211,6 +214,11 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
+			if sv.GetVersion() >= 10 && sv.GetVersion() < 14 {
+				if err := s.upgradeReleaseDraftTokens(ctx, &b); err != nil {
+					return err
+				}
+			}
 			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: target}))
 			_, err := s.db.Apply(ctx, &b)
 			if errors.Is(err, kv.ErrConflict) {
@@ -285,9 +293,22 @@ var preJournalScopes = append(slices.Clone(preReleaseScopes), domain.ScopeReleas
 // upgradeJournalTokens adds to b the schema 10 upgrade of the tokens: a token
 // that holds all of preJournalScopes, limited to no repository and no branch
 // prefix, had the owner rights, which AllScopes also needs journal:read for,
-// so it gets it. Restricted or partial tokens are left as they are.
+// so it gets it, together with release:draft (schema 14) since both are
+// written in the same batch. Restricted or partial tokens are left as they are.
 func (s *Store) upgradeJournalTokens(ctx context.Context, b *kv.Batch) error {
-	return s.upgradeTokenScopes(ctx, b, preJournalScopes, []domain.Scope{domain.ScopeJournalRead})
+	return s.upgradeTokenScopes(ctx, b, preJournalScopes, []domain.Scope{domain.ScopeJournalRead, domain.ScopeReleaseDraft})
+}
+
+// preReleaseDraftScopes are the fourteen scopes of schemas 10 to 13, before release:draft.
+var preReleaseDraftScopes = append(slices.Clone(preJournalScopes), domain.ScopeJournalRead)
+
+// upgradeReleaseDraftTokens adds to b the schema 14 upgrade of the tokens: a
+// token that holds all of preReleaseDraftScopes, limited to no repository and
+// no branch prefix, had the owner rights, which AllScopes also needs
+// release:draft for, so it gets it. Restricted or partial tokens are left as
+// they are.
+func (s *Store) upgradeReleaseDraftTokens(ctx context.Context, b *kv.Batch) error {
+	return s.upgradeTokenScopes(ctx, b, preReleaseDraftScopes, []domain.Scope{domain.ScopeReleaseDraft})
 }
 
 // upgradeTokenScopes adds addedScopes to every unrestricted token that holds

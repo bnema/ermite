@@ -151,6 +151,15 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "note: the server has no releases feature, so the token has no release:write scope")
 			}
 		}
+		if slices.Contains(req.Scopes, ermite.Scope_SCOPE_RELEASE_DRAFT) {
+			if err := requireReleaseDraft(env.ctx(cmd), c); err != nil {
+				if !errors.Is(err, errNoReleaseDraft) || explicitScope(scopes, ermite.Scope_SCOPE_RELEASE_DRAFT) {
+					return fmt.Errorf("%w (needed for the release:draft scope; nothing was created)", err)
+				}
+				req.Scopes = slices.DeleteFunc(req.Scopes, func(s ermite.Scope) bool { return s == ermite.Scope_SCOPE_RELEASE_DRAFT })
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "note: the server has no token.release_draft feature, so the token has no release:draft scope")
+			}
+		}
 		if slices.Contains(req.Scopes, ermite.Scope_SCOPE_JOURNAL_READ) {
 			if err := requireJournal(env.ctx(cmd), c); err != nil {
 				if !errors.Is(err, errNoJournal) || explicitScope(scopes, ermite.Scope_SCOPE_JOURNAL_READ) {

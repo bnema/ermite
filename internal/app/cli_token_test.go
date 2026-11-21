@@ -4,6 +4,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -175,7 +176,7 @@ func TestTokenCreatePresetExpansionOnTheWire(t *testing.T) {
 	} {
 		t.Run(preset, func(t *testing.T) {
 			f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
-				return &ermite.GetVersionResponse{Features: []string{"issues", "releases", "journal"}}, nil
+				return &ermite.GetVersionResponse{Features: []string{"issues", "releases", "journal", "token.release_draft"}}, nil
 			}, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
 				return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Scopes: r.GetScopes()}, Secret: "s"}, nil
 			}}
@@ -307,6 +308,34 @@ func TestTokenReleaseWriteFeatureGuard(t *testing.T) {
 				after, _ := f.snapshot()
 				assert.Equal(t, len(before)+1, len(after))
 				assert.Equal(t, "GetVersion", after[len(after)-1])
+			}
+		})
+	}
+}
+
+func TestTokenReleaseDraftFeatureGuard(t *testing.T) {
+	for _, supported := range []bool{false, true} {
+		t.Run(fmt.Sprint(supported), func(t *testing.T) {
+			f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+				features := []string{"issues", "releases"}
+				if supported {
+					features = append(features, "token.release_draft")
+				}
+				return &ermite.GetVersionResponse{Features: features}, nil
+			}, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+				return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Scopes: r.GetScopes()}, Secret: "s"}, nil
+			}}
+			vars := envFor(f.serve(t))
+			res := runCLI(t, vars, "", "token", "create", "daily", "--preset", "cli").ok(t)
+			got := lastCreateToken(t, f).GetScopes()
+			assert.Equal(t, supported, slices.Contains(got, ermite.Scope_SCOPE_RELEASE_DRAFT))
+			assert.Equal(t, !supported, strings.Contains(res.stderr, "so the token has no release:draft scope"))
+			res = runCLI(t, vars, "", "token", "create", "submitter", "--scope", "repo:read", "--scope", "release:draft")
+			if supported {
+				res.ok(t)
+				assert.Equal(t, []ermite.Scope{ermite.Scope_SCOPE_REPO_READ, ermite.Scope_SCOPE_RELEASE_DRAFT}, lastCreateToken(t, f).GetScopes())
+			} else {
+				require.ErrorIs(t, res.err, errNoReleaseDraft)
 			}
 		})
 	}

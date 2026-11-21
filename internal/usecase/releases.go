@@ -60,27 +60,56 @@ func (r *Releases) readable(ctx context.Context, p domain.Principal, name domain
 	}
 	return repo, err
 }
-func releaseWriter(p domain.Principal, name domain.RepoName) bool {
+
+// releaseFullWriter may change every release of name.
+func releaseFullWriter(p domain.Principal, name domain.RepoName) bool {
 	return !p.IsBranchLimited() && (p.Allows(domain.ScopeReleaseWrite, name) || p.JobPermits(domain.PermContents, domain.PermissionWrite, name))
 }
-func (r *Releases) writable(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
+
+// releaseWriter may change some releases of name, so it sees drafts.
+func releaseWriter(p domain.Principal, name domain.RepoName) bool {
+	return releaseFullWriter(p, name) || (!p.IsBranchLimited() && p.Allows(domain.ScopeReleaseDraft, name))
+}
+
+// releaseAccess says what a writer may change: every release, or drafts only
+// (release:draft). Draft-only checks run inside the versioned release writes,
+// so a concurrent publish makes them retry and fail.
+type releaseAccess struct{ draftOnly bool }
+
+// draft refuses a draft-only writer a release that is not a draft.
+func (a releaseAccess) draft(rel domain.Release) error {
+	if a.draftOnly && !rel.Draft {
+		return fmt.Errorf("%w: release:draft only changes draft releases", domain.ErrForbidden)
+	}
+	return nil
+}
+
+// full refuses a draft-only writer an operation reserved to release:write.
+func (a releaseAccess) full(what string) error {
+	if a.draftOnly {
+		return fmt.Errorf("%w: release:draft cannot %s", domain.ErrForbidden, what)
+	}
+	return nil
+}
+
+func (r *Releases) writable(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, releaseAccess, error) {
 	repo, err := r.readable(ctx, p, name)
 	if err != nil {
-		return repo, err
+		return repo, releaseAccess{}, err
 	}
 	if p.IsBranchLimited() {
-		return repo, fmt.Errorf("%w: a branch-limited token cannot manage releases", domain.ErrForbidden)
+		return repo, releaseAccess{}, fmt.Errorf("%w: a branch-limited token cannot manage releases", domain.ErrForbidden)
 	}
 	if releaseWriter(p, name) {
 		if repo.Archived {
-			return repo, domain.ErrArchived
+			return repo, releaseAccess{}, domain.ErrArchived
 		}
-		return repo, nil
+		return repo, releaseAccess{draftOnly: !releaseFullWriter(p, name)}, nil
 	}
 	if p.IsAnonymous() {
-		return repo, domain.ErrUnauthenticated
+		return repo, releaseAccess{}, domain.ErrUnauthenticated
 	}
-	return repo, domain.ErrForbidden
+	return repo, releaseAccess{}, domain.ErrForbidden
 }
 func (r *Releases) updateReleases(ctx context.Context, repo domain.RepoName, fn func(*ports.ReleaseWrite) error) error {
 	const releaseTries = 256
@@ -229,9 +258,14 @@ func (r *Releases) emit(ctx context.Context, repo domain.Repo, rel domain.Releas
 
 // CreateRelease creates a release, optionally creating its tag when publishing.
 func (r *Releases) CreateRelease(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.CreateReleaseParams) (domain.Release, error) {
-	repo, err := r.writable(ctx, p, name)
+	repo, access, err := r.writable(ctx, p, name)
 	if err != nil {
 		return domain.Release{}, err
+	}
+	if !params.Draft {
+		if err = access.full("publish a release"); err != nil {
+			return domain.Release{}, err
+		}
 	}
 	rel := domain.Release{Repo: name, Draft: params.Draft, Prerelease: params.Prerelease, MakeLatest: params.MakeLatest, Author: domain.AuthorName(p), CreatedAt: r.clock.Now(), UpdatedAt: r.clock.Now()}
 	if rel.Tag, err = domain.ParseReleaseTag(params.Tag); err != nil {
@@ -372,7 +406,7 @@ func (r *Releases) ListReleases(ctx context.Context, p domain.Principal, name do
 
 // UpdateRelease changes only fields whose pointers are non-nil.
 func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name domain.RepoName, id int64, params ports.UpdateReleaseParams) (domain.Release, error) {
-	repo, err := r.writable(ctx, p, name)
+	repo, access, err := r.writable(ctx, p, name)
 	if err != nil {
 		return domain.Release{}, err
 	}
@@ -385,6 +419,9 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 			return err
 		}
 		wasDraft, oldTag := rel.Draft, rel.Tag
+		if err = access.draft(rel); err != nil {
+			return err
+		}
 		if params.Tag != nil {
 			rel.Tag, err = domain.ParseReleaseTag(*params.Tag)
 			if err != nil {
@@ -405,6 +442,9 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		}
 		if params.Draft != nil {
 			rel.Draft = *params.Draft
+		}
+		if err = access.draft(rel); err != nil {
+			return err
 		}
 		if params.Prerelease != nil {
 			rel.Prerelease = *params.Prerelease
@@ -446,8 +486,11 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 
 // DeleteRelease removes metadata first, then its contents.
 func (r *Releases) DeleteRelease(ctx context.Context, p domain.Principal, name domain.RepoName, id int64) error {
-	repo, err := r.writable(ctx, p, name)
+	repo, access, err := r.writable(ctx, p, name)
 	if err != nil {
+		return err
+	}
+	if err = access.full("delete a release"); err != nil {
 		return err
 	}
 	var rel domain.Release

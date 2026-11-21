@@ -310,11 +310,11 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	full := get("full")
 	assert.Contains(t, full.Scopes, domain.ScopeIssueWrite)
 	assert.Contains(t, full.Scopes, domain.ScopeMRReview)
-	assert.Len(t, full.Scopes, 14)
+	assert.Len(t, full.Scopes, 15)
 	assert.Contains(t, full.Scopes, domain.ScopeReleaseWrite)
 	assert.Contains(t, full.Scopes, domain.ScopeJournalRead)
 	full10 := get("full10")
-	assert.Len(t, full10.Scopes, 14)
+	assert.Len(t, full10.Scopes, 15)
 	assert.Contains(t, full10.Scopes, domain.ScopeReleaseWrite)
 	for _, id := range []string{"repos", "prefix", "missing", "reposmr", "small"} {
 		assert.NotContains(t, get(id).Scopes, domain.ScopeReleaseWrite)
@@ -365,7 +365,7 @@ func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
 	_, err := kvstore.Open(ctx, dir)
 	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
-	assert.Equal(t, uint32(13), uint32(kvstore.SchemaVersion))
+	assert.Equal(t, uint32(14), uint32(kvstore.SchemaVersion))
 }
 
 // A reopen racing the delete of the repository either lands before the delete
@@ -603,7 +603,7 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeMRForceMerge))
 				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeReleaseWrite))
 				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeJournalRead))
-				assert.Len(t, tok.Scopes, 14)
+				assert.Len(t, tok.Scopes, 15)
 			} else {
 				assert.NotContains(t, tok.Scopes, domain.ScopeMRForceMerge)
 				assert.NotContains(t, tok.Scopes, domain.ScopeReleaseWrite)

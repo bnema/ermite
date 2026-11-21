@@ -145,7 +145,9 @@ Releases need a server advertising the `releases` feature. Published releases fo
 repository visibility; drafts are visible only to release writers. Writes need
 `release:write` (included in the `cli` token preset); branch-limited tokens cannot
 write releases. On an older server the preset drops this scope with a note, while
-an explicit `--scope release:write` fails before creating a token.
+an explicit `--scope release:write` fails before creating a token. `release:draft`
+creates and edits drafts only; it needs the `token.release_draft` feature, with
+the same preset/explicit handling.
 
 ```sh
 ermite release create <repo> <tag> [--title T] [--notes TEXT | --notes-file F] [--target REF] [--draft] [--prerelease] [--latest] [--asset FILE[#LABEL]]… [--json]

@@ -17,6 +17,9 @@ import (
 // FeatureReleases is listed by GetVersion when ReleaseService is served.
 const FeatureReleases = "releases"
 
+// FeatureTokenReleaseDraft is the release:draft scope; listed with FeatureReleases.
+const FeatureTokenReleaseDraft = "token.release_draft"
+
 // releaseService implements ermiteconnect.ReleaseServiceHandler. journal
 // serves ListUnreleased; nil answers unimplemented.
 type releaseService struct {

@@ -157,7 +157,7 @@ func New(cfg Config) *API {
 		features = append(features, FeatureCIArtifacts)
 	}
 	if cfg.Releases != nil {
-		features = append(features, FeatureReleases)
+		features = append(features, FeatureReleases, FeatureTokenReleaseDraft)
 	}
 	if cfg.OIDCKeys != nil && cfg.OIDCKeys.Enabled() {
 		features = append(features, FeatureCIOIDC)
