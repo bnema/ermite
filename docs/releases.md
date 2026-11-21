@@ -17,7 +17,8 @@ ermite release delete app v1.0.0 --yes
 Create/edit accept `--draft`, `--prerelease`, `--latest`, `--target` and notes.
 Use `edit --publish` to publish a draft, `--no-prerelease` to clear that flag.
 An existing tag never moves; `--target` creates a missing tag. A draft can name a
-missing tag. Deleting a tag turns its release into a draft and keeps its assets;
+missing tag: it keeps its `--target`, and publishing creates the tag there unless
+`--target` is given again. Deleting a tag turns its release into a draft and keeps its assets;
 recreating the tag does not republish it. Deleting a release does not delete the tag.
 
 `latest` is the newest published non-prerelease by creation time and id, unless

@@ -393,3 +393,79 @@ func TestReleaseLatestUsesIndex(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 42, got.ID)
 }
+
+func (r *releaseRig) resolveRev(t *testing.T, rev, id string, err error) {
+	t.Helper()
+	v, e := domain.ParseRevision(rev)
+	require.NoError(t, e)
+	oid, e := domain.ParseObjectID(id)
+	require.NoError(t, e)
+	r.reader.EXPECT().ResolveRevision(mock.Anything, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, err).Maybe()
+}
+func (r *releaseRig) expectTag(t *testing.T, tag, id string) {
+	t.Helper()
+	oid, err := domain.ParseObjectID(id)
+	require.NoError(t, err)
+	r.tags.EXPECT().CreateTag(r.ctx, r.repo, tag, oid).Return(nil).Once()
+	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: id}}).Return(nil).Once()
+}
+
+func TestReleaseDraftKeepsTarget(t *testing.T) {
+	no := false
+	main, dev, bad := "main", "dev", "nope"
+	t.Run("create then publish uses stored target", func(t *testing.T) {
+		r := newReleaseRig(t, ports.ReleaseLimits{})
+		r.resolve(t, "v1", domain.ErrNotFound)
+		r.resolveRev(t, "main", oidA, nil)
+		draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true, TargetCommitish: "main"})
+		require.NoError(t, err)
+		require.Equal(t, "main", draft.TargetCommitish)
+		got, err := r.svc.GetRelease(r.ctx, domain.Root(), r.repo, ports.ReleaseRef{ID: draft.ID})
+		require.NoError(t, err)
+		require.Equal(t, "main", got.TargetCommitish)
+		title := "t"
+		got, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Title: &title})
+		require.NoError(t, err)
+		require.Equal(t, "main", got.TargetCommitish)
+		r.expectTag(t, "v1", oidA)
+		got, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no})
+		require.NoError(t, err)
+		require.False(t, got.Draft)
+		require.Equal(t, oidA, got.TargetCommitish)
+	})
+	t.Run("edit stores target and publish target wins", func(t *testing.T) {
+		r := newReleaseRig(t, ports.ReleaseLimits{})
+		r.resolve(t, "v1", domain.ErrNotFound)
+		r.resolveRev(t, "main", oidA, nil)
+		r.resolveRev(t, "dev", oidB, nil)
+		draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true})
+		require.NoError(t, err)
+		require.Empty(t, draft.TargetCommitish)
+		got, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{TargetCommitish: &main})
+		require.NoError(t, err)
+		require.True(t, got.Draft)
+		require.Equal(t, "main", got.TargetCommitish)
+		r.expectTag(t, "v1", oidB)
+		got, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no, TargetCommitish: &dev})
+		require.NoError(t, err)
+		require.Equal(t, oidB, got.TargetCommitish)
+	})
+	t.Run("bad target fails early", func(t *testing.T) {
+		r := newReleaseRig(t, ports.ReleaseLimits{})
+		r.resolve(t, "v1", domain.ErrNotFound)
+		r.resolveRev(t, "nope", oidA, domain.ErrNotFound)
+		_, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true, TargetCommitish: bad})
+		require.ErrorIs(t, err, domain.ErrNotFound)
+		draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true})
+		require.NoError(t, err)
+		_, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{TargetCommitish: &bad})
+		require.ErrorIs(t, err, domain.ErrNotFound)
+	})
+	t.Run("existing tag draft reports tag commit", func(t *testing.T) {
+		r := newReleaseRig(t, ports.ReleaseLimits{})
+		r.resolve(t, "v1", nil)
+		draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true, TargetCommitish: "other"})
+		require.NoError(t, err)
+		require.Equal(t, oidA, draft.TargetCommitish)
+	})
+}

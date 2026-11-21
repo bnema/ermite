@@ -19,7 +19,8 @@ type Release struct {
 	Repo                          RepoName
 	Tag, Title, Notes             string
 	Draft, Prerelease, MakeLatest bool
-	// TargetCommitish is the commit at publication, empty for an unresolved draft.
+	// TargetCommitish is the tag commit; a draft of a missing tag keeps the
+	// requested revision (maybe empty) until publication creates the tag.
 	TargetCommitish                   string
 	Author                            string
 	CreatedAt, PublishedAt, UpdatedAt time.Time

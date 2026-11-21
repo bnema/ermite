@@ -358,3 +358,23 @@ func TestGitHubReleaseHTTPWorkflow(t *testing.T) {
 	resp, _ = do("GET", assetURL, "", map[string]string{"Accept": "application/octet-stream", "If-None-Match": resp.Header.Get("ETag")})
 	require.Equal(t, 304, resp.StatusCode)
 }
+
+func TestGitHubReleaseDraftKeepsTarget(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	g := releaseGitHub(t, r)
+	repo := r.repo.String()
+	r.resolve(t, "v1", domain.ErrNotFound)
+	r.resolveRev(t, "main", oidA, nil)
+	b, err := g.CreateRelease(r.ctx, domain.Root(), "acme", repo, []byte(`{"tag_name":"v1","draft":true,"target_commitish":"main"}`))
+	require.NoError(t, err)
+	var got struct {
+		ID     int64  `json:"id"`
+		Target string `json:"target_commitish"`
+	}
+	require.NoError(t, json.Unmarshal(b, &got))
+	require.Equal(t, "main", got.Target)
+	r.expectTag(t, "v1", oidA)
+	b, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"draft":false}`))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"target_commitish":"`+oidA+`"`)
+}

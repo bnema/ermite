@@ -136,14 +136,22 @@ func (r *Releases) resolve(ctx context.Context, repo domain.RepoName, rev string
 	got, err := r.reader.ResolveRevision(ctx, repo, v)
 	return got.CommitID, err
 }
-func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Release, target string, create bool) error {
+
+// bind resolves the release tag. A draft of a missing tag keeps the requested
+// target; publishing creates the tag there.
+func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Release, target string) error {
 	oid, err := r.resolve(ctx, rel.Repo, "refs/tags/"+rel.Tag)
 	if errors.Is(err, domain.ErrNotFound) {
 		if rel.Draft {
-			rel.TargetCommitish = ""
+			if target != "" {
+				if _, err = r.resolve(ctx, rel.Repo, target); err != nil {
+					return err
+				}
+			}
+			rel.TargetCommitish = target
 			return nil
 		}
-		if !create || target == "" {
+		if target == "" {
 			return fmt.Errorf("%w: tag %q does not exist; give target_commitish to create it", domain.ErrPreconditionFailed, rel.Tag)
 		}
 		if r.pushes == nil {
@@ -230,7 +238,7 @@ func (r *Releases) CreateRelease(ctx context.Context, p domain.Principal, name d
 	} else if !errors.Is(err, domain.ErrNotFound) {
 		return rel, err
 	}
-	if err = r.bind(ctx, p, &rel, params.TargetCommitish, true); err != nil {
+	if err = r.bind(ctx, p, &rel, params.TargetCommitish); err != nil {
 		return rel, err
 	}
 	if rel.Draft {
@@ -398,7 +406,10 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		if params.TargetCommitish != nil {
 			target = *params.TargetCommitish
 		}
-		if err = r.bind(ctx, p, &rel, target, target != ""); err != nil {
+		if target == "" && wasDraft {
+			target = rel.TargetCommitish
+		}
+		if err = r.bind(ctx, p, &rel, target); err != nil {
 			return err
 		}
 		kind = "updated"
