@@ -135,7 +135,7 @@ Needs the `releases` feature. Reads follow repo visibility; drafts need write ac
 | `release create <repo> <tag> [--title T] [--notes T\|--notes-file F\|-] [--target REF] [--draft] [--prerelease] [--latest] [--asset FILE[#LABEL]]…` | existing tags never move; `--target` creates a missing tag (a draft keeps it and publishes with it; deleting the tag clears it) |
 | `release list <repo> [--limit 30]` | newest first |
 | `release view <repo> <tag\|id\|latest> [--notes]` | `--notes` prints only Markdown |
-| `release edit <repo> <tag\|id> [--title] [--notes\|--notes-file] [--tag T] [--target] [--draft\|--publish] [--prerelease\|--no-prerelease] [--latest]` | only given fields change |
+| `release edit <repo> <tag\|id> [--title] [--notes\|--notes-file] [--tag T] [--target] [--draft\|--publish] [--prerelease\|--no-prerelease] [--latest]` | only given fields change; `--target ''` clears a draft's target, a new `--tag` drops it |
 | `release delete <repo> <tag\|id> [-y]` | keeps the Git tag |
 | `release upload <repo> <tag\|id> FILE[#LABEL]… [--clobber] [--content-type T]` | |
 | `release download <repo> <tag\|id\|latest> [--name N]… [--pattern GLOB]… [-D dir]` | never overwrites |

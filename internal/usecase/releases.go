@@ -137,11 +137,12 @@ func (r *Releases) resolve(ctx context.Context, repo domain.RepoName, rev string
 	return got.CommitID, err
 }
 
-// resolveTarget resolves a requested target_commitish to a commit.
+// resolveTarget resolves a requested target_commitish to a commit. A missing
+// or malformed revision is invalid; other failures pass through unchanged.
 func (r *Releases) resolveTarget(ctx context.Context, repo domain.RepoName, target string) (domain.ObjectID, error) {
 	oid, err := r.resolve(ctx, repo, target)
-	if err != nil && !errors.Is(err, domain.ErrUnavailable) {
-		return oid, fmt.Errorf("%w: target_commitish %q: %v", domain.ErrInvalid, target, err)
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrInvalidRevision) {
+		return oid, fmt.Errorf("%w: target_commitish %q: %w", domain.ErrInvalid, target, err)
 	}
 	return oid, err
 }
@@ -383,7 +384,7 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		if err != nil {
 			return err
 		}
-		wasDraft := rel.Draft
+		wasDraft, oldTag := rel.Draft, rel.Tag
 		if params.Tag != nil {
 			rel.Tag, err = domain.ParseReleaseTag(*params.Tag)
 			if err != nil {
@@ -415,7 +416,7 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		target, given := "", params.TargetCommitish != nil
 		if given {
 			target = *params.TargetCommitish
-		} else if wasDraft && params.Tag == nil {
+		} else if wasDraft && rel.Tag == oldTag {
 			target = rel.TargetCommitish
 		}
 		if err = r.bind(ctx, p, &rel, target, given); err != nil {

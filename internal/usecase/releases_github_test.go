@@ -389,3 +389,33 @@ func TestGitHubReleaseDraftKeepsTarget(t *testing.T) {
 	_, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"target_commitish":"nope"}`))
 	require.ErrorIs(t, err, domain.ErrInvalid)
 }
+
+func TestGitHubReleaseDraftSameTagKeepsTarget(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	g := releaseGitHub(t, r)
+	repo := r.repo.String()
+	r.resolve(t, "v1", domain.ErrNotFound)
+	r.resolve(t, "v2", domain.ErrNotFound)
+	r.resolveRev(t, "main", oidA, nil)
+	b, err := g.CreateRelease(r.ctx, domain.Root(), "acme", repo, []byte(`{"tag_name":"v1","draft":true,"target_commitish":"main"}`))
+	require.NoError(t, err)
+	var got struct {
+		ID int64 `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(b, &got))
+	b, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"tag_name":"v1"}`))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"target_commitish":"main"`)
+	r.expectTag(t, "v1", oidA)
+	b, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"tag_name":"v1","draft":false}`))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"target_commitish":"`+oidA+`"`)
+
+	b, err = g.CreateRelease(r.ctx, domain.Root(), "acme", repo, []byte(`{"tag_name":"v2","draft":true,"target_commitish":"main"}`))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, &got))
+	r.resolve(t, "v3", domain.ErrNotFound)
+	b, err = g.UpdateRelease(r.ctx, domain.Root(), "acme", repo, got.ID, []byte(`{"tag_name":"v3"}`))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"target_commitish":""`, "a real rename drops the target")
+}

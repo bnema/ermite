@@ -527,3 +527,55 @@ func TestReleaseDraftKeepsTarget(t *testing.T) {
 		require.Equal(t, oidA, draft.TargetCommitish)
 	})
 }
+
+func TestReleaseDraftSameTagKeepsTarget(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	r.resolve(t, "v1", domain.ErrNotFound)
+	r.resolve(t, "v2", domain.ErrNotFound)
+	r.resolveRev(t, "main", oidA, nil)
+	draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true, TargetCommitish: "main"})
+	require.NoError(t, err)
+	same := "v1"
+	got, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Tag: &same})
+	require.NoError(t, err)
+	require.Equal(t, "main", got.TargetCommitish, "an identical tag is not a rename")
+	r.expectTag(t, "v1", oidA)
+	no := false
+	got, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Tag: &same, Draft: &no})
+	require.NoError(t, err)
+	require.Equal(t, oidA, got.TargetCommitish)
+}
+
+func TestReleaseTargetCanceledIsNotInvalid(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	r.resolve(t, "v1", domain.ErrNotFound)
+	r.resolveRev(t, "main", oidA, context.Canceled)
+	_, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true, TargetCommitish: "main"})
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, domain.ErrInvalid)
+}
+
+func TestReleaseDraftTagDeletionClearsTargetSilently(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	v, err := domain.ParseRevision("refs/tags/v1")
+	require.NoError(t, err)
+	oid, err := domain.ParseObjectID(oidA)
+	require.NoError(t, err)
+	r.reader.EXPECT().ResolveRevision(mock.Anything, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
+	draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "v1", Draft: true})
+	require.NoError(t, err)
+	require.Equal(t, oidA, draft.TargetCommitish)
+	for len(r.events) > 0 {
+		<-r.events
+	}
+	r.svc.OnRefsMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/tags/v1", Old: oidA, New: domain.ZeroOID}})
+	got, err := r.svc.GetRelease(r.ctx, domain.Root(), r.repo, ports.ReleaseRef{ID: draft.ID})
+	require.NoError(t, err)
+	require.True(t, got.Draft)
+	require.Empty(t, got.TargetCommitish)
+	select {
+	case e := <-r.events:
+		t.Fatalf("unexpected event %v", e)
+	default:
+	}
+}
