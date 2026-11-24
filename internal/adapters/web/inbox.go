@@ -123,12 +123,6 @@ type JournalView struct {
 	Truncated bool
 }
 
-const (
-	releaseDueCommits  = 10
-	releaseSoonCommits = 3
-	releaseOldTagAge   = 30 * 24 * time.Hour
-)
-
 type UnreleasedGroup struct {
 	Key, Label string
 	Rows       []UnreleasedRow
@@ -141,18 +135,6 @@ func (j JournalView) unreleasedCount() int {
 		n += len(g.Rows)
 	}
 	return n
-}
-
-func unreleasedLevel(d domain.TagDistance, now time.Time) string {
-	old := d.Tag.Name != "" && !d.Tag.At.IsZero() && now.Sub(d.Tag.At) > releaseOldTagAge
-	switch {
-	case d.More || d.Commits >= releaseDueCommits || (old && d.Commits >= releaseSoonCommits):
-		return "due"
-	case d.Commits >= releaseSoonCommits || old:
-		return "soon"
-	default:
-		return "later"
-	}
 }
 
 // UnreleasedRow is a repository whose default branch is ahead of its nearest
@@ -283,7 +265,7 @@ func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 			row.When = "—"
 		}
 		for i := range groups {
-			if groups[i].Key == unreleasedLevel(u.Distance, now) {
+			if groups[i].Key == string(domain.ReleaseUrgency(u.Distance, now)) {
 				groups[i].Rows = append(groups[i].Rows, row)
 				break
 			}
