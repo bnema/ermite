@@ -147,11 +147,11 @@ func (l *liveStream) ownerSections(ctx context.Context) ([]templ.Component, erro
 	s, p := l.s, principal(ctx)
 	switch l.view {
 	case "inbox":
-		page, err := s.inboxModeration(ctx)
+		rows, err := s.attention(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return []templ.Component{InboxPending(page)}, nil
+		return []templ.Component{InboxAttention(rows)}, nil
 	case "work":
 		w, err := s.cfg.Inbox.Work(ctx, p)
 		if err != nil {

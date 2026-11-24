@@ -90,13 +90,13 @@ func TestOwnerLiveSets(t *testing.T) {
 	running := domain.RunUpdated{Run: domain.CIRun{Repo: alpha, Status: domain.CIInProgress}}
 	done := domain.RunUpdated{Run: domain.CIRun{Repo: alpha, Status: domain.CICompleted}}
 	sections := map[string][]string{
-		"inbox":    {"inbox-pending"},
+		"inbox":    {"attention"},
 		"work":     {"inbox-mrs", "inbox-issues"},
 		"activity": {"inbox-runs", "inbox-journal"},
 		"deps":     {"inbox-deps"},
 		"insights": nil,
 	}
-	all := []string{"inbox-pending", "inbox-mrs", "inbox-issues", "inbox-runs", "inbox-journal", "inbox-deps", "inbox-traffic"}
+	all := []string{"attention", "inbox-mrs", "inbox-issues", "inbox-runs", "inbox-journal", "inbox-deps", "inbox-traffic"}
 	for _, tc := range []struct {
 		name string
 		ev   domain.Event

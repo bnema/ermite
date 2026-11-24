@@ -112,10 +112,8 @@ func TestInboxPageForTheOwner(t *testing.T) {
 	assert.Contains(t, body, "<title>Inbox · ")
 	assert.Contains(t, body, `<div id="view" data-view="inbox"><h1 class="sr" tabindex="-1">Inbox</h1>`)
 	assert.Contains(t, body, `href="/-/inbox" data-nav data-key="g i" aria-label="Inbox (2)" aria-current="page"`)
-	assert.Contains(t, body, `id="inbox-pending"`)
-	assert.Contains(t, body, `id="pending-alpha-`+pending.ID.String()+`"`)
-	assert.Contains(t, body, "Awaiting moderation</span></h2>")
-	assert.NotContains(t, body, "inbox-pending-count")
+	assert.Contains(t, body, `id="attention"`)
+	assert.Contains(t, body, `id="att-moderation-alpha-`+pending.ID.String()+`"`)
 	for _, gone := range []string{"tab=", `id="inbox-mrs"`, `id="inbox-deps"`, `id="inbox-journal"`, `class="crumbs"`, `aria-label="Inbox sections"`} {
 		assert.NotContains(t, body, gone, "?tab= is ignored")
 	}
@@ -213,8 +211,8 @@ func TestInboxLiveFragments(t *testing.T) {
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueSubmitted{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)
 	require.Len(t, frags, 1)
-	assert.Contains(t, frags[0].html, `id="inbox-pending"`)
-	assert.Contains(t, frags[0].html, `id="pending-alpha-`)
+	assert.Contains(t, frags[0].html, `id="attention"`)
+	assert.Contains(t, frags[0].html, `id="att-moderation-alpha-`)
 	assert.NotContains(t, frags[0].html, `id="inbox-mrs"`)
 
 	removed, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssuePendingRemoved{Repo: repoName(t, "alpha")}})
@@ -230,7 +228,7 @@ func TestInboxLiveFragments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pushed, 1)
 	assert.Equal(t, "owner", pushed[0].event)
-	assert.Contains(t, pushed[0].html, `id="inbox-pending"`)
+	assert.Contains(t, pushed[0].html, `id="attention"`)
 	assert.Contains(t, pushed[0].html, `id="owner-nav"`)
 }
 
@@ -340,8 +338,8 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 			require.NoError(t, err)
 			require.Len(t, frags, 1)
-			assert.Contains(t, frags[0].html, `id="inbox-pending"`)
-			assert.Contains(t, frags[0].html, "nothing awaits moderation.")
+			assert.Contains(t, frags[0].html, `id="attention"`)
+			assert.Contains(t, frags[0].html, "nothing awaits you.")
 		})
 	}
 }

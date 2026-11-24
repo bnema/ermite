@@ -430,15 +430,6 @@
   .cform .f-error { color: var(--red); margin: 0; }
   .cform .hp { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 
-  /* the inbox: items awaiting moderation, shown as text */
-  .pending-list { display: grid; gap: var(--s3); list-style: none; padding: 0; margin: 0; }
-  .pending { padding: var(--s3) var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); display: grid; gap: var(--s2); }
-  .pending .p-head { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: baseline; color: var(--ink-dim); font-size: var(--fs-s); }
-  .pending .p-title { margin: 0; font-weight: 700; color: var(--ink-hi); overflow-wrap: anywhere; }
-  .pending .p-body { margin: 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .pending .p-btns { display: flex; gap: var(--s2); flex-wrap: wrap; }
-  .pending .p-btns form { margin: 0; }
-
   /* the inbox: dependency updates, one collapsible row per repository
      (.deps-repo-row); inside, the patch and minor batch then the majors, one
      .deps-row each: its updates under its summary, the status and the actions

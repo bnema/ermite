@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Inbox is what awaits the owner, one row per item.
+templ Inbox(l Layout, rows []AttentionRow) {
+	@Shell(l, nil) {
+		<div id="view" data-view="inbox">
+			<h1 class="sr" tabindex="-1">Inbox</h1>
+			@InboxAttention(rows)
+		</div>
+	}
+}
+
+// InboxAttention is the list of the items, the live section of the inbox.
+// The texts of a pending issue come from anonymous visitors: they are shown
+// as plain text, escaped, never as Markdown.
+templ InboxAttention(rows []AttentionRow) {
+	<section id="attention" aria-label="Awaiting you">
+		if len(rows) == 0 {
+			<p class="lede dim">nothing awaits you.</p>
+		} else {
+			<ul class="attention" data-rows>
+				for _, r := range rows {
+					<li id={ r.ID } class="att" data-kind={ r.Kind } data-cursor?={ r.Cursor }>
+						<span class={ "att-kind att-" + r.Kind }>{ r.Chip }</span>
+						<div class="att-main">
+							<div class="att-head">
+								if r.Href != "" {
+									<a class="att-title" href={ templ.SafeURL(r.Href) }>{ r.Title }</a>
+								} else {
+									<span class="att-title">{ r.Title }</span>
+								}
+								<a class="mute att-repo" href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a>
+								if r.Checks.Total > 0 {
+									@CommitChecks(r.Checks)
+								}
+								if r.Note != "" {
+									if r.NoteTip != "" {
+										<span class="dim att-note" title={ r.NoteTip }>{ r.Note }</span>
+									} else {
+										<span class="dim att-note">{ r.Note }</span>
+									}
+								}
+							</div>
+							if r.Pending != nil && r.Pending.Preview != "" {
+								<p class="att-preview">{ r.Pending.Preview }</p>
+							}
+						</div>
+						if r.WhenAt != "" {
+							<time class="att-when dim" datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+						} else {
+							<span class="att-when"></span>
+						}
+						<div class="att-acts">
+							if r.Pending != nil && r.Pending.Approve != "" {
+								@ActionForm(ActionProps{Action: r.Pending.Approve}) {
+									<button type="submit" class="btn primary">Approve</button>
+								}
+								@ActionForm(ActionProps{Action: r.Pending.Reject}) {
+									<button type="submit" class="btn">Reject</button>
+								}
+								@ActionForm(ActionProps{Action: r.Pending.Ban, Confirm: "Reject and ban this author?"}) {
+									<button type="submit" class="btn danger">Reject and ban</button>
+								}
+							}
+							if r.ActionHref != "" {
+								<a class="btn" href={ templ.SafeURL(r.ActionHref) }>{ r.ActionLabel }</a>
+							}
+						</div>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+// inboxModerated removes the row of the moderated issue and sends the owner
+// navigation again, its counts read after the action.
+templ inboxModerated(id string, nav *OwnerNav) {
+	@RemoveEl(id)
+	if nav != nil {
+		@ownerNavBar(*nav, true)
+	}
+}

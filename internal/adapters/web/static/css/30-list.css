@@ -345,3 +345,51 @@
 .pulse-swatch { display: inline-block; width: 1.2em; margin-right: .5em; vertical-align: middle; border-top: 2px solid var(--chart); }
 .pulse-swatch-visitors { height: .6em; border: 0; border-radius: 2px; background: var(--ink-mute); }
 .pulse-guide { stroke: var(--ink-mute); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+
+@layer components {
+  /* the inbox: one row per item awaiting the owner. The kind is a small
+     label; its ink tells the kinds apart, the word always says it. The
+     actions sit at the right end; under 640px they wrap below the text. */
+  .attention {
+    list-style: none; margin: 0; padding: 0;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-s);
+    overflow: hidden;
+  }
+  .att {
+    display: grid; grid-template-columns: 11ch minmax(0, 1fr) auto auto; align-items: center;
+    gap: var(--s2) var(--s3); padding: var(--s2) var(--s3); min-height: 48px;
+    &:not(:first-child) { border-top: 1px solid var(--border); }
+    &[data-cursor] { background: var(--bg-cursor); box-shadow: inset 2px 0 0 var(--accent); }
+    & form { margin: 0; }
+  }
+  .att-kind {
+    justify-self: start; display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2);
+    font: 600 var(--fs-xs) / 1 var(--font); white-space: nowrap; color: var(--ink-dim);
+    background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: 999px;
+    &.att-moderation { color: var(--blue); border-color: currentColor; }
+    &.att-deps-failed { color: var(--red); border-color: currentColor; }
+    &.att-ready { color: var(--green); border-color: currentColor; }
+    &.att-release-due { color: var(--ink-hi); border-style: dashed; }
+  }
+  .att-main { min-width: 0; display: grid; gap: var(--s1); }
+  .att-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0;
+    & .ck-sum { align-self: center; }
+  }
+  .att-title { font-weight: 600; color: var(--ink-hi); overflow-wrap: anywhere; }
+  .att-repo, .att-note { font-size: var(--fs-s); }
+  .att-note { overflow-wrap: anywhere; }
+  .att-preview {
+    margin: 0; font-size: var(--fs-s); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .att-when { font-size: var(--fs-s); white-space: nowrap; }
+  .att-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
+  @media (max-width: 640px) {
+    .att { grid-template-columns: auto minmax(0, 1fr) auto; }
+    .att-main { grid-column: 1 / -1; grid-row: 2; }
+    .att-when { grid-column: 3; grid-row: 1; justify-self: end; }
+    .att-acts { grid-column: 1 / -1; justify-content: flex-start; }
+    .att-acts:empty { display: none; }
+  }
+}
