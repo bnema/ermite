@@ -179,8 +179,14 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	if resume == "" {
 		resume = q.Get("after")
 	}
+	topics := []string{topic}
+	if topic == "home" && SignedIn(r.Context()) && s.cfg.Inbox != nil {
+		// The owner's home also follows the owner topic, for the counts of
+		// the owner navigation.
+		topics = append(topics, ownerTopic)
+	}
 	params := ports.WatchParams{
-		Topics: []string{topic}, ResumeAfter: resume,
+		Topics: topics, ResumeAfter: resume,
 		// The visitor is the client of the watch, for the limit per client.
 		Client: clientlimit.Key(clientlimit.ClientAddr(r, s.cfg.TrustedProxies)),
 		Ready:  start,
@@ -254,6 +260,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), state: q.Get("state"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
+	st.homeNav = len(topics) > 1
 	if topic == ownerTopic {
 		st.forOwner, st.rng, st.sort, st.filter = true, q.Get("range"), q.Get("sort"), q.Get("filter")
 	}

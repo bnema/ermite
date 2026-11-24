@@ -23,6 +23,7 @@ type liveStream struct {
 	s        *Server
 	repo     string // "" on the home page
 	forOwner bool   // the owner topic: view is one of the owner pages
+	homeNav  bool   // the owner's home: it also follows the owner navigation
 	rng      string // owner: the range of the view (?range=), "" for the default
 	sort     string // owner: the order of the deps rows (?sort=), "" for the default
 	filter   string // owner: the filter of the deps rows (?filter=), "" for all
@@ -93,7 +94,15 @@ func (l *liveStream) render(ctx context.Context, we ports.WatchEvent) ([]fragmen
 		return l.owner(ctx, we)
 	}
 	if l.repo == "" {
-		return l.home(ctx, we)
+		frags, err := l.home(ctx, we)
+		if err != nil || !l.homeNav {
+			return frags, err
+		}
+		nav, err := l.ownerNavFragment(ctx, we.Event, "home")
+		if err != nil {
+			return nil, err
+		}
+		return append(frags, nav...), nil
 	}
 	return l.repoPage(ctx, we)
 }

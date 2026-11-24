@@ -111,6 +111,24 @@ func (l *liveStream) owner(ctx context.Context, we ports.WatchEvent) ([]fragment
 			parts = append(parts, OwnerNavBar(*n))
 		}
 	}
+	return renderOwner(ctx, parts)
+}
+
+// ownerNavFragment is the owner navigation, with current shown, when the
+// event can change its counts; nothing otherwise or for anyone but the owner.
+func (l *liveStream) ownerNavFragment(ctx context.Context, ev domain.Event, current string) ([]fragment, error) {
+	if !navCountEvent(ev) {
+		return nil, nil
+	}
+	n := l.s.ownerNav(ctx, current)
+	if n == nil {
+		return nil, nil
+	}
+	return renderOwner(ctx, []templ.Component{OwnerNavBar(*n)})
+}
+
+// renderOwner renders parts into one owner fragment; none without parts.
+func renderOwner(ctx context.Context, parts []templ.Component) ([]fragment, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}

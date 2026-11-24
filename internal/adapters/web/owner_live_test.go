@@ -352,3 +352,93 @@ func TestOwnerPagesAreLive(t *testing.T) {
 		assert.Contains(t, rec.Body.String(), want, path)
 	}
 }
+
+// The owner's home keeps today's rows and adds the owner navigation for the
+// events that can change its counts, read once.
+func TestOwnerHomeFollowsTheNav(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	browse := homeBrowse(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+	svc := mocks.NewInboxService(t)
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Inbox: svc})
+	ls := &liveStream{s: srv, homeNav: true}
+
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 1, Work: 2}, nil).Once()
+	got, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssueSubmitted{Repo: repo}})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "only the navigation")
+	assert.Equal(t, "owner", got[0].event)
+	assert.Contains(t, got[0].html, `id="owner-nav"`)
+	assert.Contains(t, got[0].html, `aria-label="Repositories" aria-current="page"`)
+
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
+	got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repo}})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, "home-list", got[0].event)
+	assert.Contains(t, got[0].html, `id="repo-proj"`)
+	assert.Equal(t, "owner", got[1].event)
+	assert.Contains(t, got[1].html, `id="owner-nav"`)
+
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
+	got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.DependencyUpdatesFound{Repo: repo}})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "no home row for an owner-only event")
+	assert.Equal(t, "owner", got[0].event)
+
+	for _, ev := range []domain.Event{
+		domain.JournalUpdated{Repo: repo},
+		domain.RunUpdated{Run: domain.CIRun{Repo: repo, ID: 9, Status: domain.CIInProgress}},
+	} {
+		got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: ev})
+		require.NoError(t, err)
+		for _, f := range got {
+			assert.NotEqual(t, "owner", f.event, "%T: no navigation", ev)
+		}
+	}
+	svc.AssertNumberOfCalls(t, "Counts", 3)
+}
+
+// Only the owner's home watches the owner topic; an anonymous home never
+// sends the owner navigation.
+func TestHomeStreamTopics(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		hdr  map[string]string
+		want []string
+	}{
+		"anonymous": {nil, []string{"home"}},
+		"owner":     {map[string]string{"Cookie": CookieName + "=tok"}, []string{"home", "owner"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := &watchProbe{release: make(chan struct{}), events: []ports.WatchEvent{
+				{ID: "b-1", Event: domain.IssueSubmitted{Repo: repoName(t, "x")}},
+				{Gap: true},
+			}}
+			svc := mocks.NewInboxService(t)
+			svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 1}, nil).Maybe()
+			srv := newTestServer(t, Config{
+				Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
+				Heartbeat: time.Hour, Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
+			})
+			ts := httptest.NewServer(srv)
+			t.Cleanup(ts.Close)
+			resp, _ := open(t, ts, "topic=home", tc.hdr)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+			var all strings.Builder
+			for sc.Scan() {
+				all.WriteString(sc.Text() + "\n")
+				if sc.Text() == "data: gap" {
+					break
+				}
+			}
+			assert.Equal(t, tc.want, f.topics.Load())
+			assert.Equal(t, name == "owner", strings.Contains(all.String(), `id="owner-nav"`))
+			assert.Equal(t, name == "owner", strings.Contains(all.String(), "event: owner"))
+		})
+	}
+}
