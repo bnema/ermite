@@ -224,7 +224,7 @@ func TestInboxLiveFragments(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, none, "%T is not inbox news", ev)
 	}
-	pushed, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "beta")}})
+	pushed, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.JournalUpdated{Repo: repoName(t, "beta")}})
 	require.NoError(t, err)
 	require.Len(t, pushed, 1)
 	assert.Equal(t, "owner", pushed[0].event)

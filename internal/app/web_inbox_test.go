@@ -178,3 +178,16 @@ func ownerStream(t *testing.T, h *harness, token, view string) *sseStream {
 	}()
 	return s
 }
+
+// A push of the default branch reaches the owner topic as its journal signal:
+// the inbox stream refreshes its section and the owner navigation.
+func TestWebInboxStreamFollowsAPush(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	token := r.signIn(t)
+	stream := ownerStream(t, r.harness, token, "inbox")
+	r.mustGit(r.wt, "checkout", "-q", "main")
+	r.writeFile(r.wt, "push.txt", []byte("push\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "main")
+	got := fragmentWith(t, stream, `id="owner-nav"`)
+	assert.Contains(t, got, `id="attention"`)
+}

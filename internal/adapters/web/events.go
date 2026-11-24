@@ -27,7 +27,7 @@ import (
 // the HTML fragments the page shows, sent as Server-Sent Events:
 //
 //	GET /-/events?topic=home
-//	GET /-/events?topic=owner&view=inbox[&repo=<name>]   (the signed-in owner only)
+//	GET /-/events?topic=owner&view=inbox|work|activity|deps|insights[&range=][&sort=][&filter=]   (the signed-in owner only)
 //	GET /-/events?topic=repo:<name>&view=summary|refs
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
 //	GET /-/events?topic=repo:<name>&view=mrs

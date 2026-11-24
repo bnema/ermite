@@ -50,8 +50,10 @@ func ownerViewEvent(view string, ev domain.Event) bool {
 		switch ev.(type) {
 		case domain.IssueSubmitted, domain.IssuePendingRemoved,
 			domain.MergeRequestOpened, domain.MergeRequestEdited, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady,
-			domain.PushEvent, domain.RunUpdated, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.ReleasePublished:
+			domain.JournalUpdated, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.ReleasePublished:
 			return true
+		case domain.RunUpdated:
+			return navCountEvent(ev)
 		}
 	case "work":
 		switch ev.(type) {
@@ -61,7 +63,7 @@ func ownerViewEvent(view string, ev domain.Event) bool {
 		}
 	case "activity":
 		switch ev.(type) {
-		case domain.RunUpdated, domain.JournalUpdated, domain.PushEvent, domain.ReleasePublished,
+		case domain.RunUpdated, domain.JournalUpdated, domain.ReleasePublished,
 			// The journal records these without a JournalUpdated of their own.
 			domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
 			domain.IssueOpened, domain.IssueClosed, domain.IssueResolved:
@@ -82,7 +84,7 @@ func navCountEvent(ev domain.Event) bool {
 	switch e := ev.(type) {
 	case domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueResolved,
 		domain.MergeRequestOpened, domain.MergeRequestEdited, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady,
-		domain.PushEvent, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.ReleasePublished,
+		domain.JournalUpdated, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.ReleasePublished,
 		domain.RepoUpdated, domain.RepoDeleted:
 		return true
 	case domain.RunUpdated:

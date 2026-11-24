@@ -41,8 +41,8 @@ const (
 const (
 	// TopicHome follows every repository the caller may see.
 	TopicHome = "home"
-	// TopicOwner follows the merge requests and issues of every repository,
-	// for the owner only (the inbox). Anyone else is told it is an unknown
+	// TopicOwner follows the owner pages: what is open, pending and happening
+	// across every repository, for the owner only. Anyone else is told it is an unknown
 	// topic.
 	TopicOwner = "owner"
 	// topicRepoPrefix starts the topic of one repository: "repo:<name>".

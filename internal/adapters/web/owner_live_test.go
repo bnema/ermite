@@ -118,12 +118,12 @@ func TestOwnerLiveSets(t *testing.T) {
 		{"mr ready", domain.MergeRequestReady{}, []string{"inbox", "work"}, true},
 		{"comment", domain.CommentAdded{}, nil, false},
 		{"mergeability", domain.MergeRequestMergeability{}, nil, false},
-		{"push", domain.PushEvent{Repo: alpha}, []string{"inbox", "activity"}, true},
+		{"push", domain.PushEvent{Repo: alpha}, nil, false}, // never on the owner topic: its JournalUpdated is
 		{"run queued", queued, []string{"inbox", "work", "activity", "deps"}, true},
-		{"run in progress", running, []string{"inbox", "work", "activity", "deps"}, false},
+		{"run in progress", running, []string{"work", "activity", "deps"}, false},
 		{"run completed", done, []string{"inbox", "work", "activity", "deps"}, true},
 		{"job", domain.JobUpdated{}, nil, false},
-		{"journal", domain.JournalUpdated{Repo: alpha}, []string{"activity"}, false},
+		{"journal", domain.JournalUpdated{Repo: alpha}, []string{"inbox", "activity"}, true},
 		{"release published", domain.ReleasePublished{Release: domain.Release{Repo: alpha}}, []string{"inbox", "activity"}, true},
 		{"release updated", domain.ReleaseUpdated{}, nil, false},
 		{"deps found", domain.DependencyUpdatesFound{Repo: alpha}, []string{"inbox", "deps"}, true},
@@ -219,7 +219,7 @@ func TestInboxTrafficStream(t *testing.T) {
 	assert.True(t, srv.ownerStreamOK(withOwner(t.Context()), q))
 	assert.False(t, srv.ownerStreamOK(t.Context(), q))
 	ls := &liveStream{s: srv, forOwner: true, view: "insights", rng: "30d"}
-	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.JournalUpdated{}})
+	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssueEdited{}})
 	require.NoError(t, err)
 	assert.Empty(t, none, "no traffic refresh")
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssueSubmitted{Repo: repoName(t, "alpha")}})
@@ -287,7 +287,6 @@ func TestInboxJournalLive(t *testing.T) {
 	for _, ev := range []domain.Event{
 		domain.JournalUpdated{Repo: repoName(t, "alpha")},
 		domain.ReleasePublished{Release: domain.Release{Repo: repoName(t, "beta")}},
-		domain.PushEvent{Repo: repoName(t, "alpha")},
 	} {
 		frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 		require.NoError(t, err)
@@ -375,14 +374,18 @@ func TestOwnerHomeFollowsTheNav(t *testing.T) {
 	assert.Contains(t, got[0].html, `id="owner-nav"`)
 	assert.Contains(t, got[0].html, `aria-label="Repositories" aria-current="page"`)
 
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
 	got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repo}})
 	require.NoError(t, err)
-	require.Len(t, got, 2)
+	require.Len(t, got, 1, "the row; the counts follow the JournalUpdated of the push")
 	assert.Equal(t, "home-list", got[0].event)
 	assert.Contains(t, got[0].html, `id="repo-proj"`)
-	assert.Equal(t, "owner", got[1].event)
-	assert.Contains(t, got[1].html, `id="owner-nav"`)
+
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
+	got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.JournalUpdated{Repo: repo}})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "only the navigation")
+	assert.Equal(t, "owner", got[0].event)
+	assert.Contains(t, got[0].html, `id="owner-nav"`)
 
 	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
 	got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.DependencyUpdatesFound{Repo: repo}})
@@ -391,7 +394,6 @@ func TestOwnerHomeFollowsTheNav(t *testing.T) {
 	assert.Equal(t, "owner", got[0].event)
 
 	for _, ev := range []domain.Event{
-		domain.JournalUpdated{Repo: repo},
 		domain.RunUpdated{Run: domain.CIRun{Repo: repo, ID: 9, Status: domain.CIInProgress}},
 	} {
 		got, err = ls.render(withOwner(t.Context()), ports.WatchEvent{Event: ev})
@@ -443,5 +445,25 @@ func TestHomeStreamTopics(t *testing.T) {
 			assert.Equal(t, name == "owner", strings.Contains(all.String(), `id="owner-nav"`))
 			assert.Equal(t, name == "owner", strings.Contains(all.String(), "event: owner"))
 		})
+	}
+}
+
+// A form too large on an owner action names that action and returns to its
+// page, even for a repository whose name contains "issues".
+func TestOwnerFormTooLargeBack(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "issues-x")), Browse: homeBrowse(t)})
+	for path, want := range map[string]string{
+		depsPath + "/issues-x/open":             "a dependency action",
+		moderationPath + "/issues-x/id/approve": "a moderation action",
+		"/issues-x/issues/1/close":              "an issue",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("a="+strings.Repeat("b", maxFormBytes+1)))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetPathValue("repo", "issues-x")
+		rec := httptest.NewRecorder()
+		require.False(t, srv.form(rec, req), path)
+		assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, path)
+		assert.Contains(t, rec.Body.String(), "larger than "+want+" can be", path)
 	}
 }

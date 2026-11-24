@@ -35,11 +35,9 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) bool {
 		back, what := mrBase(r.PathValue("repo")), "a merge request"
 		if strings.HasPrefix(r.URL.Path, moderationPath+"/") {
 			back, what = inboxPath, "a moderation action"
-		}
-		if strings.HasPrefix(r.URL.Path, depsPath+"/") {
+		} else if strings.HasPrefix(r.URL.Path, depsPath+"/") {
 			back, what = depsPath, "a dependency action"
-		}
-		if strings.Contains(r.URL.Path, "/issues") {
+		} else if strings.Contains(r.URL.Path, "/issues") {
 			back, what = issuesBase(r.PathValue("repo")), "an issue"
 		}
 		s.reject(r.Context(), w, r, http.StatusRequestEntityTooLarge, "form too large", "the form is larger than "+what+" can be.", back)
