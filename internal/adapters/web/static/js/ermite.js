@@ -1161,6 +1161,24 @@ window.ermiteLive = (() => {
       url.searchParams.set('after', id);
       element.setAttribute('hx-sse:connect', url.pathname + url.search);
     },
+    // htmx 4's public delete swap invokes recursive before:cleanup (including
+    // hx-sse's abort/reader.cancel and hx-live's binding disposal). Only an empty
+    // string is parsed; the fetched nodes themselves are adopted, never serialized.
+    async replaceRegion(old, fresh) {
+      if (!old || !fresh) throw new Error('missing refresh region');
+      for (const el of fresh.querySelectorAll('[autofocus]')) el.removeAttribute('autofocus');
+      const marker = document.createComment('live region');
+      old.before(marker);
+      const remove = () => window.htmx.swap({ sourceElement: old, target: old, text: '',
+        swap: 'delete settle:0 transition:false', push: false, replace: false });
+      if (old.matches('.hint-live')) {
+        window.ermiteLive.resumeStream(fresh);
+        await window.ermiteLive.teardown(remove);
+      } else await remove();
+      const node = document.adoptNode(fresh);
+      marker.replaceWith(node);
+      window.htmx.process(node);
+    },
     // lost is htmx:sse:close and htmx:sse:error: "live updates paused" shows
     // only if the stream is still down LOST_AFTER later.
     lost() {

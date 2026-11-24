@@ -535,24 +535,7 @@ window.ermiteMR = (() => {
     return page;
   }
 
-  // htmx 4's public delete swap invokes recursive before:cleanup (including
-  // hx-sse's abort/reader.cancel and hx-live's binding disposal). Only an empty
-  // string is parsed; the fetched nodes themselves are adopted, never serialized.
-  async function replaceRegion(old, fresh) {
-    if (!old || !fresh) throw new Error('missing MR refresh region');
-    for (const el of $$('[autofocus]', fresh)) el.removeAttribute('autofocus');
-    const marker = document.createComment('MR region');
-    old.before(marker);
-    const remove = () => window.htmx.swap({ sourceElement: old, target: old, text: '',
-      swap: 'delete settle:0 transition:false', push: false, replace: false });
-    if (old.matches('.hint-live')) {
-      window.ermiteLive.resumeStream(fresh);
-      await window.ermiteLive.teardown(remove);
-    } else await remove();
-    const node = document.adoptNode(fresh);
-    marker.replaceWith(node);
-    window.htmx.process(node);
-  }
+  const replaceRegion = (old, fresh) => window.ermiteLive.replaceRegion(old, fresh);
 
   async function refreshPage(page, current = () => true) {
     const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '#mr-verdict-fact', '#mr-issue-fact', '.hint-live'];

@@ -164,3 +164,27 @@ test('the notice of an event caused by the page\'s own action is dropped', (t) =
   ermiteLive.swap('unrelated request');
   assert.equal(slot.filled, 2, 'other htmx requests do not hide notices');
 });
+
+test('replaceRegion keeps the stream across a live swap and deletes other regions directly', async (t) => {
+  const { live } = setup(t);
+  const calls = [];
+  const fresh = { querySelectorAll: () => [] };
+  const marker = { replaceWith(n) { calls.push(['adopt', n]); } };
+  const savedDoc = globalThis.document;
+  globalThis.document = { createComment: () => marker, adoptNode: (n) => n };
+  window.htmx = {
+    swap: (o) => { calls.push(['delete', o.swap]); },
+    process: (n) => { calls.push(['process', n]); },
+  };
+  live.resumeStream = (el) => { calls.push(['resume', el]); };
+  live.teardown = async (remove) => { calls.push(['teardown']); await remove(); };
+  const region = (isLive) => ({ before() {}, matches: (s) => isLive && s === '.hint-live' });
+  try {
+    await live.replaceRegion(region(true), fresh);
+    assert.deepEqual(calls, [['resume', fresh], ['teardown'], ['delete', 'delete settle:0 transition:false'],
+      ['adopt', fresh], ['process', fresh]]);
+    calls.length = 0;
+    await live.replaceRegion(region(false), fresh);
+    assert.deepEqual(calls, [['delete', 'delete settle:0 transition:false'], ['adopt', fresh], ['process', fresh]]);
+  } finally { globalThis.document = savedDoc; }
+});
