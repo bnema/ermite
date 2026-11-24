@@ -45,8 +45,9 @@ func expectInbox(svc *mocks.InboxService, ov inboxFixture) {
 	for i := range ov.Pending {
 		items = append(items, ports.AttentionItem{Kind: ports.AttentionModeration, Repo: ov.Pending[i].Repo, Pending: &ov.Pending[i]})
 	}
-	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(items, nil).Maybe()
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: len(items), Work: len(ov.MergeRequests) + len(ov.Issues)}, nil).Maybe()
+	counts := ports.OwnerCounts{Attention: len(items), Work: len(ov.MergeRequests) + len(ov.Issues)}
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Items: items, Counts: counts}, nil).Maybe()
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(counts, nil).Maybe()
 }
 
 func inboxOverview(t testing.TB) inboxFixture {
@@ -96,11 +97,10 @@ func TestInboxPageForTheOwner(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	pending := testPendingIssue(t)
-	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return([]ports.AttentionItem{
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Items: []ports.AttentionItem{
 		{Kind: ports.AttentionModeration, Repo: pending.Repo, Pending: &pending},
 		{Kind: ports.AttentionRelease, Repo: repoName(t, "beta")},
-	}, nil).Once()
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 2, Work: 5}, nil).Once()
+	}, Counts: ports.OwnerCounts{Attention: 2, Work: 5}}, nil).Once() // no Counts call: the nav uses these
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},

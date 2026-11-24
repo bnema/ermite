@@ -95,8 +95,9 @@ func TestInboxAttentionReadyFollowsTheChecks(t *testing.T) {
 	for src, a := range answers {
 		ci.EXPECT().ListChecks(mock.Anything, name(t, "alpha"), heads[src].String(), usecase.MaxCIChecks).Return(a.checks, a.more, nil).Once()
 	}
-	got, err := in.Attention(t.Context(), domain.Owner())
+	a, err := in.Attention(t.Context(), domain.Owner())
 	require.NoError(t, err)
+	got := a.Items
 	assert.Equal(t, []string{"none", "success"}, readySources(got), "newest first; pending, failed, truncated, gone and draft left out")
 	assert.Equal(t, ok, got[1].Checks)
 	assert.Equal(t, heads["success"], got[1].MergeRequest.HeadID)
@@ -106,8 +107,9 @@ func TestInboxAttentionReadyFollowsTheChecks(t *testing.T) {
 func TestInboxAttentionReadyWithoutCI(t *testing.T) {
 	t.Parallel()
 	in, _, _ := readyRig(t, false)
-	got, err := in.Attention(t.Context(), domain.Owner())
+	a, err := in.Attention(t.Context(), domain.Owner())
 	require.NoError(t, err)
+	got := a.Items
 	assert.Equal(t, []string{"truncated", "failed", "pending", "none", "success"}, readySources(got))
 	assert.Nil(t, got[0].Checks)
 }
@@ -116,22 +118,27 @@ func TestInboxAttentionKindsOrderAndCounts(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	mrs, is, meta, pending := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewPendingIssueStore(t)
-	store, clock, repos, reader := mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewGitRepos(t), mocks.NewRepoReader(t)
+	store, clock, repos, reader, ci := mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewGitRepos(t), mocks.NewRepoReader(t), mocks.NewCIStore(t)
 	in := usecase.NewInbox(usecase.InboxConfig{
-		Meta: meta, MergeRequests: mrs, Issues: is, Pending: pending, Deps: store, Clock: clock, Repos: repos, Reader: reader,
+		Meta: meta, MergeRequests: mrs, Issues: is, Pending: pending, Deps: store, Clock: clock, Repos: repos, Reader: reader, CI: ci,
 	})
 	clock.EXPECT().Now().Return(now)
-	alpha, beta := name(t, "alpha"), name(t, "beta")
-	for _, n := range []string{"alpha", "beta"} {
-		meta.EXPECT().Get(mock.Anything, name(t, n)).Return(repoWithIssues(t, n, domain.IssuesPublic), nil).Twice() // once per Attention and Counts call
-	}
-	meta.EXPECT().Get(mock.Anything, name(t, "archived")).Return(domain.Repo{Name: name(t, "archived"), Archived: true}, nil).Twice()
+	alpha, beta, arch := name(t, "alpha"), name(t, "beta"), name(t, "archived")
+	// The repository list seeds every read by name: meta.Get is never called.
+	archivedRepo := repoWithIssues(t, "archived", domain.IssuesPublic)
+	archivedRepo.Archived = true
+	meta.EXPECT().List(mock.Anything).Return([]domain.Repo{
+		repoWithIssues(t, "alpha", domain.IssuesPublic), repoWithIssues(t, "beta", domain.IssuesPublic), archivedRepo,
+	}, nil)
 
-	// Work: an MR in beta (ready: no Git keeps its stored head, no CI) and an
-	// issue in alpha.
+	// Work: an MR in beta (ready: no Git keeps its stored head, no checks),
+	// one in the archived repository (never ready) and an issue in alpha.
 	mr := inboxMR(t, "beta", 7, now.Add(-time.Hour))
 	mr.HeadID = oid("c")
-	mrs.EXPECT().ListOpenAll(mock.Anything).Return([]domain.MergeRequest{mr}, nil)
+	archivedMR := inboxMR(t, "archived", 8, now)
+	archivedMR.HeadID = oid("d")
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return([]domain.MergeRequest{mr, archivedMR}, nil)
+	ci.EXPECT().ListChecks(mock.Anything, beta, oid("c").String(), usecase.MaxCIChecks).Return(nil, false, nil)
 	is.EXPECT().ListOpenAll(mock.Anything).Return([]domain.Issue{inboxIssue(t, "alpha", 1, now)}, nil)
 
 	ti, err := domain.ParseIssueTitle("hi")
@@ -143,17 +150,17 @@ func TestInboxAttentionKindsOrderAndCounts(t *testing.T) {
 
 	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
 	batch := func(key string, st domain.DepsState) domain.DepBatch {
-		return domain.DepBatch{Key: domain.DepBatchKey(key), Updates: upd, State: st, RunID: 0}
+		return domain.DepBatch{Key: domain.DepBatchKey(key), Updates: upd, State: st, RunID: 5}
 	}
 	failed := domain.RepoDeps{Repo: alpha, CheckedAt: now.Add(-3 * time.Hour), Batches: []domain.DepBatch{batch("b", domain.DepsFailed), batch("a", domain.DepsFailed), batch("c", domain.DepsApplying)}}
 	snoozed := domain.RepoDeps{Repo: beta, SnoozedUntil: now.Add(time.Hour), Batches: []domain.DepBatch{batch("", domain.DepsFailed)}}
-	archived := domain.RepoDeps{Repo: name(t, "archived"), Batches: []domain.DepBatch{batch("", domain.DepsFailed)}}
+	archived := domain.RepoDeps{Repo: arch, Batches: []domain.DepBatch{batch("", domain.DepsFailed)}}
 	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{failed, snoozed, archived}, nil)
+	// Only failed batches read their run: no GetRun for the applying one (the
+	// mock fails on an unexpected call).
+	ci.EXPECT().GetRun(mock.Anything, alpha, int64(5)).Return(domain.CIRun{ID: 5}, nil)
 
 	// Releases: alpha due (ten commits), beta soon (three), archived skipped.
-	meta.EXPECT().List(mock.Anything).Return([]domain.Repo{
-		{Name: alpha}, {Name: beta}, {Name: name(t, "archived"), Archived: true},
-	}, nil)
 	tag := domain.TagInfo{Name: "v1", At: now.Add(-24 * time.Hour)}
 	for n, commits := range map[domain.RepoName]int{alpha: 10, beta: 3} {
 		repos.EXPECT().HeadBranch(mock.Anything, n).Return("main", nil)
@@ -161,8 +168,9 @@ func TestInboxAttentionKindsOrderAndCounts(t *testing.T) {
 		reader.EXPECT().TagDistance(mock.Anything, n, oid("a"), domain.MaxTagDistance).Return(domain.TagDistance{Tag: tag, Commits: commits}, true, nil)
 	}
 
-	got, err := in.Attention(t.Context(), domain.Owner())
+	a, err := in.Attention(t.Context(), domain.Owner())
 	require.NoError(t, err)
+	got := a.Items
 	type row struct {
 		kind ports.AttentionKind
 		repo string
@@ -182,8 +190,10 @@ func TestInboxAttentionKindsOrderAndCounts(t *testing.T) {
 	assert.Nil(t, got[0].Pending.IPHash)
 	assert.True(t, got[5].Since.Equal(tag.At))
 	assert.Equal(t, 10, got[5].Unreleased.Distance.Commits)
+	require.NotNil(t, got[2].Deps.Run, "a failed batch has its run")
+	assert.Equal(t, ports.OwnerCounts{Attention: len(got), Work: 3}, a.Counts, "the archived MR is work, not ready")
 
 	counts, err := in.Counts(t.Context(), domain.Owner())
 	require.NoError(t, err)
-	assert.Equal(t, ports.OwnerCounts{Attention: len(got), Work: 2}, counts)
+	assert.Equal(t, a.Counts, counts)
 }

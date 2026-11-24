@@ -50,24 +50,22 @@ func (_m *InboxService) EXPECT() *InboxService_Expecter {
 }
 
 // Attention provides a mock function for the type InboxService
-func (_mock *InboxService) Attention(ctx context.Context, p domain.Principal) ([]ports.AttentionItem, error) {
+func (_mock *InboxService) Attention(ctx context.Context, p domain.Principal) (ports.OwnerAttention, error) {
 	ret := _mock.Called(ctx, p)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Attention")
 	}
 
-	var r0 []ports.AttentionItem
+	var r0 ports.OwnerAttention
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ([]ports.AttentionItem, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.OwnerAttention, error)); ok {
 		return returnFunc(ctx, p)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) []ports.AttentionItem); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.OwnerAttention); ok {
 		r0 = returnFunc(ctx, p)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]ports.AttentionItem)
-		}
+		r0 = ret.Get(0).(ports.OwnerAttention)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) error); ok {
 		r1 = returnFunc(ctx, p)
@@ -107,12 +105,12 @@ func (_c *InboxService_Attention_Call) Run(run func(ctx context.Context, p domai
 	return _c
 }
 
-func (_c *InboxService_Attention_Call) Return(attentionItems []ports.AttentionItem, err error) *InboxService_Attention_Call {
-	_c.Call.Return(attentionItems, err)
+func (_c *InboxService_Attention_Call) Return(ownerAttention ports.OwnerAttention, err error) *InboxService_Attention_Call {
+	_c.Call.Return(ownerAttention, err)
 	return _c
 }
 
-func (_c *InboxService_Attention_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) ([]ports.AttentionItem, error)) *InboxService_Attention_Call {
+func (_c *InboxService_Attention_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.OwnerAttention, error)) *InboxService_Attention_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -56,8 +56,8 @@ func TestInboxListsEveryKind(t *testing.T) {
 	t.Parallel()
 	items := attentionItems(t)
 	srv, svc := attentionServer(t)
-	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(items, nil).Once()
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 4}, nil).Once()
+	// One Attention read gives the rows and the nav counts: no Counts call.
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Items: items, Counts: ports.OwnerCounts{Attention: 4, Work: 7}}, nil).Once()
 
 	rec := inboxGet(srv, inboxPath, true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
@@ -114,8 +114,7 @@ func TestInboxListsEveryKind(t *testing.T) {
 func TestInboxEmpty(t *testing.T) {
 	t.Parallel()
 	srv, svc := attentionServer(t)
-	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(nil, nil).Once()
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{}, nil).Once()
 	body := inboxGet(srv, inboxPath, true).Body.String()
 	assert.Contains(t, body, `<section id="attention" aria-label="Awaiting you"><p class="lede dim">nothing awaits you.</p></section>`)
 	assert.NotContains(t, body, `class="attention"`)
@@ -134,8 +133,7 @@ func TestInboxAttentionIsMissingForEveryoneElse(t *testing.T) {
 func TestInboxLiveViewRendersTheAttention(t *testing.T) {
 	t.Parallel()
 	srv, svc := attentionServer(t)
-	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(attentionItems(t), nil).Once()
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 4}, nil).Once()
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Items: attentionItems(t), Counts: ports.OwnerCounts{Attention: 4}}, nil).Once()
 	ls := &liveStream{s: srv, forOwner: true, view: "inbox"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.DependencyUpdatesChanged{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)

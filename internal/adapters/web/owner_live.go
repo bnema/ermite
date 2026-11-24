@@ -98,15 +98,30 @@ func (l *liveStream) owner(ctx context.Context, we ports.WatchEvent) ([]fragment
 	if l.s.cfg.Inbox == nil || !SignedIn(ctx) {
 		return nil, nil
 	}
+	view, nav := ownerViewEvent(l.view, we.Event), navCountEvent(we.Event)
 	var parts []templ.Component
-	if ownerViewEvent(l.view, we.Event) {
+	if l.view == "inbox" && (view || nav) {
+		// One Attention read gives the rows and the navigation counts.
+		rows, counts, err := l.s.attention(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if view {
+			parts = append(parts, InboxAttention(rows))
+		}
+		if n := l.s.ownerNavWith(ctx, l.view, counts); nav && n != nil {
+			parts = append(parts, OwnerNavBar(*n))
+		}
+		return renderOwner(ctx, parts)
+	}
+	if view {
 		c, err := l.ownerSections(ctx)
 		if err != nil {
 			return nil, err
 		}
 		parts = append(parts, c...)
 	}
-	if navCountEvent(we.Event) {
+	if nav {
 		if n := l.s.ownerNav(ctx, l.view); n != nil {
 			parts = append(parts, OwnerNavBar(*n))
 		}
@@ -141,17 +156,11 @@ func renderOwner(ctx context.Context, parts []templ.Component) ([]fragment, erro
 	return []fragment{{event: ownerEvent, html: b.String()}}, nil
 }
 
-// ownerSections reads the view the stream follows and returns its live
-// sections.
+// ownerSections reads the view the stream follows, other than the inbox
+// (read in owner with its counts), and returns its live sections.
 func (l *liveStream) ownerSections(ctx context.Context) ([]templ.Component, error) {
 	s, p := l.s, principal(ctx)
 	switch l.view {
-	case "inbox":
-		rows, err := s.attention(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return []templ.Component{InboxAttention(rows)}, nil
 	case "work":
 		w, err := s.cfg.Inbox.Work(ctx, p)
 		if err != nil {

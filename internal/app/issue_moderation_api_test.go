@@ -122,7 +122,7 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 	items, err := r.forge.Inbox.Attention(ctx, domain.Root())
 	require.NoError(t, err)
 	var pending []*domain.PendingIssue
-	for _, it := range items {
+	for _, it := range items.Items {
 		if it.Kind == ports.AttentionModeration {
 			pending = append(pending, it.Pending)
 		}

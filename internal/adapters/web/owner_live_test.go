@@ -139,10 +139,13 @@ func TestOwnerLiveSets(t *testing.T) {
 					in = in || v == view
 				}
 				svc := mocks.NewInboxService(t)
+				counts := ports.OwnerCounts{Attention: 3, Work: 4}
+				if view == "inbox" && (in || tc.nav) {
+					// One read gives the rows and the nav counts.
+					svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Counts: counts}, nil).Once()
+				}
 				if in {
 					switch view {
-					case "inbox":
-						svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(nil, nil).Once()
 					case "work":
 						svc.EXPECT().Work(mock.Anything, mock.Anything).Return(ports.InboxWork{}, nil).Once()
 					case "activity":
@@ -152,8 +155,8 @@ func TestOwnerLiveSets(t *testing.T) {
 						svc.EXPECT().Deps(mock.Anything, mock.Anything).Return(ports.InboxDepsView{}, nil).Once()
 					}
 				}
-				if tc.nav {
-					svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 3, Work: 4}, nil).Once()
+				if tc.nav && view != "inbox" {
+					svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(counts, nil).Once()
 				}
 				ls := &liveStream{s: ownerLiveServer(t, svc), forOwner: true, view: view}
 				frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: tc.ev})

@@ -420,6 +420,14 @@ func newRepoLook(meta ports.RepoMetaStore) *repoLook {
 	return &repoLook{meta: meta, repos: make(map[domain.RepoName]repoSeen)}
 }
 
+// seed records repositories already read, so that get does not read them
+// again.
+func (l *repoLook) seed(all []domain.Repo) {
+	for _, repo := range all {
+		l.repos[repo.Name] = repoSeen{exists: true, issuesOn: repo.Settings.IssuesEnabled(), archived: repo.Archived}
+	}
+}
+
 // get reads the repository, or answers the cached read. A missing repository
 // reads as not existing.
 func (l *repoLook) get(ctx context.Context, name domain.RepoName) (repoSeen, error) {
@@ -536,8 +544,9 @@ func (in *Inbox) openRuns(ctx context.Context, look *repoLook) (ports.InboxRuns,
 }
 
 // visibleDeps lists the visible dependency batches of non-archived
-// repositories, excluding snoozed records, with the run of each batch.
-func (in *Inbox) visibleDeps(ctx context.Context, look *repoLook) (ports.InboxDepsView, error) {
+// repositories, excluding snoozed records, with the run of each batch that
+// withRun accepts.
+func (in *Inbox) visibleDeps(ctx context.Context, look *repoLook, withRun func(domain.DepBatch) bool) (ports.InboxDepsView, error) {
 	var out ports.InboxDepsView
 	if in.deps == nil || in.clock == nil {
 		return out, nil
@@ -571,7 +580,7 @@ func (in *Inbox) visibleDeps(ctx context.Context, look *repoLook) (ports.InboxDe
 				out.CheckedAt = d.CheckedAt
 			}
 			item := ports.InboxDeps{Rec: d, Batch: batch, QueuePos: domain.DepsQueuePosition(order, d.Repo, batch.Key)}
-			if batch.RunID != 0 && in.ci != nil {
+			if batch.RunID != 0 && in.ci != nil && withRun(batch) {
 				run, err := in.ci.GetRun(ctx, d.Repo, batch.RunID)
 				switch {
 				case err == nil:
@@ -639,7 +648,7 @@ func (in *Inbox) Deps(ctx context.Context, p domain.Principal) (ports.InboxDepsV
 	if !p.HasOwnerRights() {
 		return ports.InboxDepsView{}, domain.ErrNotFound
 	}
-	return in.visibleDeps(ctx, newRepoLook(in.meta))
+	return in.visibleDeps(ctx, newRepoLook(in.meta), func(domain.DepBatch) bool { return true })
 }
 
 // attentionKindOrder ranks the kinds of AttentionItem.
@@ -650,85 +659,98 @@ var attentionKindOrder = map[ports.AttentionKind]int{
 	ports.AttentionRelease:    3,
 }
 
-// Attention lists what awaits the owner's decision.
-func (in *Inbox) Attention(ctx context.Context, p domain.Principal) ([]ports.AttentionItem, error) {
+// Attention lists what awaits the owner's decision, with the owner counts.
+func (in *Inbox) Attention(ctx context.Context, p domain.Principal) (ports.OwnerAttention, error) {
 	if !p.HasOwnerRights() {
-		return nil, domain.ErrNotFound
+		return ports.OwnerAttention{}, domain.ErrNotFound
 	}
-	look := newRepoLook(in.meta)
-	work, err := in.openWork(ctx, look)
-	if err != nil {
-		return nil, err
-	}
-	return in.attention(ctx, look, work.MergeRequests)
+	return in.ownerAttention(ctx)
 }
 
-// Counts counts the attention items and the open work with one read of each
-// repository.
+// Counts counts the attention items and the open work.
 func (in *Inbox) Counts(ctx context.Context, p domain.Principal) (ports.OwnerCounts, error) {
 	if !p.HasOwnerRights() {
 		return ports.OwnerCounts{}, domain.ErrNotFound
 	}
-	look := newRepoLook(in.meta)
-	work, err := in.openWork(ctx, look)
-	if err != nil {
-		return ports.OwnerCounts{}, err
-	}
-	items, err := in.attention(ctx, look, work.MergeRequests)
-	if err != nil {
-		return ports.OwnerCounts{}, err
-	}
-	return ports.OwnerCounts{Attention: len(items), Work: len(work.MergeRequests) + len(work.Issues)}, nil
+	a, err := in.ownerAttention(ctx)
+	return a.Counts, err
 }
 
-// attention builds the attention items from the open merge requests of
-// openWork, ordered by kind, then newest first, then repository and
-// reference.
-func (in *Inbox) attention(ctx context.Context, look *repoLook, mrs []domain.MergeRequest) ([]ports.AttentionItem, error) {
-	var out []ports.AttentionItem
+// ownerAttention builds the attention items, ordered by kind, then newest
+// first, then repository and reference, and counts them with the open work.
+// Each repository is read once: from the repository list when releases are
+// measured, by name otherwise.
+func (in *Inbox) ownerAttention(ctx context.Context) (ports.OwnerAttention, error) {
+	var out ports.OwnerAttention
+	look := newRepoLook(in.meta)
+	var repos *journalRepos
+	if in.repos != nil && in.reader != nil && in.clock != nil {
+		r, err := in.journalRepos(ctx)
+		if err != nil {
+			return out, err
+		}
+		repos = &r
+		look.seed(r.all)
+	}
+	work, err := in.openWork(ctx, look)
+	if err != nil {
+		return out, err
+	}
+
 	pending, err := in.pendingIssues(ctx, look)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	for i := range pending {
 		pi := pending[i]
-		out = append(out, ports.AttentionItem{Kind: ports.AttentionModeration, Repo: pi.Repo, Since: pi.CreatedAt, Pending: &pi})
+		out.Items = append(out.Items, ports.AttentionItem{Kind: ports.AttentionModeration, Repo: pi.Repo, Since: pi.CreatedAt, Pending: &pi})
 	}
 
-	deps, err := in.visibleDeps(ctx, look)
+	failed := func(b domain.DepBatch) bool { return b.State == domain.DepsFailed }
+	deps, err := in.visibleDeps(ctx, look, failed)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	for i := range deps.Deps {
 		d := deps.Deps[i]
-		if d.Batch.State == domain.DepsFailed {
-			out = append(out, ports.AttentionItem{Kind: ports.AttentionDepsFailed, Repo: d.Rec.Repo, Since: d.Rec.CheckedAt, Deps: &d})
+		if failed(d.Batch) {
+			out.Items = append(out.Items, ports.AttentionItem{Kind: ports.AttentionDepsFailed, Repo: d.Rec.Repo, Since: d.Rec.CheckedAt, Deps: &d})
 		}
 	}
 
-	ready, err := in.readyMRs(ctx, mrs)
+	ready, err := in.readyMRs(ctx, look, work.MergeRequests)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	out = append(out, ready...)
+	out.Items = append(out.Items, ready...)
 
-	due, err := in.releasesDue(ctx)
-	if err != nil {
-		return nil, err
+	if repos != nil {
+		due, err := in.releasesDue(ctx, *repos)
+		if err != nil {
+			return out, err
+		}
+		out.Items = append(out.Items, due...)
 	}
-	out = append(out, due...)
 
-	slices.SortStableFunc(out, compareAttention)
+	slices.SortStableFunc(out.Items, compareAttention)
+	out.Counts = ports.OwnerCounts{Attention: len(out.Items), Work: len(work.MergeRequests) + len(work.Issues)}
 	return out, nil
 }
 
-// readyMRs keeps the merge requests that are not drafts, whose source branch
-// exists and whose checks passed or are none. Without CI every such request
-// is ready; truncated checks are not.
-func (in *Inbox) readyMRs(ctx context.Context, mrs []domain.MergeRequest) ([]ports.AttentionItem, error) {
+// readyMRs keeps the merge requests of non-archived repositories that are not
+// drafts, whose source branch exists and whose checks passed or are none.
+// Without CI every such request is ready; truncated checks are not.
+func (in *Inbox) readyMRs(ctx context.Context, look *repoLook, mrs []domain.MergeRequest) ([]ports.AttentionItem, error) {
 	var candidates []domain.MergeRequest
 	for _, m := range mrs {
-		if !m.IsDraft() {
+		if m.IsDraft() {
+			continue
+		}
+		r, err := look.get(ctx, m.Repo)
+		if err != nil {
+			return nil, err
+		}
+		if !r.archived {
 			candidates = append(candidates, m)
 		}
 	}
@@ -763,16 +785,9 @@ func (in *Inbox) readyMRs(ctx context.Context, mrs []domain.MergeRequest) ([]por
 	return out, nil
 }
 
-// releasesDue lists the non-archived repositories whose release is due.
-// None without the journal wiring (repositories, reader, clock).
-func (in *Inbox) releasesDue(ctx context.Context) ([]ports.AttentionItem, error) {
-	if in.repos == nil || in.reader == nil || in.clock == nil {
-		return nil, nil
-	}
-	repos, err := in.journalRepos(ctx)
-	if err != nil {
-		return nil, err
-	}
+// releasesDue lists the non-archived repositories of repos whose release is
+// due. It needs the journal wiring (repositories, reader, clock).
+func (in *Inbox) releasesDue(ctx context.Context, repos journalRepos) ([]ports.AttentionItem, error) {
 	unreleased, err := in.unreleasedOf(ctx, repos, func(domain.Repo) bool { return true })
 	if err != nil {
 		return nil, err

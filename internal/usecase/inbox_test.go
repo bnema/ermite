@@ -84,8 +84,9 @@ func TestInboxListsPendingIssuesWithoutTheirHash(t *testing.T) {
 		{ID: "a", Repo: name(t, "on"), Title: ti, IPHash: []byte("secret")},
 		{ID: "b", Repo: name(t, "off"), Title: ti},
 	}}, nil)
-	items, err := in.Attention(ctx, domain.Owner())
+	a, err := in.Attention(ctx, domain.Owner())
 	require.NoError(t, err)
+	items := a.Items
 	require.Len(t, items, 1, "issues off hides pending ones too")
 	require.Equal(t, ports.AttentionModeration, items[0].Kind)
 	assert.Nil(t, items[0].Pending.IPHash)

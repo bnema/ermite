@@ -225,8 +225,9 @@ type IssueNumberResolver interface {
 type InboxService interface {
 	// Attention is what awaits the owner's decision: issues to moderate,
 	// failed dependency batches, merge requests ready to merge and releases
-	// due, in that order, then newest first.
-	Attention(ctx context.Context, p domain.Principal) ([]AttentionItem, error)
+	// due, in that order, then newest first; with the owner counts of the
+	// same read.
+	Attention(ctx context.Context, p domain.Principal) (OwnerAttention, error)
 	// Counts are the numbers of the owner navigation.
 	Counts(ctx context.Context, p domain.Principal) (OwnerCounts, error)
 	// Work is the open merge requests and issues.

@@ -171,13 +171,13 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	if !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	rows, err := s.attention(ctx)
+	rows, counts, err := s.attention(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
 	l := s.base()
 	l.Title = "Inbox · " + s.instance
-	l.OwnerNav = s.ownerNav(ctx, "inbox")
+	l.OwnerNav = s.ownerNavWith(ctx, "inbox", counts)
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
 	if s.cfg.Events != nil {
 		l.Live, l.LiveURL = true, liveURL("owner", "view=inbox")
@@ -217,15 +217,16 @@ func attentionID(kind ports.AttentionKind, repo, ref string) string {
 	return "att-" + string(kind) + "-" + inboxIDPart(repo) + "-" + inboxIDPart(ref)
 }
 
-// attention reads the Attention items into their rows, in their order.
-func (s *Server) attention(ctx context.Context) ([]AttentionRow, error) {
-	items, err := s.cfg.Inbox.Attention(ctx, principal(ctx))
+// attention reads the Attention items into their rows, in their order, with
+// the owner counts of the same read.
+func (s *Server) attention(ctx context.Context) ([]AttentionRow, ports.OwnerCounts, error) {
+	a, err := s.cfg.Inbox.Attention(ctx, principal(ctx))
 	if err != nil {
-		return nil, err
+		return nil, ports.OwnerCounts{}, err
 	}
 	now := s.cfg.Now()
 	var rows []AttentionRow
-	for _, it := range items {
+	for _, it := range a.Items {
 		if row, ok := s.attentionRow(now, it); ok {
 			rows = append(rows, row)
 		}
@@ -233,7 +234,7 @@ func (s *Server) attention(ctx context.Context) ([]AttentionRow, error) {
 	if len(rows) > 0 {
 		rows[0].Cursor = true
 	}
-	return rows, nil
+	return rows, a.Counts, nil
 }
 
 // attentionRow is the row of an item; false for an item without its data.

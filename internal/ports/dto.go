@@ -547,6 +547,13 @@ type InboxDepsView struct {
 // OwnerCounts are the numbers shown in the owner navigation.
 type OwnerCounts struct{ Attention, Work int }
 
+// OwnerAttention is the attention items and the owner counts, read together.
+// Counts.Attention is len(Items).
+type OwnerAttention struct {
+	Items  []AttentionItem
+	Counts OwnerCounts
+}
+
 // History query limits.
 const (
 	// MaxMergeRequestCommits bounds the commits returned with a merge request.
