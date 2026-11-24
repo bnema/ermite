@@ -42,7 +42,13 @@ func (s *Server) activity(ctx context.Context, r *http.Request) (templ.Component
 	l.Title = "Activity · " + s.instance
 	l.OwnerNav = s.ownerNav(ctx, "activity")
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	// No live updates yet: the owner stream accepts view=activity later.
+	if s.cfg.Events != nil {
+		q := "view=activity"
+		if r := journalRanges[rng].param; r != "" {
+			q += "&range=" + r
+		}
+		l.Live, l.LiveURL = true, liveURL("owner", q)
+	}
 	return Activity(l, page), http.StatusOK, nil
 }
 

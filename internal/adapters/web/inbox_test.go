@@ -209,7 +209,7 @@ func TestInboxLiveFragments(t *testing.T) {
 	svc := mocks.NewInboxService(t)
 	expectInbox(svc, ov)
 	srv := inboxServer(t, svc)
-	ls := &liveStream{s: srv, view: "inbox"}
+	ls := &liveStream{s: srv, forOwner: true, view: "inbox"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueSubmitted{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)
 	require.Len(t, frags, 1)
@@ -221,11 +221,17 @@ func TestInboxLiveFragments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, removed, 1)
 
-	for _, ev := range []domain.Event{domain.PushEvent{Repo: repoName(t, "beta")}, domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}} {
+	for _, ev := range []domain.Event{domain.IssueEdited{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}, domain.CommentAdded{}, domain.JobUpdated{}} {
 		none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: ev})
 		require.NoError(t, err)
-		assert.Empty(t, none, "%T is not moderation news", ev)
+		assert.Empty(t, none, "%T is not inbox news", ev)
 	}
+	pushed, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "beta")}})
+	require.NoError(t, err)
+	require.Len(t, pushed, 1)
+	assert.Equal(t, "owner", pushed[0].event)
+	assert.Contains(t, pushed[0].html, `id="inbox-pending"`)
+	assert.Contains(t, pushed[0].html, `id="owner-nav"`)
 }
 
 // withOwner is a context as the session middleware leaves it for the owner.
@@ -330,7 +336,7 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 			svc := mocks.NewInboxService(t)
 			expectInbox(svc, inboxFixture{})
 			srv := inboxServer(t, svc)
-			ls := &liveStream{s: srv, view: "inbox"}
+			ls := &liveStream{s: srv, forOwner: true, view: "inbox"}
 			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 			require.NoError(t, err)
 			require.Len(t, frags, 1)

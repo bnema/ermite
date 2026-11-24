@@ -43,8 +43,9 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	assert.Contains(t, empty.body, "no open merge requests.")
 	assert.Contains(t, empty.body, "no open issues.")
 
-	// A queued run is on the activity page.
-	_, err = r.forge.store.CI().CreateRun(r.ctx, r.name("proj"), ".github/workflows/build.yml", func(id, number int64) ports.CIRunDraft {
+	// A queued run is on the activity page; its run-level events refresh the
+	// activity stream.
+	draft, err := r.forge.store.CI().CreateRun(r.ctx, r.name("proj"), ".github/workflows/build.yml", func(id, number int64) ports.CIRunDraft {
 		return ports.CIRunDraft{Run: domain.CIRun{Repo: r.name("proj"), ID: id, Number: number, Attempt: 1, WorkflowName: "Inbox build", Status: domain.CIQueued, Ref: "refs/heads/main", Event: "push", CreatedAt: time.Now()}}
 	})
 	require.NoError(t, err)
@@ -53,14 +54,31 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	assert.Contains(t, runs.body, `id="inbox-runs"`)
 	assert.Contains(t, runs.body, `data-inbox href="/-/inbox"`)
 
-	// The owner stream of the inbox opens for the owner.
-	ownerStream(t, r.harness, token)
+	stream := ownerStream(t, r.harness, token, "activity")
+	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
+	queued := fragmentWith(t, stream, `id="inbox-runs"`)
+	assert.Contains(t, queued, "Inbox build")
+	assert.Contains(t, queued, `id="owner-nav"`, "a queued run can change the counts")
+	// Completion removes the row in the same live fragment.
+	draft.Run.Status, draft.Run.Conclusion = domain.CICompleted, domain.CISuccess
+	_, err = r.forge.store.CI().Apply(r.ctx, ports.CIWrite{Runs: []domain.CIRun{draft.Run}})
+	require.NoError(t, err)
+	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
+	completed := fragmentWith(t, stream, "no runs in progress.")
+	assert.NotContains(t, completed, "Inbox build")
 
+	// The work stream sees the merge requests and issues of both repositories.
+	stream = ownerStream(t, r.harness, token, "work")
 	root := domain.Root()
 	_, err = r.forge.MergeRequests.Create(r.ctx, root, r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
+	opened := fragmentWith(t, stream, "add search")
+	assert.Contains(t, opened, `id="inbox-mrs"`)
+	assert.Contains(t, opened, `id="inbox-issues"`)
+	assert.Contains(t, opened, `id="owner-nav"`)
 	_, err = r.forge.Issues.Create(r.ctx, root, r.name("other"), ports.CreateIssueParams{Title: "search is slow"})
 	require.NoError(t, err)
+	assert.Contains(t, fragmentWith(t, stream, "search is slow"), `id="inbox-issues"`, "an event of the second repository")
 	_, err = r.forge.MergeRequests.Create(r.ctx, root, r.name("other"), ports.CreateMergeRequestParams{Title: "other work", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
 	_, err = r.forge.Issues.Create(r.ctx, root, r.name("proj"), ports.CreateIssueParams{Title: "proj bug"})
@@ -101,12 +119,29 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	assert.Equal(t, unknown.status, b.get("/-/events?topic=owner&view=inbox", map[string]string{"Authorization": "Bearer " + adminToken}).status)
 }
 
-// ownerStream opens the owner topic with the session cookie.
-func ownerStream(t *testing.T, h *harness, token string) *sseStream {
+// fragmentWith returns the data of the next owner event that contains want.
+// Events the view does not show still send their id alone, and an event can
+// change only the navigation; they are skipped.
+func fragmentWith(t *testing.T, s *sseStream, want string) string {
+	t.Helper()
+	for {
+		ev := s.next(t, watchWait)
+		if ev.name == "" {
+			continue
+		}
+		require.Equal(t, "owner", ev.name)
+		if strings.Contains(ev.data, want) {
+			return ev.data
+		}
+	}
+}
+
+// ownerStream opens the owner topic of view with the session cookie.
+func ownerStream(t *testing.T, h *harness, token, view string) *sseStream {
 	t.Helper()
 	ctx, cancel := context.WithCancel(h.ctx)
 	t.Cleanup(cancel)
-	path := "/-/events?topic=owner&view=inbox"
+	path := "/-/events?topic=owner&view=" + view
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url(path), nil)
 	require.NoError(t, err)
 	req.Header.Set("Cookie", sessionCookie+"="+token)

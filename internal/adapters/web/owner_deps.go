@@ -579,12 +579,19 @@ func (s *Server) deps(ctx context.Context, r *http.Request) (templ.Component, in
 		return nil, 0, err
 	}
 	var p InboxPage
-	s.fillDeps(&p, v, depsQueryOf(r))
+	dq := depsQueryOf(r)
+	s.fillDeps(&p, v, dq)
 	l := s.base()
 	l.Title = "Dependencies · " + s.instance
 	l.OwnerNav = s.ownerNav(ctx, "deps")
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	// No live updates yet: the owner stream accepts view=deps later.
+	if s.cfg.Events != nil && s.cfg.Deps != nil {
+		q := "view=deps"
+		if e := dq.encode(); e != "" {
+			q += "&" + e
+		}
+		l.Live, l.LiveURL = true, liveURL("owner", q)
+	}
 	return Deps(l, p), http.StatusOK, nil
 }
 

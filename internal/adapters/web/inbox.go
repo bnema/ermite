@@ -25,9 +25,6 @@ const inboxPath = "/-/inbox"
 // moderationPath is the prefix of the moderation actions.
 const moderationPath = "/-/moderation"
 
-// inboxEvent is the name of the live events of the inbox.
-const inboxEvent = "inbox"
-
 // InboxRow is one open item of the inbox.
 type InboxRow struct {
 	Repo     string
@@ -215,28 +212,6 @@ func (s *Server) inboxModeration(ctx context.Context) (InboxPage, error) {
 		p.Pending = append(p.Pending, s.pendingRow(now, pi))
 	}
 	return p, nil
-}
-
-// inbox renders the moderation list again when an issue is submitted or
-// leaves the queue, or a repository changes.
-func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
-	switch we.Event.(type) {
-	case domain.IssueSubmitted, domain.IssuePendingRemoved, domain.RepoUpdated, domain.RepoDeleted:
-	default:
-		return nil, nil
-	}
-	if l.s.cfg.Inbox == nil {
-		return nil, nil
-	}
-	p, err := l.s.inboxModeration(ctx)
-	if err != nil {
-		return nil, err
-	}
-	f, err := renderFragment(ctx, inboxEvent, InboxPending(p))
-	if err != nil {
-		return nil, err
-	}
-	return []fragment{f}, nil
 }
 
 func pendingRowID(repo, id string) string { return "pending-" + inboxIDPart(repo) + "-" + id }

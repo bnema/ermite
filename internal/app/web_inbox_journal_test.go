@@ -33,6 +33,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	r.writeFile(r.wt, "c.txt", []byte("c\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
 
+	stream := ownerStream(t, r.harness, token, "activity")
 	mr, err := r.forge.MergeRequests.Create(ctx, domain.Root(), r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
 
@@ -42,6 +43,11 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 
 	// A tag deleted, and a lightweight one on the commit before a and b.
 	r.mustGit(r.wt, "push", "-q", r.url, ":refs/tags/v0.1.0")
+	// The journal signal of the push refreshes the activity live, with the
+	// merge request recorded before it.
+	live := fragmentWith(t, stream, `<tr data-kind="tag_deleted">`)
+	assert.Contains(t, live, `id="inbox-journal"`)
+	assert.Contains(t, live, `<tr data-kind="mr_opened">`)
 	r.mustGit(r.wt, "fetch", "-q", r.url, "main")
 	r.mustGit(r.wt, "tag", "v0.0.1", "FETCH_HEAD~3")
 	r.mustGit(r.wt, "push", "-q", r.url, "v0.0.1")

@@ -20,18 +20,19 @@ import (
 
 // liveStream turns the events of Watch into the fragments one page shows.
 type liveStream struct {
-	s      *Server
-	repo   string // "" on the home page
-	rng    string // owner: the range of the view (?range=), "" for the default
-	sort   string // owner: the order of the deps rows (?sort=), "" for the default
-	filter string // owner: the filter of the deps rows (?filter=), "" for all
-	state  string // mrs: the selected list tab
-	view   string // "summary", "refs" or "commits"
-	ref    string // commits: the branch listed
-	head   string // commits: the commit listed first
-	n      string // mr: the number of the merge request shown; run: the run id
-	job    string // job: the id of the job shown
-	target string // mr: the target branch of the merge request shown
+	s        *Server
+	repo     string // "" on the home page
+	forOwner bool   // the owner topic: view is one of the owner pages
+	rng      string // owner: the range of the view (?range=), "" for the default
+	sort     string // owner: the order of the deps rows (?sort=), "" for the default
+	filter   string // owner: the filter of the deps rows (?filter=), "" for all
+	state    string // mrs: the selected list tab
+	view     string // "summary", "refs" or "commits"
+	ref      string // commits: the branch listed
+	head     string // commits: the commit listed first
+	n        string // mr: the number of the merge request shown; run: the run id
+	job      string // job: the id of the job shown
+	target   string // mr: the target branch of the merge request shown
 	// sha is the commit of the run of the job shown, read once when the stream
 	// is set up: the annotations link to files at it, and it never changes.
 	sha string
@@ -88,8 +89,8 @@ func (l *liveStream) render(ctx context.Context, we ports.WatchEvent) ([]fragmen
 	if we.Event == nil {
 		return nil, nil
 	}
-	if l.view == "inbox" {
-		return l.inbox(ctx, we)
+	if l.forOwner {
+		return l.owner(ctx, we)
 	}
 	if l.repo == "" {
 		return l.home(ctx, we)

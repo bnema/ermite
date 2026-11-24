@@ -97,8 +97,8 @@ const (
 	retryAfter = 10
 )
 
-// ownerTopic is the stream of the inbox: the merge requests and issues of every
-// repository, for the owner.
+// ownerTopic is the stream of the owner pages: one view of every repository,
+// for the owner.
 const ownerTopic = "owner"
 
 // parseTopic reads "home", "owner" or "repo:<name>"; repo is "" for home and
@@ -111,15 +111,6 @@ func parseTopic(topic string) (repo string, ok bool) {
 		return name, true
 	}
 	return "", false
-}
-
-// ownerStreamOK tells whether the request may follow the owner topic: the
-// signed-in owner, with the inbox view, on a server that has the inbox.
-func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
-	if s.cfg.Inbox == nil || !SignedIn(ctx) || q.Get("view") != "inbox" {
-		return false
-	}
-	return true
 }
 
 // events is GET /-/events.
@@ -264,7 +255,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), state: q.Get("state"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
 	if topic == ownerTopic {
-		st.rng, st.sort, st.filter = q.Get("range"), q.Get("sort"), q.Get("filter")
+		st.forOwner, st.rng, st.sort, st.filter = true, q.Get("range"), q.Get("sort"), q.Get("filter")
 	}
 	handle := func(m recvd) bool {
 		if m.err != nil {

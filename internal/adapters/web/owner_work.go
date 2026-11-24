@@ -32,7 +32,9 @@ func (s *Server) work(ctx context.Context, r *http.Request) (templ.Component, in
 	l.Title = "Work · " + s.instance
 	l.OwnerNav = s.ownerNav(ctx, "work")
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	// No live updates yet: the owner stream accepts view=work later.
+	if s.cfg.Events != nil {
+		l.Live, l.LiveURL = true, liveURL("owner", "view=work")
+	}
 	return Work(l, p), http.StatusOK, nil
 }
 

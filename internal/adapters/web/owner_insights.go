@@ -87,5 +87,12 @@ func (s *Server) insights(ctx context.Context, r *http.Request) (templ.Component
 	l.Title = "Insights · " + s.instance
 	l.OwnerNav = s.ownerNav(ctx, "insights")
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
+	if s.cfg.Events != nil {
+		q := "view=insights"
+		if r := trafficRanges[rng].param; r != "" {
+			q += "&range=" + r
+		}
+		l.Live, l.LiveURL = true, liveURL("owner", q)
+	}
 	return Insights(l, *v), http.StatusOK, nil
 }
