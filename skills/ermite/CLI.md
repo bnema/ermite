@@ -240,7 +240,7 @@ npm updates preserve the range operator and exact manifest formatting; only the 
 
 `open` and `ignore` send back the list they read and are refused if it changed meanwhile. An `outdated` MR holds other versions than the batch or was built from other current versions; `open` rebuilds it. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 
-The web inbox shows one dependency row per batch, with an outdated badge; Open/Ignore target that row, Snooze stays repo-wide.
+The web Dependencies page (`/-/deps`) shows one dependency row per batch, with an outdated badge; Open/Ignore target that row, Snooze stays repo-wide.
 
 ## Activity journal
 
@@ -299,4 +299,4 @@ Passkeys need an https (or localhost) public URL with a host name, not an IP; ot
 
 Full list: `docs/configuration.md` in the ermite repo.
 
-The owner’s web inbox (`/-/inbox`) uses `?tab=deps|work|activity|moderation`; absent or unknown tabs show open issues and merge requests (`work`). Tabs cover all repositories. Activity includes queued/running CI, journal entries and unreleased-commit notices; unreleased notices group by release urgency (Release due, Soon, collapsed Nothing urgent), oldest known tags first within each group; its journal window is `?range=24h|7d` (default `24h`).
+Owner web pages (signed-in owner only, all repositories): `/-/inbox` lists only what awaits a decision (issues to moderate, failed dependency batches, non-draft merge requests whose checks passed or have none, releases due); `/-/work` open merge requests and issues; `/-/activity` queued/running CI, unreleased-commit notices grouped by release urgency (Release due, Soon, collapsed Nothing urgent) and journal entries, window `?range=24h|7d` (default `24h`); `/-/deps` dependency batches (when Bernard is on); `/-/insights` traffic (when recorded).
