@@ -127,6 +127,15 @@ func inboxQuery(tab string, rng int) string {
 	return q.Encode()
 }
 
+// inboxTabRange reads the range of an inbox tab: the traffic ranges on the
+// traffic tab, the activity ones elsewhere.
+func inboxTabRange(raw, tab string) (int, error) {
+	if tab == "traffic" {
+		return insightsRange(raw)
+	}
+	return activityRange(raw)
+}
+
 // inboxTab normalizes unknown or absent tabs to open work.
 func inboxTab(raw string) string {
 	switch raw {
@@ -342,7 +351,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 		return nil, 0, errNotFound
 	}
 	tab := inboxTab(r.URL.Query().Get("tab"))
-	rng, err := activityRange(r.URL.Query().Get("range"), tab)
+	rng, err := inboxTabRange(r.URL.Query().Get("range"), tab)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -385,7 +394,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 		return nil, nil
 	}
 	tab := inboxTab(l.tab)
-	rng, _ := activityRange(l.rng, tab) // checked when the stream was opened
+	rng, _ := inboxTabRange(l.rng, tab) // checked when the stream was opened
 	p, err := l.s.inboxData(ctx, tab, rng, depsQuery{sort: depsSortParam(l.sort), filter: depsFilterParam(l.filter)})
 	if err != nil {
 		return nil, err

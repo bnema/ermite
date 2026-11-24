@@ -123,18 +123,11 @@ var journalRanges = []struct {
 	{"7d", "7 days", "7 days", 7 * 24 * time.Hour},
 }
 
-// activityRange reads the tab-specific window: 24h/7d normally, 24h/30d for
-// traffic. It returns the index in that tab's ranges; unknown ranges are missing.
-func activityRange(raw string, tab ...string) (int, error) {
-	ranges := journalRanges
-	if len(tab) > 0 && tab[0] == "traffic" {
-		ranges = trafficRanges
-	}
-	if raw == "" {
-		return 0, nil
-	}
-	for i, r := range ranges {
-		if r.param == raw {
+// activityRange reads ?range= of the activity: its index in journalRanges;
+// an unknown range is missing.
+func activityRange(raw string) (int, error) {
+	for i, r := range journalRanges {
+		if r.param == raw || (raw == "" && i == 0) {
 			return i, nil
 		}
 	}

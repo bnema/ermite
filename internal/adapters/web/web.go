@@ -221,6 +221,8 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET "+inboxPath, s.page(s.inbox))
 		mux.HandleFunc("GET "+workPath, s.page(s.work))
 		mux.HandleFunc("GET "+activityPath, s.page(s.activity))
+		// insights answers 404 unless Traffic is a TrafficForgeReader.
+		mux.HandleFunc("GET "+insightsPath, s.page(s.insights))
 		if s.cfg.Deps != nil {
 			mux.HandleFunc("GET "+depsPath, s.page(s.deps))
 			mux.HandleFunc("POST "+depsPath+"/{repo}/open", s.action(depsBack, s.depsAction(depsOpen)))
