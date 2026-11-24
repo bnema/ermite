@@ -33,8 +33,8 @@
       display: inline-flex; align-items: center; height: 24px; padding: 0 var(--s3); border-radius: 999px;
       font-weight: 650; color: var(--ink-hi); background: var(--bg-raised); border: 1px solid var(--border-strong);
     }
-    & .show-kv dd.mr-state[data-state="open"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 50%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
-    & .show-kv dd.mr-state[data-state="merged"] { color: var(--teal); }
+    & .show-kv dd.mr-state[data-state="open"] { color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, transparent); background: color-mix(in srgb, var(--green) 10%, transparent); }
+    & .show-kv dd.mr-state[data-state="merged"] { color: var(--green); }
     & .show-kv dd.mr-state[data-state="closed"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
     /* the label of a fact reads as a word before it */
     & .show-kv dd[data-k]::before { content: attr(data-k) " "; color: var(--ink-mute); }
@@ -72,8 +72,8 @@
   .merge-settings { font-size: var(--fs-s); color: var(--ink-dim); }
   .merge-settings h2 { font-size: var(--fs-s); }
 
-  .mr-state[data-state="open"]::before { content: "●\00a0"; color: var(--teal); }
-  .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
+  .mr-state[data-state="open"]::before { content: "●\00a0"; color: var(--green); }
+  .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--green); }
   .mr-state[data-state="closed"]::before { content: "✗ "; color: var(--red); }
   .mr-state[data-state="draft"]::before { content: "◌ "; color: var(--ink-dim); }
   /* the description: Markdown as a README, as wide as the header card above;
@@ -164,8 +164,8 @@
     & .btn:disabled { opacity: .5; cursor: not-allowed; }
   }
   .badge[data-state] { display: inline-block; padding: 0 var(--s2); border: 1px solid var(--border-strong); border-radius: var(--r-s); font-weight: 600; color: var(--ink-hi); }
-  .badge[data-state="up_to_date"] { border-color: var(--teal); color: var(--teal); }
-  .badge[data-state="behind"] { border-color: var(--teal-2); }
+  .badge[data-state="up_to_date"] { border-color: var(--green); color: var(--green); }
+  .badge[data-state="behind"] { border-color: var(--green-2); }
   .badge[data-state="conflict"] { border-color: var(--red); color: var(--red); }
   .badge[data-state="checking"] { color: var(--ink-dim); border-style: dashed; }
   .note[role="status"] { color: var(--ink-dim); }
@@ -223,7 +223,7 @@
     & a:hover { background: var(--bg-raised); }
     & .v-who { font-weight: 600; color: var(--ink-hi); overflow: hidden; text-overflow: ellipsis; }
     & .v-label { font-size: var(--fs-xs); font-weight: 600; color: var(--ink-dim); white-space: nowrap; }
-    & li[data-verdict="approve"] .v-label { color: var(--teal); }
+    & li[data-verdict="approve"] .v-label { color: var(--green); }
     & li[data-verdict="approve"] .v-label::before { content: "✓ "; }
     & li[data-verdict="changes_requested"] .v-label { color: var(--red); }
     & li[data-verdict="changes_requested"] .v-label::before { content: "✕ "; }
@@ -280,7 +280,7 @@
     & .c-when:hover { color: var(--ink-hi); text-decoration: underline; }
     & .c-where { font-family: var(--mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
     & .c-tag { font-size: var(--fs-xs); }
-    & .c-state[data-state="resolved"] { color: var(--teal); border-color: transparent; padding-inline: 0; }
+    & .c-state[data-state="resolved"] { color: var(--green); border-color: transparent; padding-inline: 0; }
     & .c-state[data-state="resolved"]::before { content: "✓"; }
 
     & .c-tools { display: flex; align-items: center; gap: 2px; flex: none; }
@@ -370,13 +370,13 @@
     font-size: var(--fs-xs); font-weight: 600; border-radius: 999px; white-space: nowrap;
     color: var(--ink-dim); border: 1px solid var(--border-strong);
   }
-  .c-verdict[data-verdict="approve"] { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 55%, transparent); background: color-mix(in srgb, var(--teal) 10%, transparent); }
+  .c-verdict[data-verdict="approve"] { color: var(--green); border-color: color-mix(in srgb, var(--green) 55%, transparent); background: color-mix(in srgb, var(--green) 10%, transparent); }
   .c-verdict[data-verdict="changes_requested"] { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
   .c-verdict[data-verdict="approve"]::before { content: "✓"; }
   .c-verdict[data-verdict="changes_requested"]::before { content: "✕"; }
 
   #mr-verdict-fact .c-verdict { text-decoration: none; }
-  #mr-verdict-fact .c-verdict[data-verdict="approve"] { color: var(--teal); }
+  #mr-verdict-fact .c-verdict[data-verdict="approve"] { color: var(--green); }
   #mr-verdict-fact .c-verdict[data-verdict="changes_requested"] { color: var(--red); }
 
   /* the forms: a comment, a new merge request */
@@ -418,7 +418,7 @@
       & input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
       & label:has(:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
       & label:has(:checked) { background: var(--bg-strong); color: var(--ink-hi); box-shadow: 0 0 0 1px var(--border-strong); }
-      & label[data-verdict="approve"]:has(:checked) { color: var(--teal); box-shadow: 0 0 0 1px color-mix(in srgb, var(--teal) 60%, transparent); }
+      & label[data-verdict="approve"]:has(:checked) { color: var(--green); box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 60%, transparent); }
       & label[data-verdict="changes_requested"]:has(:checked) { color: var(--red); box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 60%, transparent); }
     }
   }
@@ -512,8 +512,8 @@
 
   .list.mrs {
     & tr[data-state="open"] .c-state { font-weight: bold; }
-    & tr[data-state="open"] .c-state::before { content: "● "; color: var(--teal); }
-    & tr[data-state="merged"] .c-state::before { content: "✓ "; color: var(--teal); }
+    & tr[data-state="open"] .c-state::before { content: "● "; color: var(--green); }
+    & tr[data-state="merged"] .c-state::before { content: "✓ "; color: var(--green); }
     & tr[data-state="closed"] .c-state::before { content: "✗ "; color: var(--red); }
   }
   #mr-notice:empty { display: none; }
@@ -563,7 +563,7 @@
     & .c-main a:hover { text-decoration: underline; }
     & .j-ref { color: var(--ink-dim); }
     & .j-kind { font-size: var(--fs-xs); color: var(--ink-dim); }
-    & tr:is([data-kind="mr_merged"], [data-kind="release_published"], [data-kind="tag_created"]) .j-kind { color: var(--teal); }
+    & tr:is([data-kind="mr_merged"], [data-kind="release_published"], [data-kind="tag_created"]) .j-kind { color: var(--green); }
     & tr:is([data-kind="mr_closed"], [data-kind="tag_deleted"]) .j-kind { color: var(--red); }
   }
 
@@ -577,10 +577,10 @@
   .timeline { list-style: none; padding: 0; margin: 0; }
   .sys { margin-block: var(--s3); padding: var(--s2) var(--s3); border-left: 2px solid var(--border); color: var(--ink-dim); font-size: var(--fs-s); overflow-wrap: anywhere; }
   .sys-icon { margin-inline-end: var(--s2); }
-  .sys[data-kind="resolved"] .sys-icon { color: var(--teal); }
+  .sys[data-kind="resolved"] .sys-icon { color: var(--green); }
   .sys[data-kind="closed"] .sys-icon { color: var(--red); }
-  .mr-state[data-state="resolved"]::before { content: "✓ "; color: var(--teal); }
-  .mrs tr[data-state="resolved"] .c-state::before { content: "✓ "; color: var(--teal); }
+  .mr-state[data-state="resolved"]::before { content: "✓ "; color: var(--green); }
+  .mrs tr[data-state="resolved"] .c-state::before { content: "✓ "; color: var(--green); }
 
   .c-body { white-space: normal; overflow-wrap: anywhere; }
   /* the counts of the comments heading: the total, then the unresolved */

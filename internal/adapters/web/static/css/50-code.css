@@ -112,9 +112,9 @@
        change down the left edge */
     & tr.add td.ln, & td.ln.add { background: var(--add-hi); }
     & tr.del td.ln, & td.ln.del { background: var(--del-hi); }
-    & .add.m, & tr.add .m { color: var(--teal); font-weight: bold; }
+    & .add.m, & tr.add .m { color: var(--green); font-weight: bold; }
     & .del.m, & tr.del .m { color: var(--red); font-weight: bold; }
-    & tr.add .ln, & .ln.add { color: var(--teal); }
+    & tr.add .ln, & .ln.add { color: var(--green); }
     & tr.del .ln, & .ln.del { color: var(--red); }
     & .none { background: var(--paper-alt); }
   }
@@ -147,7 +147,7 @@
     & a[aria-current="true"] { background: var(--row); border-color: var(--ink-mute); }
     & a[aria-current="true"] .p { font-weight: bold; color: var(--ink-hi); }
     & .st { color: var(--ink-mute); font-weight: bold; }
-    & .st[data-st="A"] { color: var(--teal); }
+    & .st[data-st="A"] { color: var(--green); }
     & .st[data-st="D"] { color: var(--red); }
     & .nm { overflow: hidden; white-space: nowrap; display: flex; min-width: 0; }
     /* the name gives way last: the directory shrinks first, down to its
@@ -204,7 +204,7 @@
 }
 
 @layer components {
-  /* counts and bars: + in teal, - in red, everywhere a change is summarised */
-  .plus { color: var(--teal); }
+  /* counts and bars: + in green, - in red, everywhere a change is summarised */
+  .plus { color: var(--green); }
   .minus { color: var(--red); }
 }

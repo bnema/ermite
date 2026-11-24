@@ -45,7 +45,7 @@ func Shell(l Layout, rail templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><meta name=\"theme-color\" data-scheme=\"light\" media=\"(prefers-color-scheme: light)\" content=\"#ffffff\"><meta name=\"theme-color\" data-scheme=\"dark\" media=\"(prefers-color-scheme: dark)\" content=\"#0c0c0c\"><meta name=\"apple-mobile-web-app-title\" content=\"ermite\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><meta name=\"theme-color\" data-scheme=\"light\" media=\"(prefers-color-scheme: light)\" content=\"#ffffff\"><meta name=\"theme-color\" data-scheme=\"dark\" media=\"(prefers-color-scheme: dark)\" content=\"#0b0e12\"><meta name=\"apple-mobile-web-app-title\" content=\"ermite\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

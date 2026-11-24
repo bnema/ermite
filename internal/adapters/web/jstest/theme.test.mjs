@@ -42,7 +42,7 @@ function load({ stored, withSwitch = true } = {}) {
   scheme = el('meta', { attrs: { name: 'color-scheme', content: 'light dark' } });
   colors = [
     el('meta', { attrs: { name: 'theme-color', 'data-scheme': 'light', media: '(prefers-color-scheme: light)', content: '#ffffff' } }),
-    el('meta', { attrs: { name: 'theme-color', 'data-scheme': 'dark', media: '(prefers-color-scheme: dark)', content: '#0c0c0c' } }),
+    el('meta', { attrs: { name: 'theme-color', 'data-scheme': 'dark', media: '(prefers-color-scheme: dark)', content: '#0b0e12' } }),
   ];
   icon = el('span', { cls: 'ico i-sun-moon', attrs: { 'aria-hidden': 'true' } });
   button = el('button', { cls: 'foot-theme', attrs: { type: 'button', 'data-js': '', 'data-theme-switch': '' } }, icon);
@@ -66,12 +66,12 @@ beforeEach(() => { delete globalThis.localStorage; });
 test('nothing stored: auto, the page is left to the system', () => {
   const T = load({ withSwitch: false });
   assert.equal(T.get(), 'auto');
-  assert.deepEqual(state(), { attr: null, scheme: 'light dark', colors: ['#ffffff', '#0c0c0c'] });
+  assert.deepEqual(state(), { attr: null, scheme: 'light dark', colors: ['#ffffff', '#0b0e12'] });
 });
 
 test('store.js applies a stored theme before ermite.js runs', () => {
   load({ stored: { theme: 'dark' }, withSwitch: false });
-  assert.deepEqual(state(), { attr: 'dark', scheme: 'dark', colors: ['#0c0c0c', '#0c0c0c'] });
+  assert.deepEqual(state(), { attr: 'dark', scheme: 'dark', colors: ['#0b0e12', '#0b0e12'] });
   load({ stored: { theme: 'light' }, withSwitch: false });
   assert.deepEqual(state(), { attr: 'light', scheme: 'light', colors: ['#ffffff', '#ffffff'] });
 });
@@ -99,11 +99,11 @@ test('a click on the button (or its icon) cycles, stores and shows the theme', (
   assert.equal(button.getAttribute('title'), 'theme: light (switch to dark)');
   click(button);
   assert.equal(storage.get('theme'), 'dark');
-  assert.deepEqual(state(), { attr: 'dark', scheme: 'dark', colors: ['#0c0c0c', '#0c0c0c'] });
+  assert.deepEqual(state(), { attr: 'dark', scheme: 'dark', colors: ['#0b0e12', '#0b0e12'] });
   assert.equal(icon.className, 'ico i-moon');
   click(button);
   assert.equal(storage.get('theme'), 'auto');
-  assert.deepEqual(state(), { attr: null, scheme: 'light dark', colors: ['#ffffff', '#0c0c0c'] });
+  assert.deepEqual(state(), { attr: null, scheme: 'light dark', colors: ['#ffffff', '#0b0e12'] });
   assert.equal(icon.className, 'ico i-sun-moon');
   assert.equal(button.getAttribute('aria-label'), 'theme: auto (switch to light)');
 });

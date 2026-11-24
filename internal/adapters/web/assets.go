@@ -207,7 +207,7 @@ type manifestIcon struct {
 
 // appColor is the dark canvas: the splash screen and the bar of the installed
 // app (the pages follow the system theme; the manifest takes one colour).
-const appColor = "#050505"
+const appColor = "#07090c"
 
 // loadApp adds the app icons and the manifest, which names them by their
 // hashed URLs.

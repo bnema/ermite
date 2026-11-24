@@ -5,14 +5,14 @@
     display: inline-block; width: 14px; height: 14px; margin-right: var(--s1); vertical-align: -2px;
     border: 2px solid var(--ink-dim); border-radius: 50%; box-sizing: border-box; flex: none;
   }
-  .ck-ok { background: var(--teal); border-color: var(--teal); }
+  .ck-ok { background: var(--green); border-color: var(--green); }
   .ck-bad { background: var(--red); border-color: var(--red); border-radius: 3px; transform: rotate(45deg) scale(.85); }
   .ck-cancelled { border-style: dashed; }
   .ck-skipped { border-color: var(--border-strong); background: var(--bg-raised); }
   .ck-queued { border-style: dotted; }
-  .ck-running { border-color: var(--teal); border-top-color: transparent; animation: ck-spin 1s linear infinite; }
+  .ck-running { border-color: var(--green); border-top-color: transparent; animation: ck-spin 1s linear infinite; }
   @keyframes ck-spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .ck-running { animation: none; border-top-color: var(--teal); } }
+  @media (prefers-reduced-motion: reduce) { .ck-running { animation: none; border-top-color: var(--green); } }
 
   .ck-sum { display: inline-flex; align-items: center; gap: var(--s1); margin-left: var(--s2); font-size: var(--fs-xs); white-space: nowrap; }
   /* the recent runs of the summary rail */
@@ -72,7 +72,7 @@
   }
   .annot-failure { border-color: var(--red); }
   .annot-warning { border-style: dashed; border-color: var(--ink-dim); }
-  .annot-notice { border-color: var(--teal); }
+  .annot-notice { border-color: var(--green); }
   .annot p { margin: 0; }
   .annot-step { flex-basis: 100%; font-weight: 700; }
   .annot:has(.annot-step) { flex-wrap: wrap; }
@@ -84,7 +84,7 @@
   .an { display: inline-block; flex: none; width: 14px; height: 14px; margin-top: 2px; border: 2px solid var(--ink-dim); box-sizing: border-box; }
   .an-failure { background: var(--red); border-color: var(--red); border-radius: 3px; transform: rotate(45deg) scale(.85); }
   .an-warning { border-radius: 50% 50% 0 0; border-style: dashed; }
-  .an-notice { border-radius: 50%; border-color: var(--teal); }
+  .an-notice { border-radius: 50%; border-color: var(--green); }
   .summaries { margin: var(--s5) 0 0; }
   .summary { padding: var(--s3) var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
   .summary + .summary { margin-top: var(--s3); }
