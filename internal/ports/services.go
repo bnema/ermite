@@ -225,6 +225,13 @@ type InboxService interface {
 	// Overview needs owner rights and answers domain.ErrNotFound to anyone
 	// else.
 	Overview(ctx context.Context, p domain.Principal) (InboxOverview, error)
+	// Attention is what awaits the owner's decision: issues to moderate,
+	// failed dependency batches, merge requests ready to merge and releases
+	// due, in that order, then newest first. Owner rights as for Overview.
+	Attention(ctx context.Context, p domain.Principal) ([]AttentionItem, error)
+	// Counts are the numbers of the owner navigation. Owner rights as for
+	// Overview.
+	Counts(ctx context.Context, p domain.Principal) (OwnerCounts, error)
 	// Work is the open merge requests and issues. Owner rights as for
 	// Overview.
 	Work(ctx context.Context, p domain.Principal) (InboxWork, error)

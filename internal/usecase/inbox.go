@@ -3,6 +3,7 @@
 package usecase
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -673,6 +674,176 @@ func (in *Inbox) Deps(ctx context.Context, p domain.Principal) (ports.InboxDepsV
 		return ports.InboxDepsView{}, domain.ErrNotFound
 	}
 	return in.visibleDeps(ctx, newRepoLook(in.meta))
+}
+
+// attentionKindOrder ranks the kinds of AttentionItem.
+var attentionKindOrder = map[ports.AttentionKind]int{
+	ports.AttentionModeration: 0,
+	ports.AttentionDepsFailed: 1,
+	ports.AttentionReady:      2,
+	ports.AttentionRelease:    3,
+}
+
+// Attention lists what awaits the owner's decision.
+func (in *Inbox) Attention(ctx context.Context, p domain.Principal) ([]ports.AttentionItem, error) {
+	if !p.HasOwnerRights() {
+		return nil, domain.ErrNotFound
+	}
+	look := newRepoLook(in.meta)
+	work, err := in.openWork(ctx, look)
+	if err != nil {
+		return nil, err
+	}
+	return in.attention(ctx, look, work.MergeRequests)
+}
+
+// Counts counts the attention items and the open work with one read of each
+// repository.
+func (in *Inbox) Counts(ctx context.Context, p domain.Principal) (ports.OwnerCounts, error) {
+	if !p.HasOwnerRights() {
+		return ports.OwnerCounts{}, domain.ErrNotFound
+	}
+	look := newRepoLook(in.meta)
+	work, err := in.openWork(ctx, look)
+	if err != nil {
+		return ports.OwnerCounts{}, err
+	}
+	items, err := in.attention(ctx, look, work.MergeRequests)
+	if err != nil {
+		return ports.OwnerCounts{}, err
+	}
+	return ports.OwnerCounts{Attention: len(items), Work: len(work.MergeRequests) + len(work.Issues)}, nil
+}
+
+// attention builds the attention items from the open merge requests of
+// openWork, ordered by kind, then newest first, then repository and
+// reference.
+func (in *Inbox) attention(ctx context.Context, look *repoLook, mrs []domain.MergeRequest) ([]ports.AttentionItem, error) {
+	var out []ports.AttentionItem
+	pending, err := in.pendingIssues(ctx, look)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pending {
+		pi := pending[i]
+		out = append(out, ports.AttentionItem{Kind: ports.AttentionModeration, Repo: pi.Repo, Since: pi.CreatedAt, Pending: &pi})
+	}
+
+	deps, err := in.visibleDeps(ctx, look)
+	if err != nil {
+		return nil, err
+	}
+	for i := range deps.Deps {
+		d := deps.Deps[i]
+		if d.Batch.State == domain.DepsFailed {
+			out = append(out, ports.AttentionItem{Kind: ports.AttentionDepsFailed, Repo: d.Rec.Repo, Since: d.Rec.CheckedAt, Deps: &d})
+		}
+	}
+
+	ready, err := in.readyMRs(ctx, mrs)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, ready...)
+
+	due, err := in.releasesDue(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, due...)
+
+	slices.SortStableFunc(out, compareAttention)
+	return out, nil
+}
+
+// readyMRs keeps the merge requests that are not drafts, whose source branch
+// exists and whose checks passed or are none. Without CI every such request
+// is ready; truncated checks are not.
+func (in *Inbox) readyMRs(ctx context.Context, mrs []domain.MergeRequest) ([]ports.AttentionItem, error) {
+	var candidates []domain.MergeRequest
+	for _, m := range mrs {
+		if !m.IsDraft() {
+			candidates = append(candidates, m)
+		}
+	}
+	if err := in.withHeads(ctx, candidates); err != nil {
+		return nil, err
+	}
+	var out []ports.AttentionItem
+	for i := range candidates {
+		m := candidates[i]
+		if m.HeadID.IsZero() {
+			continue
+		}
+		item := ports.AttentionItem{Kind: ports.AttentionReady, Repo: m.Repo, Since: m.UpdatedAt, MergeRequest: &m}
+		if item.Since.IsZero() {
+			item.Since = m.CreatedAt
+		}
+		if in.ci != nil {
+			checks, more, err := in.ci.ListChecks(ctx, m.Repo, m.HeadID.String(), MaxCIChecks)
+			if err != nil {
+				return nil, fmt.Errorf("list the checks of %q in %q: %w", m.HeadID, m.Repo, err)
+			}
+			if more {
+				continue
+			}
+			if st := domain.CombineChecks(checks); st != domain.CheckStateSuccess && st != domain.CheckStateNone {
+				continue
+			}
+			item.Checks = checks
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// releasesDue lists the non-archived repositories whose release is due.
+// None without the journal wiring (repositories, reader, clock).
+func (in *Inbox) releasesDue(ctx context.Context) ([]ports.AttentionItem, error) {
+	if in.repos == nil || in.reader == nil || in.clock == nil {
+		return nil, nil
+	}
+	repos, err := in.journalRepos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	unreleased, err := in.unreleasedOf(ctx, repos, func(domain.Repo) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+	now := in.clock.Now()
+	var out []ports.AttentionItem
+	for i := range unreleased {
+		u := unreleased[i]
+		if domain.ReleaseUrgency(u.Distance, now) == domain.ReleaseDue {
+			out = append(out, ports.AttentionItem{Kind: ports.AttentionRelease, Repo: u.Repo, Since: u.Distance.Tag.At, Unreleased: &u})
+		}
+	}
+	return out, nil
+}
+
+// compareAttention orders by kind, then Since newest first (zero last), then
+// repository, then reference: pending ID, merge request number highest
+// first, batch key.
+func compareAttention(a, b ports.AttentionItem) int {
+	if c := cmp.Compare(attentionKindOrder[a.Kind], attentionKindOrder[b.Kind]); c != 0 {
+		return c
+	}
+	if c := b.Since.Compare(a.Since); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.Repo.String(), b.Repo.String()); c != 0 {
+		return c
+	}
+	switch {
+	case a.Pending != nil && b.Pending != nil:
+		return cmp.Compare(a.Pending.ID, b.Pending.ID)
+	case a.MergeRequest != nil && b.MergeRequest != nil:
+		return cmp.Compare(b.MergeRequest.Number, a.MergeRequest.Number)
+	case a.Deps != nil && b.Deps != nil:
+		return cmp.Compare(a.Deps.Batch.Key, b.Deps.Batch.Key)
+	}
+	return 0
 }
 
 // compareRecent orders by update time, most recent first (the creation time
