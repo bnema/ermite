@@ -189,8 +189,6 @@ func TestDepsBreakdownOmitsZeroParts(t *testing.T) {
 func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	emptyJournal(svc)
-	expectInbox(svc, depsOverview(t))
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -202,12 +200,13 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 	assert.NotContains(t, sec, "More actions")
 }
 
-func TestInboxDepsEmptyFragmentIsHidden(t *testing.T) {
+// No batch: the live section says so, visible, so a live update replaces it.
+func TestDepsPageWithoutUpdates(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxOverview(t))
+	expectPage(svc, inboxOverview(t), "deps")
 	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/deps", true).Body.String()
-	assert.Regexp(t, `<section id="deps" data-keep-open hidden>`, body)
+	assert.Contains(t, body, `<section id="deps" data-keep-open aria-label="Dependency updates"><p class="lede dim">no dependency updates.</p></section>`)
 	assert.NotContains(t, body, "Dependency updates<")
 }
 
@@ -346,7 +345,7 @@ func treeOverview(t testing.TB) inboxFixture {
 func depsSection(t *testing.T, path string, ov inboxFixture) string {
 	t.Helper()
 	svc := mocks.NewInboxService(t)
-	expectInbox(svc, ov)
+	expectPage(svc, ov, "deps")
 	rec := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), path, true)
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
@@ -686,7 +685,7 @@ func TestInboxAsyncDeps(t *testing.T) {
 				assert.Contains(t, body, `<hx-partial hx-target="#deps" hx-swap="outerMorph"><section id="deps" data-keep-open`)
 				if gone {
 					assert.NotContains(t, body, `id="deps-alpha"`)
-					assert.Contains(t, body, `<section id="deps" data-keep-open hidden>`, "the empty table hides, header included")
+					assert.Contains(t, body, "no dependency updates.", "the empty table says so, header gone")
 				} else {
 					assert.Contains(t, body, "applying")
 					assert.Contains(t, body, `id="deps-alpha-base"`)

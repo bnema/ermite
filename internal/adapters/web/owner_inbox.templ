@@ -55,17 +55,17 @@ templ InboxAttention(rows []AttentionRow) {
 						<div class="att-acts">
 							if r.Pending != nil && r.Pending.Approve != "" {
 								@ActionForm(ActionProps{Action: r.Pending.Approve}) {
-									<button type="submit" class="btn primary">Approve</button>
+									<button type="submit" class="btn primary">Approve<span class="sr">{ " " + r.Title }</span></button>
 								}
 								@ActionForm(ActionProps{Action: r.Pending.Reject}) {
-									<button type="submit" class="btn">Reject</button>
+									<button type="submit" class="btn">Reject<span class="sr">{ " " + r.Title }</span></button>
 								}
 								@ActionForm(ActionProps{Action: r.Pending.Ban, Confirm: "Reject and ban this author?"}) {
-									<button type="submit" class="btn danger">Reject and ban</button>
+									<button type="submit" class="btn danger">Reject and ban<span class="sr">{ " " + r.Title }</span></button>
 								}
 							}
 							if r.ActionHref != "" {
-								<a class="btn" href={ templ.SafeURL(r.ActionHref) }>{ r.ActionLabel }</a>
+								<a class="btn" href={ templ.SafeURL(r.ActionHref) }>{ r.ActionLabel }<span class="sr">{ " " + r.Title }</span></a>
 							}
 						</div>
 					</li>
@@ -75,10 +75,10 @@ templ InboxAttention(rows []AttentionRow) {
 	</section>
 }
 
-// inboxModerated removes the row of the moderated issue and sends the owner
-// navigation again, its counts read after the action.
-templ inboxModerated(id string, nav *OwnerNav) {
-	@RemoveEl(id)
+// inboxModerated replaces the list after a moderation and sends the owner
+// navigation again, its counts read with the list.
+templ inboxModerated(rows []AttentionRow, nav *OwnerNav) {
+	<hx-partial hx-target="#attention" hx-swap="outerMorph">@InboxAttention(rows)</hx-partial>
 	if nav != nil {
 		@ownerNavBar(*nav, true)
 	}

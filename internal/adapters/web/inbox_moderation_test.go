@@ -41,36 +41,6 @@ func moderationServer(t *testing.T, inbox ports.InboxService, mod ports.IssueMod
 	})
 }
 
-func TestInboxShowsPendingIssuesAsPlainText(t *testing.T) {
-	t.Parallel()
-	p := testPendingIssue(t)
-	ov := inboxOverview(t)
-	ov.Pending = []domain.PendingIssue{p, {ID: p.ID, Repo: repoName(t, "beta"), Title: p.Title, CreatedAt: time.Now()}}
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, ov)
-	srv := moderationServer(t, svc, mocks.NewIssueModerationService(t))
-
-	rec := inboxGet(srv, "/-/inbox", true)
-	require.Equal(t, 200, rec.Code)
-	body := rec.Body.String()
-	assert.Contains(t, body, `<span class="count hot">2</span>`, "the nav counts the items")
-
-	assert.NotContains(t, body, `id="work-mrs"`)
-	assert.Contains(t, body, "&lt;script&gt;alert(1)&lt;/script&gt; crash")
-	assert.NotContains(t, body, "<script>alert")
-	assert.Contains(t, body, "**not bold**", "no Markdown")
-	assert.NotContains(t, body, "<strong>not bold")
-	assert.NotContains(t, body, `href="javascript`)
-	assert.NotContains(t, body, "<img")
-	assert.Contains(t, body, "Eve &lt;i&gt;")
-	assert.Contains(t, body, ">anonymous<", "no label")
-	assert.Contains(t, body, "…</p>", "a preview of about 300 characters")
-	assert.Contains(t, body, `action="/-/moderation/alpha/`+p.ID.String()+`/approve"`)
-	assert.Contains(t, body, `/reject"`)
-	assert.Contains(t, body, `/ban"`)
-	assert.Contains(t, body, "Reject and ban")
-}
-
 func TestInboxModerationActions(t *testing.T) {
 	t.Parallel()
 	post := func(srv *Server, path string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -141,8 +111,8 @@ func TestInboxAsyncModeration(t *testing.T) {
 		t.Run(op, func(t *testing.T) {
 			inbox := mocks.NewInboxService(t)
 			ov := inboxOverview(t)
-			ov.Pending = make([]domain.PendingIssue, 3) // what is left after the action
-			expectInbox(inbox, ov)
+			ov.Pending = []domain.PendingIssue{testPendingIssue(t), testPendingIssue(t), testPendingIssue(t)} // what is left after the action
+			expectPage(inbox, ov, "inbox")
 			mod := mocks.NewIssueModerationService(t)
 			id, err := domain.ParsePendingIssueID(testPendingID)
 			require.NoError(t, err)
@@ -161,8 +131,11 @@ func TestInboxAsyncModeration(t *testing.T) {
 			assert.Equal(t, http.StatusOK, w.Code)
 			assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 			assert.Empty(t, w.Header().Get("Location"))
-			assert.Contains(t, w.Body.String(), `hx-target="#att-moderation-alpha-`+testPendingID+`" hx-swap="delete"`)
-			assert.NotContains(t, w.Body.String(), "inbox-pending-count")
+			body := w.Body.String()
+			assert.Contains(t, body, `<hx-partial hx-target="#attention" hx-swap="outerMorph"><section id="attention"`)
+			assert.Equal(t, 3, strings.Count(body, `data-kind="moderation"`), "the list read after the action")
+			assert.NotContains(t, body, `id="att-moderation-alpha-`+testPendingID+`"`)
+			assert.Equal(t, 1, strings.Count(body, "data-cursor"), "the cursor on the first row left")
 			nav := w.Body.String()[strings.Index(w.Body.String(), `<nav id="owner-nav"`):]
 			assert.Contains(t, nav, `aria-label="Owner" hx-swap-oob="outerHTML"`)
 			assert.Contains(t, nav, `aria-label="Inbox (3)" aria-current="page"`)
@@ -187,8 +160,7 @@ func TestInboxModerationEnhancedForms(t *testing.T) {
 
 func TestInboxDottedRepoPendingIDs(t *testing.T) {
 	inbox := mocks.NewInboxService(t)
-	ov := inboxOverview(t)
-	expectInbox(inbox, ov)
+	expectPage(inbox, inboxFixture{}, "inbox")
 	srv := moderationServer(t, inbox, mocks.NewIssueModerationService(t))
 	p := testPendingIssue(t)
 	p.Repo = repoName(t, "alpha.beta")
@@ -205,14 +177,15 @@ func TestInboxDottedRepoPendingIDs(t *testing.T) {
 	result, err := srv.pendingResult(t.Context(), r)
 	require.NoError(t, err)
 	fragment := renderToString(t, result.Fragment)
-	assert.Contains(t, fragment, `hx-target="#`+row.ID+`"`)
+	assert.Contains(t, fragment, "nothing awaits you.", "the last row moderated")
+	assert.NotContains(t, fragment, `id="`+row.ID+`"`)
 }
 
-// A failed read of the counts does not hide a done moderation: the row goes,
-// the nav comes back without counts.
-func TestModerationWithoutCounts(t *testing.T) {
+// A failed read of the list after a done moderation says the action was
+// saved and the page could not refresh.
+func TestModerationRefreshFails(t *testing.T) {
 	inbox := mocks.NewInboxService(t)
-	inbox.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, errors.New("down")).Once()
+	inbox.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{}, errors.New("down")).Once()
 	mod := mocks.NewIssueModerationService(t)
 	mod.EXPECT().Reject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(nil).Once()
 	srv := moderationServer(t, inbox, mod)
@@ -223,8 +196,6 @@ func TestModerationWithoutCounts(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
-	body := w.Body.String()
-	assert.Contains(t, body, `hx-target="#att-moderation-alpha-`+testPendingID+`" hx-swap="delete"`)
-	assert.Contains(t, body, `hx-swap-oob="outerHTML"`)
-	assert.NotContains(t, body, `class="count`)
+	assert.Contains(t, w.Body.String(), "saved, but the page could not refresh")
+	assert.NotContains(t, w.Body.String(), "down")
 }

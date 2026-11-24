@@ -53,7 +53,7 @@ func OverlayHelp(mr bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if SignedIn(ctx) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div><dt><kbd>I</kbd></dt><dd>inbox</dd></div><div><dt><kbd>g h</kbd> <kbd>g i</kbd> <kbd>g w</kbd> <kbd>g a</kbd> <kbd>g d</kbd> <kbd>g n</kbd></dt><dd>owner pages: repositories, inbox, work, activity, dependencies, insights (when available)</dd></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div><dt><kbd>I</kbd></dt><dd>inbox</dd></div><div><dt><kbd>g i</kbd> <kbd>g w</kbd> <kbd>g a</kbd> <kbd>g d</kbd> <kbd>g n</kbd></dt><dd>owner pages: inbox, work, activity, dependencies, insights (when available)</dd></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

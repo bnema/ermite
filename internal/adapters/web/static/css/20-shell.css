@@ -187,6 +187,14 @@
   /* the wide mode (w, ermiteWide): every page takes the whole width of the
      screen; the rail goes to the right edge, the content takes the rest */
   html.wide :is(.work, .hdr-top, .tabs, .foot) { max-width: none; }
+  /* the view of an owner page: its sections stacked, evenly spaced. The gap
+     alone spaces them: the first heading of a section drops the top margin
+     of .rule-h, so every owner page starts right below the nav, with or
+     without a heading. */
+  #view {
+    display: flex; flex-direction: column; gap: var(--s6);
+    & > section > .rule-h:first-child, & > section > .journal-head:first-child > .rule-h { margin-top: 0; }
+  }
   .rail { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
   .work-lede { grid-column: 1 / -1; margin-bottom: calc(-1 * var(--s2)); }
   main > * + * { margin-top: var(--s4); }

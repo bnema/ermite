@@ -16,9 +16,11 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
+// journalServer serves the activity page with svc: Runs and Counts once,
+// the test sets the Journal it reads.
 func journalServer(t *testing.T, svc *mocks.InboxService) *Server {
 	t.Helper()
-	expectInbox(svc, inboxFixture{})
+	expectPage(svc, inboxFixture{}, "activity")
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -126,8 +128,7 @@ func TestActivityJournalTruncatedNote(t *testing.T) {
 
 func TestJournalUnreleasedUrgency(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	svc := mocks.NewInboxService(t)
-	srv := journalServer(t, svc)
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t)})
 	srv.cfg.Now = func() time.Time { return now }
 	j := ports.InboxJournal{}
 	for _, tc := range []struct {

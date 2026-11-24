@@ -430,7 +430,7 @@
   .cform .f-error { color: var(--red); margin: 0; }
   .cform .hp { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 
-  /* the inbox: dependency updates, one collapsible row per repository
+  /* the Dependencies page: one collapsible row per repository
      (.deps-repo-row); inside, the patch and minor batch then the majors, one
      .deps-row each: its updates under its summary, the status and the actions
      in the other columns of the grid, a failure (.deps-failure) below. */
@@ -509,16 +509,7 @@
   }
   #mr-notice:empty { display: none; }
 
-  /* the view of an owner page: its sections stacked, evenly spaced. The gap
-     alone spaces them: the first heading of a section drops the top margin
-     of .rule-h, so every owner page starts right below the nav, with or
-     without a heading. */
-  #view {
-    display: flex; flex-direction: column; gap: var(--s6);
-    & > section > .rule-h:first-child, & > section > .journal-head:first-child > .rule-h { margin-top: 0; }
-  }
-
-  /* the inbox activity: a heading with the range toggle, warnings as lines,
+  /* the journal of Activity and Insights: a heading with the range toggle, warnings as lines,
      then a bare table (no box: hairlines between rows only) */
   .journal {
     & .journal-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s1) var(--s4); }

@@ -14,18 +14,22 @@ templ Deps(l Layout, p DepsPage) {
 
 // DepsTable is Bernard's table: one collapsible row per repository, its patch
 // and minor batch first, then its major families, each with its status and
-// actions. It stays as an empty fragment when there is nothing to show.
+// actions. With nothing to show it says so, in the same live section.
 // data-keep-open: the live swap keeps the open rows open, and closed ones
 // closed.
 templ DepsTable(p DepsPage) {
 	<section
 		id="deps"
 		data-keep-open
-		hidden?={ p.Batches == 0 }
 		if p.Batches > 0 {
 			aria-labelledby="deps_h"
+		} else {
+			aria-label="Dependency updates"
 		}
 	>
+		if p.Batches == 0 {
+			<p class="lede dim">no dependency updates.</p>
+		}
 		if p.Batches > 0 {
 			@depsHeader(p)
 			<div class="deps-bar">

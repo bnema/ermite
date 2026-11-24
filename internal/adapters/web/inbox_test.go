@@ -5,7 +5,6 @@ package web
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +47,28 @@ func expectInbox(svc *mocks.InboxService, ov inboxFixture) {
 	counts := ports.OwnerCounts{Attention: len(items), Work: len(ov.MergeRequests) + len(ov.Issues)}
 	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Items: items, Counts: counts}, nil).Maybe()
 	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(counts, nil).Maybe()
+}
+
+// expectPage lets svc answer, once each, only the reads of the owner page
+// view: its own data and the navigation counts (the inbox reads both at once).
+func expectPage(svc *mocks.InboxService, ov inboxFixture, view string) {
+	var items []ports.AttentionItem
+	for i := range ov.Pending {
+		items = append(items, ports.AttentionItem{Kind: ports.AttentionModeration, Repo: ov.Pending[i].Repo, Pending: &ov.Pending[i]})
+	}
+	counts := ports.OwnerCounts{Attention: len(items), Work: len(ov.MergeRequests) + len(ov.Issues)}
+	switch view {
+	case "inbox":
+		svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(ports.OwnerAttention{Items: items, Counts: counts}, nil).Once()
+		return
+	case "work":
+		svc.EXPECT().Work(mock.Anything, mock.Anything).Return(ports.InboxWork{MergeRequests: ov.MergeRequests, Issues: ov.Issues}, nil).Once()
+	case "activity":
+		svc.EXPECT().Runs(mock.Anything, mock.Anything).Return(ports.InboxRuns{Enabled: ov.RunsEnabled, Runs: ov.Runs}, nil).Once()
+	case "deps":
+		svc.EXPECT().Deps(mock.Anything, mock.Anything).Return(ports.InboxDepsView{Queue: ov.DepsQueue, Deps: ov.Deps, CheckedAt: ov.DepsCheckedAt}, nil).Once()
+	}
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(counts, nil).Once()
 }
 
 func inboxOverview(t testing.TB) inboxFixture {
@@ -321,29 +342,6 @@ func TestInboxStreamEndsWhenTheSessionEnds(t *testing.T) {
 	require.Eventually(t, func() bool { return f.closed.Load() == 1 }, 5*time.Second, time.Millisecond, "the watch is closed")
 }
 
-// A repository event refreshes the inbox: a deletion removes its pending
-// issues.
-func TestInboxRefreshesOnRepoEvents(t *testing.T) {
-	t.Parallel()
-	for name, ev := range map[string]domain.Event{
-		"repo updated": domain.RepoUpdated{Repo: repoName(t, "alpha")},
-		"repo deleted": domain.RepoDeleted{Repo: repoName(t, "alpha")},
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			svc := mocks.NewInboxService(t)
-			expectInbox(svc, inboxFixture{})
-			srv := inboxServer(t, svc)
-			ls := &liveStream{s: srv, forOwner: true, view: "inbox"}
-			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
-			require.NoError(t, err)
-			require.Len(t, frags, 1)
-			assert.Contains(t, frags[0].html, `id="attention"`)
-			assert.Contains(t, frags[0].html, "nothing awaits you.")
-		})
-	}
-}
-
 func inboxOverviewWithHead(t testing.TB, head string) inboxFixture {
 	t.Helper()
 	ov := inboxOverview(t)
@@ -353,45 +351,4 @@ func inboxOverviewWithHead(t testing.TB, head string) inboxFixture {
 		ov.MergeRequests[0].HeadID = id
 	}
 	return ov
-}
-
-func inboxChecksServer(t *testing.T, svc ports.InboxService, runs ports.RunService) *Server {
-	t.Helper()
-	emptyJournal(svc)
-	return newTestServer(t, Config{
-		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc, Runs: runs,
-		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
-	})
-}
-
-func TestWorkMRRowsShowTheCIIcon(t *testing.T) {
-	t.Parallel()
-	head := fmt.Sprintf("%040x", 7)
-	repo := repoName(t, "alpha")
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxOverviewWithHead(t, head))
-	runs := mocks.NewRunService(t)
-	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
-		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CICompleted, Conclusion: domain.CISuccess}},
-	}}, nil).Once()
-	srv := inboxChecksServer(t, svc, runs)
-
-	rec := inboxGet(srv, workPath, true)
-	require.Equal(t, 200, rec.Code, rec.Body.String())
-	body := rec.Body.String()
-	assert.Contains(t, body, `class="ck-sum"`)
-	assert.Contains(t, body, `href="/alpha/actions"`)
-	assert.NotContains(t, body[strings.Index(body, `id="work-issues"`):], "ck-sum", "issue rows have no CI icon")
-}
-
-func TestWorkZeroHeadReadsNoChecks(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxOverviewWithHead(t, ""))
-	runs := mocks.NewRunService(t) // any ListChecks call fails the test
-	srv := inboxChecksServer(t, svc, runs)
-
-	rec := inboxGet(srv, workPath, true)
-	require.Equal(t, 200, rec.Code, rec.Body.String())
-	assert.NotContains(t, rec.Body.String(), "ck-sum")
 }

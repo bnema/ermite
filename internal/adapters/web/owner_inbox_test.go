@@ -85,9 +85,21 @@ func TestInboxListsEveryKind(t *testing.T) {
 	assert.NotContains(t, mod, "<script>")
 	assert.NotContains(t, mod, "<img")
 	assert.Contains(t, mod, "Eve &lt;i&gt;")
-	assert.Contains(t, mod, `class="att-preview">**not bold**`)
+	assert.Contains(t, mod, `class="att-preview">**not bold**`, "no Markdown")
+	assert.NotContains(t, mod, "<strong>not bold")
+	assert.NotContains(t, mod, `href="javascript`)
+	assert.Contains(t, mod, "…</p>", "a preview of about 300 characters")
+	assert.Contains(t, mod, "Reject and ban")
+	assert.Contains(t, body, `<span class="count hot">4</span>`, "the nav counts the items")
+	assert.NotContains(t, body, `id="work-mrs"`, "only the inbox reads")
+	anon := *items[0].Pending
+	anon.Author = "  "
+	assert.Equal(t, "anonymous", srv.pendingRow(anon).Author, "no label")
 	for _, op := range []string{"approve", "reject", "ban"} {
 		assert.Contains(t, mod, `action="/-/moderation/alpha/`+pid+`/`+op+`"`)
+	}
+	for _, label := range []string{"Approve", "Reject", "Reject and ban"} {
+		assert.Contains(t, mod, label+`<span class="sr"> &lt;script&gt;alert(1)&lt;/script&gt; crash</span></button>`, "the action names its row")
 	}
 
 	// Deps failed: the batch to /-/deps, the first line of the error, the log.
@@ -96,19 +108,19 @@ func TestInboxListsEveryKind(t *testing.T) {
 	assert.Regexp(t, `<a class="att-title" href="/-/deps#deps-[^"]+">Patch &amp; minor</a>`, deps)
 	assert.Contains(t, deps, "go mod tidy: &lt;b&gt;boom&lt;/b&gt;</span>")
 	assert.NotContains(t, deps, "second line")
-	assert.Contains(t, deps, `">View log</a>`)
+	assert.Contains(t, deps, `">View log<span class="sr"> Patch &amp; minor</span></a>`)
 
 	// Ready: the merge request, its checks, Open.
 	ready := liOf(t, sec, "att-ready-beta-4", "<li ")
 	assert.Contains(t, ready, `<a class="att-title" href="/beta/merge-requests/4">add &lt;search&gt;</a>`)
 	assert.Contains(t, ready, `class="ck-sum"`)
-	assert.Contains(t, ready, `<a class="btn" href="/beta/merge-requests/4">Open</a>`)
+	assert.Contains(t, ready, `<a class="btn" href="/beta/merge-requests/4">Open<span class="sr"> add &lt;search&gt;</span></a>`)
 
 	// Release due: the commits since the tag, its age, Commits.
 	rel := liOf(t, sec, "att-release-due-gamma-release", "<li ")
 	assert.Contains(t, rel, `<a class="att-title" href="/gamma/commits/main">12 commits since v1.2.0</a>`)
 	assert.Contains(t, rel, "tagged 40d ago")
-	assert.Contains(t, rel, `<a class="btn" href="/gamma/commits/main">Commits</a>`)
+	assert.Contains(t, rel, `<a class="btn" href="/gamma/commits/main">Commits<span class="sr"> 12 commits since v1.2.0</span></a>`)
 }
 
 func TestInboxEmpty(t *testing.T) {
@@ -118,16 +130,6 @@ func TestInboxEmpty(t *testing.T) {
 	body := inboxGet(srv, inboxPath, true).Body.String()
 	assert.Contains(t, body, `<section id="attention" aria-label="Awaiting you"><p class="lede dim">nothing awaits you.</p></section>`)
 	assert.NotContains(t, body, `class="attention"`)
-}
-
-func TestInboxAttentionIsMissingForEveryoneElse(t *testing.T) {
-	t.Parallel()
-	srv, _ := attentionServer(t) // never asked
-	missing := inboxGet(srv, "/-/nothing-here", false)
-	anon := inboxGet(srv, inboxPath, false)
-	assert.Equal(t, 404, anon.Code)
-	assert.Equal(t, missing.Body.String(), anon.Body.String())
-	assert.NotContains(t, anon.Body.String(), "owner-nav")
 }
 
 func TestInboxLiveViewRendersTheAttention(t *testing.T) {

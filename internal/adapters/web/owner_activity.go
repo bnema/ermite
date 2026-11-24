@@ -89,7 +89,7 @@ func (s *Server) runRows(runs []domain.CIRun, now time.Time) []RunRowView {
 	return rows
 }
 
-// JournalView is the activity section of the inbox: the range toggle, the
+// JournalView is the journal of the Activity page: the range toggle, the
 // repositories ahead of their nearest tag, then the entries newest first.
 type JournalView struct {
 	Ranges     []NavLink

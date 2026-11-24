@@ -264,12 +264,19 @@ func releaseDueRow(now time.Time, row AttentionRow, it ports.AttentionItem) (Att
 // pendingRowID is the id of the row of a pending issue in the inbox.
 func pendingRowID(repo, id string) string { return attentionID(ports.AttentionModeration, repo, id) }
 
+// pendingResult sends the list again after a moderation, read once with the
+// counts of the navigation: the row is gone, the cursor and the empty state
+// follow.
 func (s *Server) pendingResult(ctx context.Context, r *http.Request) (ActionResult, error) {
 	result := ActionResult{Redirect: pendingBack(r)}
 	if !isHX(r) {
 		return result, nil
 	}
-	result.Fragment = inboxModerated(pendingRowID(r.PathValue("repo"), r.PathValue("id")), s.ownerNav(ctx, "inbox"))
+	rows, counts, err := s.attention(ctx)
+	if err != nil {
+		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
+	}
+	result.Fragment = inboxModerated(rows, s.ownerNavWith(ctx, "inbox", counts))
 	return result, nil
 }
 

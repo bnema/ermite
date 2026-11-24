@@ -78,15 +78,15 @@ type Config struct {
 	// nil pointer.
 	IssueForm ports.IssueSubmissionService
 	// Moderation serves the Approve, Reject and Reject-and-ban buttons of the
-	// pending issues in the inbox. It needs Inbox. Without it there are no
+	// pending issues in the inbox (/-/moderation). It needs Inbox. Without it there are no
 	// such routes. Leave it unset rather than assigning a typed nil pointer.
 	Moderation ports.IssueModerationService
-	// Inbox serves the owner's inbox page (/-/inbox) and the button that
-	// leads to it. Without it there is neither. Leave it unset rather than
-	// assigning a typed nil pointer.
+	// Inbox serves the owner pages (/-/inbox, /-/work, /-/activity,
+	// /-/insights) and the owner navigation. Without it there is none. Leave
+	// it unset rather than assigning a typed nil pointer.
 	Inbox ports.InboxService
-	// Deps serves the Open MR, Ignore and Snooze buttons of the dependency
-	// cards in the inbox. It needs Inbox. Without it there are no such routes.
+	// Deps serves /-/deps and its actions. It needs Inbox. Without it there
+	// are no such routes.
 	// Leave it unset rather than assigning a typed nil pointer.
 	Deps ports.DepsService
 	// SigningKey tells the key that signs the squash and merge commits, shown

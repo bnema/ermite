@@ -282,7 +282,8 @@ func TestInboxJournalLive(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(sampleJournal(t), nil)
-	srv := journalServer(t, svc)
+	expectInbox(svc, inboxFixture{})
+	srv := inboxServer(t, svc)
 	ls := &liveStream{s: srv, forOwner: true, view: "activity", rng: "7d"}
 	for _, ev := range []domain.Event{
 		domain.JournalUpdated{Repo: repoName(t, "alpha")},

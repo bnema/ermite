@@ -3,7 +3,6 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -12,17 +11,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
-
-// ownerCtx is the context of a request with a valid owner session.
-func ownerCtx(t *testing.T) context.Context {
-	t.Helper()
-	ctx := domain.ContextWithPrincipal(t.Context(), domain.Owner())
-	return context.WithValue(ctx, signedInKey{}, struct{}{})
-}
 
 func TestOwnerNavOnlyForTheSignedInOwnerWithAnInbox(t *testing.T) {
 	t.Parallel()
@@ -31,7 +22,7 @@ func TestOwnerNavOnlyForTheSignedInOwnerWithAnInbox(t *testing.T) {
 	assert.Nil(t, srv.ownerNav(t.Context(), "home"), "signed out")
 
 	none := &Server{cfg: Config{}}
-	assert.Nil(t, none.ownerNav(ownerCtx(t), "home"), "no inbox")
+	assert.Nil(t, none.ownerNav(withOwner(t.Context()), "home"), "no inbox")
 }
 
 func TestOwnerNavFollowsTheConfig(t *testing.T) {
@@ -40,12 +31,12 @@ func TestOwnerNavFollowsTheConfig(t *testing.T) {
 	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 2, Work: 5}, nil)
 
 	bare := &Server{cfg: Config{Inbox: svc}}
-	n := bare.ownerNav(ownerCtx(t), "work")
+	n := bare.ownerNav(withOwner(t.Context()), "work")
 	require.NotNil(t, n)
 	assert.Equal(t, OwnerNav{Current: "work", Attention: 2, Work: 5}, *n)
 
 	full := &Server{cfg: Config{Inbox: svc, Deps: mocks.NewDepsService(t), Traffic: mocks.NewTrafficService(t)}}
-	n = full.ownerNav(ownerCtx(t), "deps")
+	n = full.ownerNav(withOwner(t.Context()), "deps")
 	require.NotNil(t, n)
 	assert.True(t, n.Deps)
 	assert.True(t, n.Insights)
@@ -55,7 +46,7 @@ func TestOwnerNavWithoutCounts(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, errors.New("down"))
-	n := (&Server{cfg: Config{Inbox: svc}}).ownerNav(ownerCtx(t), "inbox")
+	n := (&Server{cfg: Config{Inbox: svc}}).ownerNav(withOwner(t.Context()), "inbox")
 	require.NotNil(t, n)
 	assert.Equal(t, -1, n.Attention)
 	assert.Equal(t, -1, n.Work)

@@ -77,12 +77,15 @@ func TestInsightsUnavailableAndEmpty(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			svc := mocks.NewInboxService(t)
-			expectInbox(svc, inboxFixture{})
-			srv := inboxServer(t, svc)
+			srv := insightsServer(t, svc)
 			switch mode {
+			case "nil":
+				expectPage(svc, inboxFixture{}, "inbox") // the inbox, for its nav
 			case "recorder only":
+				expectPage(svc, inboxFixture{}, "inbox")
 				srv.cfg.Traffic = mocks.NewTrafficRecorder(t)
 			case "empty":
+				svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
 				f := mocks.NewTrafficService(t)
 				f.EXPECT().Forge(mock.Anything, 24*time.Hour).Return(ports.TrafficForge{}, nil).Once()
 				srv.cfg.Traffic = f
