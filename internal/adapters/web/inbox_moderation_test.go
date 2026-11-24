@@ -55,7 +55,7 @@ func TestInboxShowsPendingIssuesAsPlainText(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, `<span class="count hot">2</span>`, "the nav counts the items")
 
-	assert.NotContains(t, body, `id="inbox-mrs"`)
+	assert.NotContains(t, body, `id="work-mrs"`)
 	assert.Contains(t, body, "&lt;script&gt;alert(1)&lt;/script&gt; crash")
 	assert.NotContains(t, body, "<script>alert")
 	assert.Contains(t, body, "**not bold**", "no Markdown")
@@ -176,7 +176,7 @@ func TestInboxAsyncModeration(t *testing.T) {
 func TestInboxModerationEnhancedForms(t *testing.T) {
 	p := testPendingIssue(t)
 	srv := moderationServer(t, mocks.NewInboxService(t), mocks.NewIssueModerationService(t))
-	row := srv.pendingRow(time.Now(), p)
+	row := srv.pendingRow(p)
 	html := renderToString(t, InboxAttention([]AttentionRow{{ID: row.ID, Kind: "moderation", Title: row.Title, Pending: &row}}))
 	assert.Contains(t, html, `id="att-moderation-alpha-`+p.ID.String()+`"`)
 	assert.Contains(t, html, `hx-post="`+row.Approve+`"`)
@@ -193,7 +193,7 @@ func TestInboxDottedRepoPendingIDs(t *testing.T) {
 	p := testPendingIssue(t)
 	p.Repo = repoName(t, "alpha.beta")
 	p.ID, _ = domain.ParsePendingIssueID(testPendingID)
-	row := srv.pendingRow(time.Now(), p)
+	row := srv.pendingRow(p)
 	require.Equal(t, "att-moderation-alpha_2ebeta-"+testPendingID, row.ID)
 	html := renderToString(t, InboxAttention([]AttentionRow{{ID: row.ID, Kind: "moderation", Title: row.Title, Pending: &row}}))
 	assert.Contains(t, html, `id="`+row.ID+`"`)

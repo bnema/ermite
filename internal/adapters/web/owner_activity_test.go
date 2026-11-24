@@ -52,9 +52,9 @@ func TestActivityJournalTable(t *testing.T) {
 	rec := inboxGet(journalServer(t, svc), activityPath, true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
-	sec := body[strings.Index(body, `id="inbox-journal"`):]
+	sec := body[strings.Index(body, `id="activity-journal"`):]
 
-	assert.NotContains(t, body, `id="inbox-issues"`)
+	assert.NotContains(t, body, `id="work-issues"`)
 	assert.Contains(t, sec, `<span>Activity</span><span class="journal-count">5</span>`, "plain text, not the pill of .count")
 	assert.NotContains(t, sec, `class="count"`)
 	assert.Contains(t, sec, `<th>When</th><th>Repository</th><th>Type</th><th class="c-main">Detail</th><th class="c-who">Actor</th>`)
@@ -180,8 +180,8 @@ func TestActivityPageForTheOwner(t *testing.T) {
 	assert.Contains(t, body, "<title>Activity · ")
 	assert.Contains(t, body, `<div id="view" data-view="activity"><h1 class="sr" tabindex="-1">Activity</h1>`)
 	assert.Contains(t, body, `href="/-/activity" data-nav data-key="g a" aria-label="Activity" aria-current="page"`)
-	assert.Contains(t, body, `aria-labelledby="inbox-runs-h"`)
-	assert.Contains(t, body, `id="inbox-journal"`)
+	assert.Contains(t, body, `aria-labelledby="activity-runs-h"`)
+	assert.Contains(t, body, `id="activity-journal"`)
 	assert.NotContains(t, body, `class="crumbs"`)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 }
@@ -194,7 +194,7 @@ func TestActivityHidesRunsWithoutCI(t *testing.T) {
 	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
 
 	body := inboxGet(srv, activityPath, true).Body.String()
-	assert.Contains(t, body, `<section id="inbox-runs" hidden>`)
+	assert.Contains(t, body, `<section id="activity-runs" hidden>`)
 	assert.NotContains(t, body, "Running")
 }
 

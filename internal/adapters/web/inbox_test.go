@@ -114,7 +114,7 @@ func TestInboxPageForTheOwner(t *testing.T) {
 	assert.Contains(t, body, `href="/-/inbox" data-nav data-key="g i" aria-label="Inbox (2)" aria-current="page"`)
 	assert.Contains(t, body, `id="attention"`)
 	assert.Contains(t, body, `id="att-moderation-alpha-`+pending.ID.String()+`"`)
-	for _, gone := range []string{"tab=", `id="inbox-mrs"`, `id="inbox-deps"`, `id="inbox-journal"`, `class="crumbs"`, `aria-label="Inbox sections"`} {
+	for _, gone := range []string{"tab=", `id="work-mrs"`, `id="deps"`, `id="activity-journal"`, `class="crumbs"`, `aria-label="Inbox sections"`} {
 		assert.NotContains(t, body, gone, "?tab= is ignored")
 	}
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
@@ -213,7 +213,7 @@ func TestInboxLiveFragments(t *testing.T) {
 	require.Len(t, frags, 1)
 	assert.Contains(t, frags[0].html, `id="attention"`)
 	assert.Contains(t, frags[0].html, `id="att-moderation-alpha-`)
-	assert.NotContains(t, frags[0].html, `id="inbox-mrs"`)
+	assert.NotContains(t, frags[0].html, `id="work-mrs"`)
 
 	removed, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssuePendingRemoved{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestWorkMRRowsShowTheCIIcon(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, `class="ck-sum"`)
 	assert.Contains(t, body, `href="/alpha/actions"`)
-	assert.NotContains(t, body[strings.Index(body, `id="inbox-issues"`):], "ck-sum", "issue rows have no CI icon")
+	assert.NotContains(t, body[strings.Index(body, `id="work-issues"`):], "ck-sum", "issue rows have no CI icon")
 }
 
 func TestWorkZeroHeadReadsNoChecks(t *testing.T) {

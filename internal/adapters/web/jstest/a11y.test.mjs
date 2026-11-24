@@ -279,7 +279,7 @@ function depsSection(open = {}) {
     // as in the page, the menu sits in the actions span of the row
     return el('li', { id }, el('details', { cls: 'deps-main', attrs }, el('summary', { id: id + '-sum' }), el('a', { id: id + '-log', attrs: { href: '/run/12' } })), el('span', { cls: 'deps-act' }, menu));
   };
-  return el('section', { id: 'inbox-deps', attrs: { 'data-keep-open': '' } }, el('ul', {}, row('deps-a'), row('deps-b')));
+  return el('section', { id: 'deps', attrs: { 'data-keep-open': '' } }, el('ul', {}, row('deps-a'), row('deps-b')));
 }
 
 test('a swap keeps the details of the rows that were open, and not their menus', () => {
@@ -318,7 +318,7 @@ test('a swap that removes the ⋯ holding the focus puts it on the summary of th
   const row = (id, menu) => el('li', { id },
     el('details', { cls: 'deps-main' }, el('summary', { id: id + '-sum' })),
     el('span', { cls: 'deps-act' }, ...(menu ? [el('details', { cls: 'menu deps-menu' }, el('summary', { id: id + '-more' }))] : [])));
-  const section = (menuB) => el('section', { id: 'inbox-deps', attrs: { 'data-keep-open': '' } },
+  const section = (menuB) => el('section', { id: 'deps', attrs: { 'data-keep-open': '' } },
     el('ul', {}, row('deps-a', true), row('deps-b', menuB)));
   const old = section(true);
   dom.body.replaceChildren(old);

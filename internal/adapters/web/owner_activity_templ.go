@@ -12,7 +12,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // Activity is the owner's running runs, unreleased repositories and journal.
-func Activity(l Layout, p InboxPage) templ.Component {
+func Activity(l Layout, p ActivityPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -45,11 +45,11 @@ func Activity(l Layout, p InboxPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = InboxRuns(p).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ActivityRuns(p).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = InboxJournal(p).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ActivityJournal(p).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -67,8 +67,8 @@ func Activity(l Layout, p InboxPage) templ.Component {
 	})
 }
 
-// InboxRuns stays as an empty fragment when CI is disabled.
-func InboxRuns(p InboxPage) templ.Component {
+// ActivityRuns stays as an empty fragment when CI is disabled.
+func ActivityRuns(p ActivityPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -85,7 +85,7 @@ func InboxRuns(p InboxPage) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section id=\"inbox-runs\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section id=\"activity-runs\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -96,7 +96,7 @@ func InboxRuns(p InboxPage) templ.Component {
 			}
 		}
 		if p.RunsEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " aria-labelledby=\"inbox-runs-h\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " aria-labelledby=\"activity-runs-h\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -106,14 +106,14 @@ func InboxRuns(p InboxPage) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if p.RunsEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<h2 id=\"inbox-runs-h\" class=\"rule-h\"><span>Running</span><span class=\"count\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<h2 id=\"activity-runs-h\" class=\"rule-h\"><span>Running</span><span class=\"count\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(len(p.Runs)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_activity.templ`, Line: 26, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_activity.templ`, Line: 26, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -324,10 +324,10 @@ func InboxRuns(p InboxPage) templ.Component {
 	})
 }
 
-// InboxJournal is the activity of the range, newest first: the repositories
+// ActivityJournal is the activity of the range, newest first: the repositories
 // whose default branch is ahead of their nearest tag, then one row per entry.
 // Plain lines and a plain table, like the other sections.
-func InboxJournal(p InboxPage) templ.Component {
+func ActivityJournal(p ActivityPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -345,14 +345,14 @@ func InboxJournal(p InboxPage) templ.Component {
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
 		j := p.Journal
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<section id=\"inbox-journal\" class=\"journal\" aria-labelledby=\"inbox-journal-h\"><div class=\"journal-head\"><h2 id=\"inbox-journal-h\" class=\"rule-h\"><span>Activity</span><span class=\"journal-count\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<section id=\"activity-journal\" class=\"journal\" aria-labelledby=\"activity-journal-h\"><div class=\"journal-head\"><h2 id=\"activity-journal-h\" class=\"rule-h\"><span>Activity</span><span class=\"journal-count\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(len(j.Rows)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_activity.templ`, Line: 57, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_activity.templ`, Line: 57, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {

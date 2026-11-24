@@ -3,27 +3,27 @@
 package web
 
 // Activity is the owner's running runs, unreleased repositories and journal.
-templ Activity(l Layout, p InboxPage) {
+templ Activity(l Layout, p ActivityPage) {
 	@Shell(l, nil) {
 		<div id="view" data-view="activity">
 			<h1 class="sr" tabindex="-1">Activity</h1>
-			@InboxRuns(p)
-			@InboxJournal(p)
+			@ActivityRuns(p)
+			@ActivityJournal(p)
 		</div>
 	}
 }
 
-// InboxRuns stays as an empty fragment when CI is disabled.
-templ InboxRuns(p InboxPage) {
+// ActivityRuns stays as an empty fragment when CI is disabled.
+templ ActivityRuns(p ActivityPage) {
 	<section
-		id="inbox-runs"
+		id="activity-runs"
 		hidden?={ !p.RunsEnabled }
 		if p.RunsEnabled {
-			aria-labelledby="inbox-runs-h"
+			aria-labelledby="activity-runs-h"
 		}
 	>
 		if p.RunsEnabled {
-			<h2 id="inbox-runs-h" class="rule-h"><span>Running</span><span class="count">{ itoa(len(p.Runs)) }</span></h2>
+			<h2 id="activity-runs-h" class="rule-h"><span>Running</span><span class="count">{ itoa(len(p.Runs)) }</span></h2>
 			if len(p.Runs) == 0 {
 				<p class="lede dim">no runs in progress.</p>
 			} else {
@@ -47,14 +47,14 @@ templ InboxRuns(p InboxPage) {
 	</section>
 }
 
-// InboxJournal is the activity of the range, newest first: the repositories
+// ActivityJournal is the activity of the range, newest first: the repositories
 // whose default branch is ahead of their nearest tag, then one row per entry.
 // Plain lines and a plain table, like the other sections.
-templ InboxJournal(p InboxPage) {
+templ ActivityJournal(p ActivityPage) {
 	{{ j := p.Journal }}
-	<section id="inbox-journal" class="journal" aria-labelledby="inbox-journal-h">
+	<section id="activity-journal" class="journal" aria-labelledby="activity-journal-h">
 		<div class="journal-head">
-			<h2 id="inbox-journal-h" class="rule-h"><span>Activity</span><span class="journal-count">{ itoa(len(j.Rows)) }</span></h2>
+			<h2 id="activity-journal-h" class="rule-h"><span>Activity</span><span class="journal-count">{ itoa(len(j.Rows)) }</span></h2>
 			<nav class="journal-range" aria-label="Activity range">
 				for i, r := range j.Ranges {
 					<a

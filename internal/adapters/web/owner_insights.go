@@ -18,23 +18,20 @@ import (
 const insightsPath = "/-/insights"
 
 // trafficRanges are the windows of the insights, by ?range=.
-var trafficRanges = []struct {
-	param, label, long string
-	window             time.Duration
-}{
+var trafficRanges = []pageRange{
 	{"24h", "24 h", "24 hours", 24 * time.Hour},
 	{"30d", "30 days", "30 days", 30 * 24 * time.Hour},
 }
 
-// InboxTrafficView is the owner's traffic overview for the selected window.
-type InboxTrafficView struct {
-	Ranges    []InboxNavLink
+// InsightsView is the owner's traffic overview for the selected window.
+type InsightsView struct {
+	Ranges    []NavLink
 	Totals    domain.TrafficCounts
 	Repos     []domain.TrafficSummary
 	Referrers []ports.TrafficReferrer
 }
 
-func (s *Server) inboxTraffic(ctx context.Context, rng int) (*InboxTrafficView, error) {
+func (s *Server) insightsView(ctx context.Context, rng int) (*InsightsView, error) {
 	reader, ok := s.cfg.Traffic.(TrafficForgeReader)
 	if !ok {
 		return nil, errNotFound
@@ -43,31 +40,14 @@ func (s *Server) inboxTraffic(ctx context.Context, rng int) (*InboxTrafficView, 
 	if err != nil {
 		return nil, err
 	}
-	v := &InboxTrafficView{Totals: data.Totals, Repos: append([]domain.TrafficSummary(nil), data.Repos...), Referrers: data.Referrers}
+	v := &InsightsView{Totals: data.Totals, Repos: append([]domain.TrafficSummary(nil), data.Repos...), Referrers: data.Referrers}
 	// Own the ordering without mutating the reader's result.
 	sort.SliceStable(v.Repos, func(i, j int) bool {
 		a, b := v.Repos[i], v.Repos[j]
 		return a.Views+a.Clones > b.Views+b.Clones
 	})
-	for i, r := range trafficRanges {
-		href := insightsPath
-		if i != 0 {
-			href += "?range=" + r.param
-		}
-		v.Ranges = append(v.Ranges, InboxNavLink{Label: r.label, Href: href, Current: i == rng})
-	}
+	v.Ranges = rangeLinks(insightsPath, trafficRanges, rng)
 	return v, nil
-}
-
-// insightsRange reads ?range= of the insights: its index in trafficRanges;
-// an unknown range is missing.
-func insightsRange(raw string) (int, error) {
-	for i, r := range trafficRanges {
-		if r.param == raw || (raw == "" && i == 0) {
-			return i, nil
-		}
-	}
-	return 0, errNotFound
 }
 
 // insights is GET /-/insights?range=: the traffic of every repository.
@@ -75,24 +55,13 @@ func (s *Server) insights(ctx context.Context, r *http.Request) (templ.Component
 	if _, ok := s.cfg.Traffic.(TrafficForgeReader); !ok || !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	rng, err := insightsRange(r.URL.Query().Get("range"))
+	rng, err := parseRange(trafficRanges, r.URL.Query().Get("range"))
 	if err != nil {
 		return nil, 0, err
 	}
-	v, err := s.inboxTraffic(ctx, rng)
+	v, err := s.insightsView(ctx, rng)
 	if err != nil {
 		return nil, 0, err
 	}
-	l := s.base()
-	l.Title = "Insights · " + s.instance
-	l.OwnerNav = s.ownerNav(ctx, "insights")
-	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	if s.cfg.Events != nil {
-		q := "view=insights"
-		if r := trafficRanges[rng].param; r != "" {
-			q += "&range=" + r
-		}
-		l.Live, l.LiveURL = true, liveURL("owner", q)
-	}
-	return Insights(l, *v), http.StatusOK, nil
+	return Insights(s.ownerLayout(ctx, "insights", "Insights", "range="+trafficRanges[rng].param), *v), http.StatusOK, nil
 }

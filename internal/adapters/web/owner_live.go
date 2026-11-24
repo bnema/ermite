@@ -25,7 +25,7 @@ func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 	case "inbox", "work":
 		return true
 	case "activity":
-		_, err := activityRange(q.Get("range"))
+		_, err := parseRange(journalRanges, q.Get("range"))
 		return err == nil
 	case "deps":
 		return s.cfg.Deps != nil
@@ -33,7 +33,7 @@ func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 		if _, ok := s.cfg.Traffic.(TrafficForgeReader); !ok {
 			return false
 		}
-		_, err := insightsRange(q.Get("range"))
+		_, err := parseRange(trafficRanges, q.Get("range"))
 		return err == nil
 	}
 	return false
@@ -161,39 +161,30 @@ func renderOwner(ctx context.Context, parts []templ.Component) ([]fragment, erro
 // ownerSections reads the view the stream follows, other than the inbox
 // (read in owner with its counts), and returns its live sections.
 func (l *liveStream) ownerSections(ctx context.Context) ([]templ.Component, error) {
-	s, p := l.s, principal(ctx)
+	s := l.s
 	switch l.view {
 	case "work":
-		w, err := s.cfg.Inbox.Work(ctx, p)
+		page, err := s.workPage(ctx)
 		if err != nil {
 			return nil, err
 		}
-		var page InboxPage
-		page.MRs, page.IssueRows = s.workRows(ctx, w)
-		return []templ.Component{InboxMRs(page), InboxIssues(page)}, nil
+		return []templ.Component{WorkMRs(page), WorkIssues(page)}, nil
 	case "activity":
-		rng, err := activityRange(l.rng) // checked when the stream was opened
+		rng, err := parseRange(journalRanges, l.rng) // checked when the stream was opened
 		if err != nil {
 			return nil, err
 		}
-		runs, err := s.cfg.Inbox.Runs(ctx, p)
+		page, err := s.activityPage(ctx, rng)
 		if err != nil {
 			return nil, err
 		}
-		j, err := s.cfg.Inbox.Journal(ctx, p, journalRanges[rng].window)
-		if err != nil {
-			return nil, err
-		}
-		page := InboxPage{RunsEnabled: runs.Enabled, Runs: s.runRows(runs.Runs, s.cfg.Now()), Journal: s.journalView(j, rng)}
-		return []templ.Component{InboxRuns(page), InboxJournal(page)}, nil
+		return []templ.Component{ActivityRuns(page), ActivityJournal(page)}, nil
 	case "deps":
-		v, err := s.cfg.Inbox.Deps(ctx, p)
+		page, err := s.depsPage(ctx, depsQuery{sort: depsSortParam(l.sort), filter: depsFilterParam(l.filter)})
 		if err != nil {
 			return nil, err
 		}
-		var page InboxPage
-		s.fillDeps(&page, v, depsQuery{sort: depsSortParam(l.sort), filter: depsFilterParam(l.filter)})
-		return []templ.Component{InboxDeps(page)}, nil
+		return []templ.Component{DepsTable(page)}, nil
 	}
 	return nil, nil
 }

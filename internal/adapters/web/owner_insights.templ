@@ -3,20 +3,20 @@
 package web
 
 // Insights is the owner's traffic across the forge.
-templ Insights(l Layout, v InboxTrafficView) {
+templ Insights(l Layout, v InsightsView) {
 	@Shell(l, nil) {
 		<div id="view" data-view="insights">
 			<h1 class="sr" tabindex="-1">Insights</h1>
-			@InboxTraffic(v)
+			@InsightsTraffic(v)
 		</div>
 	}
 }
 
-// InboxTraffic uses the same range controls and plain tables as Activity.
-templ InboxTraffic(v InboxTrafficView) {
-	<section id="inbox-traffic" class="journal" aria-labelledby="inbox-traffic-h">
+// InsightsTraffic uses the same range controls and plain tables as Activity.
+templ InsightsTraffic(v InsightsView) {
+	<section id="insights" class="journal" aria-labelledby="insights-h">
 		<div class="journal-head">
-			<h2 id="inbox-traffic-h" class="rule-h"><span>Traffic</span></h2>
+			<h2 id="insights-h" class="rule-h"><span>Traffic</span></h2>
 			<nav class="journal-range" aria-label="Traffic range">
 				for i, r := range v.Ranges {
 					<a

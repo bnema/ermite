@@ -21,15 +21,15 @@ import (
 // depsPath is Bernard's table of dependency updates.
 const depsPath = "/-/deps"
 
-// InboxDepsUpdate is one line of the sub-table of a repository. Ecosystem only
+// DepsUpdate is one line of the sub-table of a repository. Ecosystem only
 // feeds the hidden fields of the forms: the page never shows it.
-type InboxDepsUpdate struct {
+type DepsUpdate struct {
 	Ecosystem, Directory, Name, Current, Latest, Kind string
 	New                                               bool
 }
 
-// InboxDepsStatus is the status of a batch.
-type InboxDepsStatus struct {
+// DepsStatus is the status of a batch.
+type DepsStatus struct {
 	// Kind picks the icon: "" (no run to tell), "queued", "running" or "failed".
 	Kind string
 	// State is the word shown beside the icon ("queued #3", "running",
@@ -48,21 +48,21 @@ type InboxDepsStatus struct {
 	Adopted bool
 }
 
-// InboxDepsAction is the main button of a row: a POST form (Action) or a link
+// DepsAction is the main button of a row: a POST form (Action) or a link
 // (Href); both empty means no button.
-type InboxDepsAction struct {
+type DepsAction struct {
 	Label, Action, Href string
 }
 
-// InboxDepsSplit is one Split or Join entry of the menu of a major batch.
-type InboxDepsSplit struct {
+// DepsSplit is one Split or Join entry of the menu of a major batch.
+type DepsSplit struct {
 	Label, Action, Ecosystem, Name string
 	Split                          bool
 }
 
-// InboxDepsRow is one batch of a repository: its base batch (patch and minor)
+// DepsRow is one batch of a repository: its base batch (patch and minor)
 // or a major family.
-type InboxDepsRow struct {
+type DepsRow struct {
 	Batch, Title   string
 	Major          bool
 	Outdated       bool
@@ -76,37 +76,37 @@ type InboxDepsRow struct {
 	// Target its majors ("v2"); both empty for the base batch.
 	Packages, Target string
 	New              int
-	Status           InboxDepsStatus
+	Status           DepsStatus
 	// Repro are the commands that redo the failed update by hand.
 	Repro   string
-	Primary InboxDepsAction
+	Primary DepsAction
 	// Ignore and Snooze are the POST targets of the menu; empty without the
 	// button.
 	Ignore, Snooze string
 	// Splits pull a package out of its family, or join it back.
-	Splits  []InboxDepsSplit
-	Updates []InboxDepsUpdate
+	Splits  []DepsSplit
+	Updates []DepsUpdate
 }
 
-// InboxDepsRepo is the collapsible row of one repository: its base batch and
+// DepsRepo is the collapsible row of one repository: its base batch and
 // its major families.
-type InboxDepsRepo struct {
+type DepsRepo struct {
 	Repo, RepoHref, ID string
 	// Open: the row starts open (it holds a failure).
 	Open bool
 	// Failed counts the failed batches, Count the updates, BaseCount those of
 	// the base batch, MajorCount the major families.
 	Failed, Count, BaseCount, MajorCount, New int
-	Base                                      *InboxDepsRow
-	Majors                                    []InboxDepsRow
+	Base                                      *DepsRow
+	Majors                                    []DepsRow
 	// Recheck, Auto and Snooze are the POST targets of the repository actions;
 	// AutoOn tells whether patch and minor updates open a draft on their own.
 	Recheck, Auto, Snooze string
 	AutoOn                bool
 }
 
-// InboxDepsFilter is one chip above the table.
-type InboxDepsFilter struct {
+// DepsFilter is one chip above the table.
+type DepsFilter struct {
 	Label, Href string
 	Count       int
 	Current     bool
@@ -148,7 +148,7 @@ func (q depsQuery) encode() string {
 }
 
 // keep reports whether the filter shows the batch.
-func (q depsQuery) keep(b InboxDepsRow) bool {
+func (q depsQuery) keep(b DepsRow) bool {
 	switch q.filter {
 	case depsFilterFailures:
 		return b.Status.Kind == "failed"
@@ -199,7 +199,7 @@ func depsBreakdown(ups []domain.DepUpdate) string {
 }
 
 // depsIconKind is the CheckIcon kind of a state.
-func depsIconKind(s InboxDepsStatus) string {
+func depsIconKind(s DepsStatus) string {
 	switch s.Kind {
 	case "queued":
 		return "queued"
@@ -215,9 +215,9 @@ func depsBusy(b domain.DepBatch) bool {
 }
 
 // depsStatus is what the status cell says about the batch and its run.
-func depsStatus(repo string, in ports.InboxDeps) InboxDepsStatus {
+func depsStatus(repo string, in ports.InboxDeps) DepsStatus {
 	batch, run := in.Batch, in.Run
-	var st InboxDepsStatus
+	var st DepsStatus
 	if batch.MR != 0 {
 		st.MR, st.MRHref = batch.MR, mrHref(repo, batch.MR)
 		st.Adopted = batch.Adopted
@@ -225,7 +225,7 @@ func depsStatus(repo string, in ports.InboxDeps) InboxDepsStatus {
 		// its run passes.
 		st.Draft = batch.State != domain.DepsIdle && !batch.Adopted
 	}
-	var runLink InboxDepsStatus
+	var runLink DepsStatus
 	if run != nil {
 		n := run.Number
 		if n == 0 {
@@ -304,11 +304,11 @@ func depsMajorLabels(batch domain.DepBatch) (title, packages, target string) {
 }
 
 // depsRow is the row of one batch; query is appended to its actions.
-func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
+func (s *Server) depsRow(in ports.InboxDeps, query string) DepsRow {
 	d := in.Rec
 	batch := in.Batch
 	repo := d.Repo.String()
-	row := InboxDepsRow{
+	row := DepsRow{
 		Repo: repo, RepoHref: repoHref(repo), ID: depsRepoID(repo) + "-base",
 		Count: len(batch.Updates), Breakdown: depsBreakdown(batch.Updates),
 	}
@@ -327,7 +327,7 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 		if u.New {
 			row.New++
 		}
-		row.Updates = append(row.Updates, InboxDepsUpdate{
+		row.Updates = append(row.Updates, DepsUpdate{
 			Ecosystem: string(u.Ecosystem), Directory: u.Directory, Name: u.Name,
 			Current: u.Current, Latest: u.Version, Kind: depsKindLabel(u.Kind), New: u.New,
 		})
@@ -338,7 +338,7 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 	// nothing to apply, only to view.
 	merged := batch.MR != 0 && (batch.Adopted || batch.State == domain.DepsIdle && !row.Outdated)
 	if merged {
-		row.Primary = InboxDepsAction{Label: "View MR", Href: row.Status.MRHref}
+		row.Primary = DepsAction{Label: "View MR", Href: row.Status.MRHref}
 	}
 	if s.cfg.Deps == nil || depsBusy(batch) {
 		return row
@@ -353,7 +353,7 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 		case batch.MR != 0:
 			label = "Update MR"
 		}
-		row.Primary = InboxDepsAction{Label: label, Action: base + "open" + query}
+		row.Primary = DepsAction{Label: label, Action: base + "open" + query}
 	}
 	if row.Major && !batch.Adopted {
 		var names []domain.DepName
@@ -365,10 +365,10 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 		}
 		for _, n := range names {
 			if slices.Contains(d.SplitOut, n) {
-				row.Splits = append(row.Splits, InboxDepsSplit{Label: "Join family", Action: base + "split" + query, Ecosystem: string(n.Ecosystem), Name: n.Name})
+				row.Splits = append(row.Splits, DepsSplit{Label: "Join family", Action: base + "split" + query, Ecosystem: string(n.Ecosystem), Name: n.Name})
 			} else if len(names) > 1 {
 				label := "Split " + strings.TrimPrefix(n.Name, domain.FamilyOf(domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: n.Ecosystem, Name: n.Name}}))
-				row.Splits = append(row.Splits, InboxDepsSplit{Label: label, Action: base + "split" + query, Ecosystem: string(n.Ecosystem), Name: n.Name, Split: true})
+				row.Splits = append(row.Splits, DepsSplit{Label: label, Action: base + "split" + query, Ecosystem: string(n.Ecosystem), Name: n.Name, Split: true})
 			}
 		}
 	}
@@ -383,12 +383,12 @@ func depsBase(repo string) string { return depsPath + "/" + url.PathEscape(repo)
 // filter shows, and orders them: by name, or the repositories with a failure
 // first, then the most updates. The base batch comes first in a repository,
 // then the majors, the failed ones first.
-func (s *Server) depsRepos(deps []ports.InboxDeps, q depsQuery) []InboxDepsRepo {
+func (s *Server) depsRepos(deps []ports.InboxDeps, q depsQuery) []DepsRepo {
 	suffix := ""
 	if e := q.encode(); e != "" {
 		suffix = "?" + e
 	}
-	var repos []InboxDepsRepo
+	var repos []DepsRepo
 	at := map[string]int{}
 	for _, in := range deps {
 		row := s.depsRow(in, suffix)
@@ -396,7 +396,7 @@ func (s *Server) depsRepos(deps []ports.InboxDeps, q depsQuery) []InboxDepsRepo 
 		if !ok {
 			i = len(repos)
 			at[row.Repo] = i
-			r := InboxDepsRepo{Repo: row.Repo, RepoHref: row.RepoHref, ID: depsRepoID(row.Repo), AutoOn: !in.Rec.AutoOpenDisabled}
+			r := DepsRepo{Repo: row.Repo, RepoHref: row.RepoHref, ID: depsRepoID(row.Repo), AutoOn: !in.Rec.AutoOpenDisabled}
 			if s.cfg.Deps != nil {
 				base := depsBase(row.Repo)
 				r.Recheck, r.Auto, r.Snooze = base+"recheck"+suffix, base+"auto"+suffix, base+"snooze"+suffix
@@ -420,18 +420,18 @@ func (s *Server) depsRepos(deps []ports.InboxDeps, q depsQuery) []InboxDepsRepo 
 			r.Base = &row
 		}
 	}
-	repos = slices.DeleteFunc(repos, func(r InboxDepsRepo) bool { return r.Base == nil && len(r.Majors) == 0 })
+	repos = slices.DeleteFunc(repos, func(r DepsRepo) bool { return r.Base == nil && len(r.Majors) == 0 })
 	for i := range repos {
 		r := &repos[i]
 		r.Open = r.Failed > 0
-		slices.SortStableFunc(r.Majors, func(a, b InboxDepsRow) int {
+		slices.SortStableFunc(r.Majors, func(a, b DepsRow) int {
 			if c := cmp.Compare(boolFlag(b.Status.Kind == "failed"), boolFlag(a.Status.Kind == "failed")); c != 0 {
 				return c
 			}
 			return strings.Compare(a.Title, b.Title)
 		})
 	}
-	slices.SortStableFunc(repos, func(a, b InboxDepsRepo) int {
+	slices.SortStableFunc(repos, func(a, b DepsRepo) int {
 		if q.sort != depsSortName {
 			if c := cmp.Compare(boolFlag(b.Failed > 0), boolFlag(a.Failed > 0)); c != 0 {
 				return c
@@ -446,8 +446,8 @@ func (s *Server) depsRepos(deps []ports.InboxDeps, q depsQuery) []InboxDepsRepo 
 }
 
 // depsFilters are the chips above the table, with the batches each shows.
-func depsFilters(rows []InboxDepsRow, q depsQuery) []InboxDepsFilter {
-	var out []InboxDepsFilter
+func depsFilters(rows []DepsRow, q depsQuery) []DepsFilter {
+	var out []DepsFilter
 	for _, f := range []struct{ param, label string }{{"", "All"}, {depsFilterFailures, "Failures"}, {depsFilterMajors, "Majors"}, {depsFilterMRs, "MRs"}} {
 		v := depsQuery{sort: q.sort, filter: f.param}
 		n := 0
@@ -456,7 +456,7 @@ func depsFilters(rows []InboxDepsRow, q depsQuery) []InboxDepsFilter {
 				n++
 			}
 		}
-		out = append(out, InboxDepsFilter{Label: f.label, Href: depsHref(v), Count: n, Current: f.param == q.filter})
+		out = append(out, DepsFilter{Label: f.label, Href: depsHref(v), Count: n, Current: f.param == q.filter})
 	}
 	return out
 }
@@ -569,51 +569,66 @@ func depsHref(q depsQuery) string {
 	return depsPath
 }
 
+// DepsPage is Bernard's table: the repository rows the filter shows, with
+// the counts of every batch and update whatever the filter.
+type DepsPage struct {
+	Repos            []DepsRepo
+	Batches, Updates int
+	// Checked is the latest check (short UTC date and time, CheckedAt in
+	// RFC 3339), empty when unknown.
+	Checked, CheckedAt string
+	// Queue is the progress of Bernard's queue, empty when idle.
+	Queue string
+	// Sorts toggles the order of the rows: failures and most updates first
+	// (the default) or by repository name.
+	Sorts []NavLink
+	// Filters are the chips All, Failures, Majors and MRs.
+	Filters []DepsFilter
+}
+
 // deps is GET /-/deps?sort=&filter=: Bernard's table.
 func (s *Server) deps(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	if !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	v, err := s.cfg.Inbox.Deps(ctx, principal(ctx))
+	dq := depsQueryOf(r)
+	p, err := s.depsPage(ctx, dq)
 	if err != nil {
 		return nil, 0, err
 	}
-	var p InboxPage
-	dq := depsQueryOf(r)
-	s.fillDeps(&p, v, dq)
-	l := s.base()
-	l.Title = "Dependencies · " + s.instance
-	l.OwnerNav = s.ownerNav(ctx, "deps")
-	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	if s.cfg.Events != nil && s.cfg.Deps != nil {
-		q := "view=deps"
-		if e := dq.encode(); e != "" {
-			q += "&" + e
-		}
-		l.Live, l.LiveURL = true, liveURL("owner", q)
-	}
-	return Deps(l, p), http.StatusOK, nil
+	return Deps(s.ownerLayout(ctx, "deps", "Dependencies", dq.encode()), p), http.StatusOK, nil
 }
 
-// fillDeps sets the table of p from what Inbox.Deps read.
-func (s *Server) fillDeps(p *InboxPage, v ports.InboxDepsView, dq depsQuery) {
-	var all []InboxDepsRow
+// depsPage reads the table with the sort and filter of dq.
+func (s *Server) depsPage(ctx context.Context, dq depsQuery) (DepsPage, error) {
+	v, err := s.cfg.Inbox.Deps(ctx, principal(ctx))
+	if err != nil {
+		return DepsPage{}, err
+	}
+	return s.depsView(v, dq), nil
+}
+
+// depsView is the table of what Inbox.Deps read.
+func (s *Server) depsView(v ports.InboxDepsView, dq depsQuery) DepsPage {
+	var p DepsPage
+	var all []DepsRow
 	for _, d := range v.Deps {
 		row := s.depsRow(d, "")
 		all = append(all, row)
-		p.DepsUpdates += row.Count
+		p.Updates += row.Count
 	}
-	p.DepsBatches = len(all)
-	p.Deps = s.depsRepos(v.Deps, dq)
-	p.DepsFilters = depsFilters(all, dq)
-	p.DepsQueue = depsQueueText(v.Queue)
+	p.Batches = len(all)
+	p.Repos = s.depsRepos(v.Deps, dq)
+	p.Filters = depsFilters(all, dq)
+	p.Queue = depsQueueText(v.Queue)
 	for _, o := range []struct{ param, label string }{{"", "most updates"}, {depsSortName, "name"}} {
 		href := depsHref(depsQuery{sort: o.param, filter: dq.filter})
-		p.DepsSorts = append(p.DepsSorts, InboxNavLink{Label: o.label, Href: href, Current: o.param == dq.sort})
+		p.Sorts = append(p.Sorts, NavLink{Label: o.label, Href: href, Current: o.param == dq.sort})
 	}
 	if at := v.CheckedAt; !at.IsZero() {
-		p.DepsChecked, p.DepsCheckedAt = at.UTC().Format("2006-01-02 15:04"), rfc3339(at)
+		p.Checked, p.CheckedAt = at.UTC().Format("2006-01-02 15:04"), rfc3339(at)
 	}
+	return p
 }
 
 // depsResult re-renders the whole table: an action can change the header,
@@ -625,19 +640,17 @@ func (s *Server) depsResult(ctx context.Context, r *http.Request) (ActionResult,
 	if !isHX(r) {
 		return result, nil
 	}
-	deps, err := s.cfg.Inbox.Deps(ctx, principal(ctx))
+	p, err := s.depsPage(ctx, depsQueryOf(r))
 	if err != nil {
 		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	repo := r.PathValue("repo")
-	var p InboxPage
-	s.fillDeps(&p, deps, depsQueryOf(r))
-	for i := range p.Deps {
-		if p.Deps[i].Repo == repo {
-			p.Deps[i].Open = true
+	for i := range p.Repos {
+		if p.Repos[i].Repo == repo {
+			p.Repos[i].Open = true
 		}
 	}
-	result.Fragment = inboxDepsChanged(p)
+	result.Fragment = depsChanged(p)
 	return result, nil
 }
 

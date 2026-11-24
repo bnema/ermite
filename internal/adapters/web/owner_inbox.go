@@ -26,32 +26,12 @@ const inboxPath = "/-/inbox"
 // moderationPath is the prefix of the moderation actions.
 const moderationPath = "/-/moderation"
 
-// InboxRow is one open item of the inbox.
-type InboxRow struct {
-	Repo     string
-	RepoHref string
-	Number   string
-	Href     string
-	Title    string
-	When     string
-	WhenAt   string
-	Cursor   bool
-	// Checks is the CI state of the head of a merge request; zero otherwise.
-	Checks ChecksSummary
-}
-
 // PendingRow is one issue awaiting moderation. Everything in it is plain text:
 // it comes from an anonymous visitor and is never rendered as Markdown.
 type PendingRow struct {
-	ID       string
-	Repo     string
-	RepoHref string
-	Author   string
-	Title    string
+	ID, Author, Title string
 	// Preview is the start of the body, at most pendingPreviewRunes characters.
 	Preview string
-	When    string
-	WhenAt  string
 	// Approve, Reject and Ban are the URLs the buttons post to; empty without
 	// the moderation use case.
 	Approve, Reject, Ban string
@@ -60,53 +40,11 @@ type PendingRow struct {
 // pendingPreviewRunes bounds the preview of a pending body.
 const pendingPreviewRunes = 300
 
-// InboxNavLink is a plain navigation link.
-type InboxNavLink struct {
-	Label   string
-	Href    string
-	Current bool
-}
-
-// InboxRunRow adds repository and start time to the Actions run display.
-type InboxRunRow struct {
-	RunRow
-	Repo, RepoHref, When, WhenAt string
-}
-
-// InboxPage is what the owner pages render: each fills its own sections.
-type InboxPage struct {
-	RunsEnabled bool
-	Runs        []InboxRunRow
-	// Deps are the repository rows the filter shows; DepsBatches and
-	// DepsUpdates count every batch and update, whatever the filter.
-	Deps        []InboxDepsRepo
-	DepsBatches int
-	// DepsUpdates counts the updates of the rows of Deps; DepsChecked is the latest check
-	// (RFC 3339 and short UTC date and time), empty when unknown.
-	DepsUpdates                int
-	DepsChecked, DepsCheckedAt string
-	// DepsQueue is the progress of Bernard's queue, empty when idle.
-	DepsQueue string
-	// DepsSorts toggles the order of the rows: failures and most updates
-	// first (the default) or by repository name.
-	DepsSorts []InboxNavLink
-	// DepsFilters are the chips All, Failures, Majors and MRs.
-	DepsFilters []InboxDepsFilter
-	MRs         []InboxRow
-	IssueRows   []InboxRow
-	// Journal is the activity section; zero without a journal.
-	Journal JournalView
-}
-
 // pendingRow is the row of a pending issue: the texts as plain strings, the
 // invisible characters marked, the body cut.
-func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue) PendingRow {
+func (s *Server) pendingRow(pi domain.PendingIssue) PendingRow {
 	repo := pi.Repo.String()
-	row := PendingRow{
-		ID:   pendingRowID(repo, pi.ID.String()),
-		Repo: repo, RepoHref: repoHref(repo), Author: "anonymous",
-		Title: visibleText(pi.Title.String()),
-	}
+	row := PendingRow{ID: pendingRowID(repo, pi.ID.String()), Author: "anonymous", Title: visibleText(pi.Title.String())}
 	if a := strings.TrimSpace(visibleText(pi.Author)); a != "" {
 		row.Author = a
 	}
@@ -115,7 +53,6 @@ func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue) PendingRow {
 	if len(row.Preview) < len(body) {
 		row.Preview += "…"
 	}
-	row.When, row.WhenAt = whenOf(now, pi.CreatedAt)
 	if s.cfg.Moderation != nil {
 		base := moderationPath + "/" + url.PathEscape(repo) + "/" + url.PathEscape(pi.ID.String()) + "/"
 		row.Approve, row.Reject, row.Ban = base+"approve", base+"reject", base+"ban"
@@ -175,14 +112,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	if err != nil {
 		return nil, 0, err
 	}
-	l := s.base()
-	l.Title = "Inbox · " + s.instance
-	l.OwnerNav = s.ownerNavWith(ctx, "inbox", counts)
-	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	if s.cfg.Events != nil {
-		l.Live, l.LiveURL = true, liveURL("owner", "view=inbox")
-	}
-	return Inbox(l, rows), http.StatusOK, nil
+	return Inbox(s.ownerLayout(ctx, "inbox", "Inbox", "", counts), rows), http.StatusOK, nil
 }
 
 // AttentionRow is one item of the inbox. Its texts are plain strings; a
@@ -244,65 +174,90 @@ func (s *Server) attentionRow(now time.Time, it ports.AttentionItem) (AttentionR
 	row.When, row.WhenAt = whenOf(now, it.Since)
 	switch it.Kind {
 	case ports.AttentionModeration:
-		if it.Pending == nil {
-			return row, false
-		}
-		p := s.pendingRow(now, *it.Pending)
-		row.ID, row.Title, row.Note, row.Pending = p.ID, p.Title, p.Author, &p
+		return s.moderationRow(row, it)
 	case ports.AttentionDepsFailed:
-		if it.Deps == nil {
-			return row, false
-		}
-		d := s.depsRow(*it.Deps, "")
-		ref := d.Batch
-		if ref == "" {
-			ref = "base"
-		}
-		row.ID = attentionID(it.Kind, repo, ref)
-		row.Title, row.Href = d.Title, depsPath+"#"+d.ID
-		row.Note, _, _ = strings.Cut(strings.TrimSpace(visibleText(it.Deps.Batch.Error)), "\n")
-		if it.Deps.Run != nil {
-			row.ActionLabel, row.ActionHref = "View log", s.runRow(repo, *it.Deps.Run, now).Href
-		}
+		return s.depsFailedRow(now, row, it)
 	case ports.AttentionReady:
-		m := it.MergeRequest
-		if m == nil {
-			return row, false
-		}
-		row.ID = attentionID(it.Kind, repo, strconv.FormatInt(m.Number, 10))
-		row.Title, row.Href = visibleText(m.Title.String()), mrHref(repo, m.Number)
-		views := make([]ports.CheckView, 0, len(it.Checks))
-		for _, c := range it.Checks {
-			views = append(views, ports.CheckView{CICheck: c})
-		}
-		row.Checks = checksSummary(it.Repo, m.HeadID.String(), views)
-		row.ActionLabel, row.ActionHref = "Open", row.Href
+		return readyRow(row, it)
 	case ports.AttentionRelease:
-		u := it.Unreleased
-		if u == nil {
-			return row, false
-		}
-		row.ID = attentionID(it.Kind, repo, "release")
-		n := itoa(u.Distance.Commits)
-		if u.Distance.More {
-			n += "+"
-		}
-		word := " commits"
-		if u.Distance.Commits == 1 && !u.Distance.More {
-			word = " commit"
-		}
-		since := " since the last tag"
-		if t := u.Distance.Tag; t.Name != "" {
-			since = " since " + visibleText(t.Name)
-			if !t.At.IsZero() {
-				row.Note, row.NoteTip = tagAge(now, t.At), absolute(t.At)
-			}
-		}
-		row.Title, row.Href = n+word+since, repoHref(repo, "commits", u.Branch)
-		row.ActionLabel, row.ActionHref = "Commits", row.Href
-	default:
+		return releaseDueRow(now, row, it)
+	}
+	return row, false
+}
+
+// moderationRow is an issue awaiting moderation: its texts as plain strings
+// and the actions.
+func (s *Server) moderationRow(row AttentionRow, it ports.AttentionItem) (AttentionRow, bool) {
+	if it.Pending == nil {
 		return row, false
 	}
+	p := s.pendingRow(*it.Pending)
+	row.ID, row.Title, row.Note, row.Pending = p.ID, p.Title, p.Author, &p
+	return row, true
+}
+
+// depsFailedRow is a failed batch: its title to its row on /-/deps, the first
+// line of the error and the log of its run.
+func (s *Server) depsFailedRow(now time.Time, row AttentionRow, it ports.AttentionItem) (AttentionRow, bool) {
+	if it.Deps == nil {
+		return row, false
+	}
+	d := s.depsRow(*it.Deps, "")
+	ref := d.Batch
+	if ref == "" {
+		ref = "base"
+	}
+	row.ID = attentionID(it.Kind, row.Repo, ref)
+	row.Title, row.Href = d.Title, depsPath+"#"+d.ID
+	row.Note, _, _ = strings.Cut(strings.TrimSpace(visibleText(it.Deps.Batch.Error)), "\n")
+	if it.Deps.Run != nil {
+		row.ActionLabel, row.ActionHref = "View log", s.runRow(row.Repo, *it.Deps.Run, now).Href
+	}
+	return row, true
+}
+
+// readyRow is a merge request ready to decide: its title, its checks, Open.
+func readyRow(row AttentionRow, it ports.AttentionItem) (AttentionRow, bool) {
+	m := it.MergeRequest
+	if m == nil {
+		return row, false
+	}
+	row.ID = attentionID(it.Kind, row.Repo, strconv.FormatInt(m.Number, 10))
+	row.Title, row.Href = visibleText(m.Title.String()), mrHref(row.Repo, m.Number)
+	views := make([]ports.CheckView, 0, len(it.Checks))
+	for _, c := range it.Checks {
+		views = append(views, ports.CheckView{CICheck: c})
+	}
+	row.Checks = checksSummary(it.Repo, m.HeadID.String(), views)
+	row.ActionLabel, row.ActionHref = "Open", row.Href
+	return row, true
+}
+
+// releaseDueRow is a repository due for a release: the commits since its tag
+// and the age of the tag.
+func releaseDueRow(now time.Time, row AttentionRow, it ports.AttentionItem) (AttentionRow, bool) {
+	u := it.Unreleased
+	if u == nil {
+		return row, false
+	}
+	row.ID = attentionID(it.Kind, row.Repo, "release")
+	n := itoa(u.Distance.Commits)
+	if u.Distance.More {
+		n += "+"
+	}
+	word := " commits"
+	if u.Distance.Commits == 1 && !u.Distance.More {
+		word = " commit"
+	}
+	since := " since the last tag"
+	if t := u.Distance.Tag; t.Name != "" {
+		since = " since " + visibleText(t.Name)
+		if !t.At.IsZero() {
+			row.Note, row.NoteTip = tagAge(now, t.At), absolute(t.At)
+		}
+	}
+	row.Title, row.Href = n+word+since, repoHref(row.Repo, "commits", u.Branch)
+	row.ActionLabel, row.ActionHref = "Commits", row.Href
 	return row, true
 }
 

@@ -91,12 +91,12 @@ func TestOwnerLiveSets(t *testing.T) {
 	done := domain.RunUpdated{Run: domain.CIRun{Repo: alpha, Status: domain.CICompleted}}
 	sections := map[string][]string{
 		"inbox":    {"attention"},
-		"work":     {"inbox-mrs", "inbox-issues"},
-		"activity": {"inbox-runs", "inbox-journal"},
-		"deps":     {"inbox-deps"},
+		"work":     {"work-mrs", "work-issues"},
+		"activity": {"activity-runs", "activity-journal"},
+		"deps":     {"deps"},
 		"insights": nil,
 	}
-	all := []string{"attention", "inbox-mrs", "inbox-issues", "inbox-runs", "inbox-journal", "inbox-deps", "inbox-traffic"}
+	all := []string{"attention", "work-mrs", "work-issues", "activity-runs", "activity-journal", "deps", "insights"}
 	for _, tc := range []struct {
 		name string
 		ev   domain.Event
@@ -226,7 +226,7 @@ func TestInboxTrafficStream(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, frags, 1)
 	assert.Contains(t, frags[0].html, `id="owner-nav"`)
-	assert.NotContains(t, frags[0].html, `id="inbox-traffic"`)
+	assert.NotContains(t, frags[0].html, `id="insights"`)
 }
 
 // The owner's stream takes the range of the page: an unknown one is the
@@ -269,7 +269,7 @@ func TestInboxJournalStreamRange(t *testing.T) {
 	for journal == "" {
 		line, err := rd.ReadString('\n')
 		require.NoError(t, err)
-		if strings.HasPrefix(line, "data:") && strings.Contains(line, `id="inbox-journal"`) {
+		if strings.HasPrefix(line, "data:") && strings.Contains(line, `id="activity-journal"`) {
 			journal = line
 		}
 	}
@@ -291,8 +291,8 @@ func TestInboxJournalLive(t *testing.T) {
 		frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 		require.NoError(t, err)
 		require.Len(t, frags, 1, "%T", ev)
-		assert.Contains(t, frags[0].html, `id="inbox-runs"`)
-		assert.Contains(t, frags[0].html, `id="inbox-journal"`)
+		assert.Contains(t, frags[0].html, `id="activity-runs"`)
+		assert.Contains(t, frags[0].html, `id="activity-journal"`)
 		assert.Contains(t, frags[0].html, "add &lt;search&gt;")
 		assert.Contains(t, frags[0].html, `aria-current="page">7 days</a>`)
 	}
@@ -311,7 +311,7 @@ func TestInboxDepsLiveFragment(t *testing.T) {
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.DependencyUpdatesFound{Repo: repoName(t, "alpha"), Count: 2}})
 	require.NoError(t, err)
 	require.Len(t, frags, 1)
-	assert.Contains(t, frags[0].html, `id="inbox-deps"`)
+	assert.Contains(t, frags[0].html, `id="deps"`)
 	assert.Contains(t, frags[0].html, "golang.org/x/text")
 	assert.Contains(t, frags[0].html, `<a href="/-/deps?sort=name" data-nav="keep-scroll" aria-current="page">name</a>`, "rendered with the sort of the stream")
 	assert.True(t, liveEvent(ports.WatchEvent{Event: domain.DependencyUpdatesFound{}}))
@@ -327,7 +327,7 @@ func TestInboxDepsChangedRefreshesTheLiveView(t *testing.T) {
 	frags, err := ls.render(withOwner(t.Context()), ev)
 	require.NoError(t, err)
 	require.Len(t, frags, 1)
-	assert.Contains(t, frags[0].html, `id="inbox-deps"`)
+	assert.Contains(t, frags[0].html, `id="deps"`)
 }
 
 // Every owner page follows its own stream, with the query it shows.

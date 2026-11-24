@@ -116,11 +116,11 @@ func TestActivityAndInsightsRanges(t *testing.T) {
 		{"activity", "", true}, {"activity", "24h", true}, {"activity", "7d", true}, {"activity", "30d", false},
 		{"insights", "", true}, {"insights", "24h", true}, {"insights", "30d", true}, {"insights", "7d", false},
 	} {
-		parse := activityRange
+		rs := journalRanges
 		if tc.page == "insights" {
-			parse = insightsRange
+			rs = trafficRanges
 		}
-		_, err := parse(tc.raw)
+		_, err := parseRange(rs, tc.raw)
 		assert.Equal(t, tc.valid, err == nil, "%s range=%s", tc.page, tc.raw)
 	}
 }

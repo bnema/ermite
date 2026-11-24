@@ -12,7 +12,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // Insights is the owner's traffic across the forge.
-func Insights(l Layout, v InboxTrafficView) templ.Component {
+func Insights(l Layout, v InsightsView) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -45,7 +45,7 @@ func Insights(l Layout, v InboxTrafficView) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = InboxTraffic(v).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = InsightsTraffic(v).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -63,8 +63,8 @@ func Insights(l Layout, v InboxTrafficView) templ.Component {
 	})
 }
 
-// InboxTraffic uses the same range controls and plain tables as Activity.
-func InboxTraffic(v InboxTrafficView) templ.Component {
+// InsightsTraffic uses the same range controls and plain tables as Activity.
+func InsightsTraffic(v InsightsView) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -81,7 +81,7 @@ func InboxTraffic(v InboxTrafficView) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section id=\"inbox-traffic\" class=\"journal\" aria-labelledby=\"inbox-traffic-h\"><div class=\"journal-head\"><h2 id=\"inbox-traffic-h\" class=\"rule-h\"><span>Traffic</span></h2><nav class=\"journal-range\" aria-label=\"Traffic range\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section id=\"insights\" class=\"journal\" aria-labelledby=\"insights-h\"><div class=\"journal-head\"><h2 id=\"insights-h\" class=\"rule-h\"><span>Traffic</span></h2><nav class=\"journal-range\" aria-label=\"Traffic range\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

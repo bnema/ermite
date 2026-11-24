@@ -19,44 +19,63 @@ import (
 // journal.
 const activityPath = "/-/activity"
 
+// ActivityPage is the running runs, the unreleased repositories and the
+// journal of the range.
+type ActivityPage struct {
+	RunsEnabled bool
+	Runs        []RunRowView
+	// Journal is the activity section; zero without a journal.
+	Journal JournalView
+}
+
+// NavLink is a plain navigation link.
+type NavLink struct {
+	Label   string
+	Href    string
+	Current bool
+}
+
+// RunRowView adds repository and start time to the Actions run display.
+type RunRowView struct {
+	RunRow
+	Repo, RepoHref, When, WhenAt string
+}
+
 // activity is GET /-/activity?range=.
 func (s *Server) activity(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	if !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	rng, err := activityRange(r.URL.Query().Get("range"))
+	rng, err := parseRange(journalRanges, r.URL.Query().Get("range"))
 	if err != nil {
 		return nil, 0, err
 	}
+	p, err := s.activityPage(ctx, rng)
+	if err != nil {
+		return nil, 0, err
+	}
+	return Activity(s.ownerLayout(ctx, "activity", "Activity", "range="+journalRanges[rng].param), p), http.StatusOK, nil
+}
+
+// activityPage reads the runs and the journal of the range rng.
+func (s *Server) activityPage(ctx context.Context, rng int) (ActivityPage, error) {
 	p := principal(ctx)
 	runs, err := s.cfg.Inbox.Runs(ctx, p)
 	if err != nil {
-		return nil, 0, err
+		return ActivityPage{}, err
 	}
 	j, err := s.cfg.Inbox.Journal(ctx, p, journalRanges[rng].window)
 	if err != nil {
-		return nil, 0, err
+		return ActivityPage{}, err
 	}
-	page := InboxPage{RunsEnabled: runs.Enabled, Runs: s.runRows(runs.Runs, s.cfg.Now()), Journal: s.journalView(j, rng)}
-	l := s.base()
-	l.Title = "Activity · " + s.instance
-	l.OwnerNav = s.ownerNav(ctx, "activity")
-	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	if s.cfg.Events != nil {
-		q := "view=activity"
-		if r := journalRanges[rng].param; r != "" {
-			q += "&range=" + r
-		}
-		l.Live, l.LiveURL = true, liveURL("owner", q)
-	}
-	return Activity(l, page), http.StatusOK, nil
+	return ActivityPage{RunsEnabled: runs.Enabled, Runs: s.runRows(runs.Runs, s.cfg.Now()), Journal: s.journalView(j, rng)}, nil
 }
 
 // runRows are the rows of the running runs, with their repository and start.
-func (s *Server) runRows(runs []domain.CIRun, now time.Time) []InboxRunRow {
-	var rows []InboxRunRow
+func (s *Server) runRows(runs []domain.CIRun, now time.Time) []RunRowView {
+	var rows []RunRowView
 	for _, run := range runs {
-		r := InboxRunRow{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}
+		r := RunRowView{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}
 		if run.Status == domain.CIInProgress {
 			r.State = "in progress"
 		}
@@ -73,7 +92,7 @@ func (s *Server) runRows(runs []domain.CIRun, now time.Time) []InboxRunRow {
 // JournalView is the activity section of the inbox: the range toggle, the
 // repositories ahead of their nearest tag, then the entries newest first.
 type JournalView struct {
-	Ranges     []InboxNavLink
+	Ranges     []NavLink
 	RangeLabel string // "24 hours" or "7 days", for the empty state
 	Unreleased []UnreleasedGroup
 	Rows       []JournalRow
@@ -113,36 +132,16 @@ type JournalRow struct {
 }
 
 // journalRanges are the windows of the activity section, by ?range=.
-var journalRanges = []struct {
-	param, label, long string
-	window             time.Duration
-}{
+var journalRanges = []pageRange{
 	{"24h", "24 h", "24 hours", 24 * time.Hour},
 	{"7d", "7 days", "7 days", 7 * 24 * time.Hour},
-}
-
-// activityRange reads ?range= of the activity: its index in journalRanges;
-// an unknown range is missing.
-func activityRange(raw string) (int, error) {
-	for i, r := range journalRanges {
-		if r.param == raw || (raw == "" && i == 0) {
-			return i, nil
-		}
-	}
-	return 0, errNotFound
 }
 
 // journalView builds the activity section.
 func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 	now := s.cfg.Now()
 	v := JournalView{RangeLabel: journalRanges[rng].long, Truncated: j.Truncated}
-	for i, r := range journalRanges {
-		href := activityPath
-		if i != 0 {
-			href += "?range=" + r.param
-		}
-		v.Ranges = append(v.Ranges, InboxNavLink{Label: r.label, Href: href, Current: i == rng})
-	}
+	v.Ranges = rangeLinks(activityPath, journalRanges, rng)
 	groups := []UnreleasedGroup{
 		{Key: "due", Label: "Release due", Open: true},
 		{Key: "soon", Label: "Soon", Open: true},

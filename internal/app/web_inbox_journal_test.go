@@ -36,7 +36,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	stream := ownerStream(t, r.harness, token, "activity")
 	mr, err := r.forge.MergeRequests.Create(ctx, domain.Root(), r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
-	assert.Contains(t, fragmentWith(t, stream, `<tr data-kind="mr_opened">`), `id="inbox-journal"`, "a new merge request is on the journal live")
+	assert.Contains(t, fragmentWith(t, stream, `<tr data-kind="mr_opened">`), `id="activity-journal"`, "a new merge request is on the journal live")
 
 	_, err = r.forge.MergeRequests.Merge(ctx, domain.Owner(), r.name("proj"), mr.Number, ports.MergeParams{Mode: domain.MergeModeMerge, HeadID: mustOID(t, r.headOf("feat/search"))})
 	require.NoError(t, err)
@@ -47,7 +47,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	// The journal signal of the push refreshes the activity live, with the
 	// merge request recorded before it.
 	live := fragmentWith(t, stream, `<tr data-kind="tag_deleted">`)
-	assert.Contains(t, live, `id="inbox-journal"`)
+	assert.Contains(t, live, `id="activity-journal"`)
 	assert.Contains(t, live, `<tr data-kind="mr_opened">`)
 	r.mustGit(r.wt, "fetch", "-q", r.url, "main")
 	r.mustGit(r.wt, "tag", "v0.0.1", "FETCH_HEAD~3")
@@ -57,7 +57,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	// ran before git push returned.
 	page := b.get("/-/activity", as(token)).body
 	require.Contains(t, page, `data-kind="mr_merged"`)
-	sec := page[strings.Index(page, `id="inbox-journal"`):]
+	sec := page[strings.Index(page, `id="activity-journal"`):]
 
 	for _, want := range []string{
 		`<tr data-kind="tag_created">`, `<span class="j-ref">v0.1.0</span>`,

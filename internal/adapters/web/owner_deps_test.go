@@ -65,15 +65,15 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		mutate func(d *domain.RepoDeps)
 		run    *domain.CIRun
 
-		status  InboxDepsStatus
-		primary InboxDepsAction
+		status  DepsStatus
+		primary DepsAction
 		ignore  string
 	}{
 		{
 			name:    "idle without a merge request",
 			mutate:  func(d *domain.RepoDeps) { d.Base().State, d.Base().Error, d.Base().RunID = domain.DepsIdle, "", 0 },
-			status:  InboxDepsStatus{},
-			primary: InboxDepsAction{Label: "Open MR", Action: base + "open"},
+			status:  DepsStatus{},
+			primary: DepsAction{Label: "Open MR", Action: base + "open"},
 			ignore:  base + "ignore",
 		},
 		{
@@ -82,8 +82,8 @@ func TestInboxDepsRowMapping(t *testing.T) {
 				d.Base().State, d.Base().Error, d.Base().RunID = domain.DepsIdle, "", 0
 				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()[:1]
 			},
-			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
-			primary: InboxDepsAction{Label: "Update MR", Action: base + "open"},
+			status:  DepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
+			primary: DepsAction{Label: "Update MR", Action: base + "open"},
 			ignore:  base + "ignore",
 		},
 		{
@@ -93,37 +93,37 @@ func TestInboxDepsRowMapping(t *testing.T) {
 				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
 			run:     run(3, domain.CICompleted),
-			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
-			primary: InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/7"},
+			status:  DepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
+			primary: DepsAction{Label: "View MR", Href: "/alpha/merge-requests/7"},
 		},
 		{
 			name:   "applying, run queued",
 			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIQueued),
-			status: InboxDepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
+			status: DepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, run held back by a concurrency group",
 			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIPending),
-			status: InboxDepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
+			status: DepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, the run is not readable",
 			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
-			status: InboxDepsStatus{Kind: "running", State: "applying"},
+			status: DepsStatus{Kind: "running", State: "applying"},
 		},
 		{
 			name:   "applying, the run ended and the record is not settled yet",
 			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CICompleted),
-			status: InboxDepsStatus{Kind: "running", State: "applying", Text: "run #3", Href: "/alpha/actions/runs/12"},
+			status: DepsStatus{Kind: "running", State: "applying", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, run in progress",
 			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIInProgress),
-			status: InboxDepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12"},
+			status: DepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name: "applying with a merge request open keeps the link to it",
@@ -132,21 +132,21 @@ func TestInboxDepsRowMapping(t *testing.T) {
 				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
 			run:    run(3, domain.CIInProgress),
-			status: InboxDepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12", MR: 7, MRHref: "/alpha/merge-requests/7", Draft: true},
+			status: DepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12", MR: 7, MRHref: "/alpha/merge-requests/7", Draft: true},
 		},
 		{
 			name:    "failed with a run",
 			mutate:  func(d *domain.RepoDeps) {},
 			run:     run(3, domain.CICompleted),
-			status:  InboxDepsStatus{Kind: "failed", State: "failed", Text: "run #3", Href: "/alpha/actions/runs/12", Title: "the run ended: failure"},
-			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
+			status:  DepsStatus{Kind: "failed", State: "failed", Text: "run #3", Href: "/alpha/actions/runs/12", Title: "the run ended: failure"},
+			primary: DepsAction{Label: "Retry", Action: base + "open"},
 			ignore:  base + "ignore",
 		},
 		{
 			name:    "failed, the run is gone",
 			mutate:  func(d *domain.RepoDeps) { d.Base().Error = "the run no longer exists" },
-			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run no longer exists"},
-			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
+			status:  DepsStatus{Kind: "failed", State: "failed", Title: "the run no longer exists"},
+			primary: DepsAction{Label: "Retry", Action: base + "open"},
 			ignore:  base + "ignore",
 		},
 		{
@@ -154,8 +154,8 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			mutate: func(d *domain.RepoDeps) {
 				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
-			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run ended: failure", MR: 7, MRHref: "/alpha/merge-requests/7", Draft: true},
-			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
+			status:  DepsStatus{Kind: "failed", State: "failed", Title: "the run ended: failure", MR: 7, MRHref: "/alpha/merge-requests/7", Draft: true},
+			primary: DepsAction{Label: "Retry", Action: base + "open"},
 			ignore:  base + "ignore",
 		},
 	}
@@ -196,12 +196,8 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
 	})
 	assert.Equal(t, 404, inboxGet(srv, depsPath, true).Code, "no page without the service")
-	sec := renderToString(t, InboxDeps(func() InboxPage {
-		var p InboxPage
-		srv.fillDeps(&p, ports.InboxDepsView{Deps: depsOverview(t).Deps}, depsQuery{})
-		return p
-	}()))
-	assert.Contains(t, sec, `id="inbox-deps"`)
+	sec := renderToString(t, DepsTable(srv.depsView(ports.InboxDepsView{Deps: depsOverview(t).Deps}, depsQuery{})))
+	assert.Contains(t, sec, `id="deps"`)
 	assert.NotContains(t, sec, "<form")
 	assert.NotContains(t, sec, "More actions")
 }
@@ -211,7 +207,7 @@ func TestInboxDepsEmptyFragmentIsHidden(t *testing.T) {
 	svc := mocks.NewInboxService(t)
 	expectInbox(svc, inboxOverview(t))
 	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/deps", true).Body.String()
-	assert.Regexp(t, `<section id="inbox-deps" data-keep-open hidden>`, body)
+	assert.Regexp(t, `<section id="deps" data-keep-open hidden>`, body)
 	assert.NotContains(t, body, "Dependency updates<")
 }
 
@@ -354,7 +350,7 @@ func depsSection(t *testing.T, path string, ov inboxFixture) string {
 	rec := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), path, true)
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
-	at := strings.Index(body, `id="inbox-deps"`)
+	at := strings.Index(body, `id="deps"`)
 	require.GreaterOrEqual(t, at, 0)
 	return body[at : at+strings.Index(body[at:], "</section>")]
 }
@@ -489,8 +485,8 @@ func TestInboxDepsSplitOut(t *testing.T) {
 	assert.Equal(t, "github.com/charmbracelet/bubbles", row.Title)
 	assert.Equal(t, "v2", row.Target)
 	require.Len(t, row.Splits, 1)
-	assert.Equal(t, InboxDepsSplit{Label: "Join family", Action: "/-/deps/alpha/split", Ecosystem: "gomod", Name: "github.com/charmbracelet/bubbles"}, row.Splits[0])
-	html := renderToString(t, inboxDepsRow(row))
+	assert.Equal(t, DepsSplit{Label: "Join family", Action: "/-/deps/alpha/split", Ecosystem: "gomod", Name: "github.com/charmbracelet/bubbles"}, row.Splits[0])
+	html := renderToString(t, depsRowItem(row))
 	assert.Regexp(t, `name="split" value="0">\s*<button type="submit" class="btn">Join family`, html)
 }
 
@@ -501,15 +497,15 @@ func TestInboxDepsBatchStates(t *testing.T) {
 		name   string
 		mutate func(b *domain.DepBatch)
 		pos    int
-		status InboxDepsStatus
+		status DepsStatus
 		label  string
 	}{
-		{"queued", func(b *domain.DepBatch) { b.State = domain.DepsQueued }, 4, InboxDepsStatus{Kind: "queued", State: "queued #4"}, ""},
-		{"drafting", func(b *domain.DepBatch) { b.State = domain.DepsQueued }, 1, InboxDepsStatus{Kind: "running", State: "drafting"}, ""},
+		{"queued", func(b *domain.DepBatch) { b.State = domain.DepsQueued }, 4, DepsStatus{Kind: "queued", State: "queued #4"}, ""},
+		{"drafting", func(b *domain.DepBatch) { b.State = domain.DepsQueued }, 1, DepsStatus{Kind: "running", State: "drafting"}, ""},
 		{"draft waits for a slot", func(b *domain.DepBatch) { b.State, b.MR = domain.DepsDrafted, 41 }, 2,
-			InboxDepsStatus{Kind: "queued", State: "queued #2", MR: 41, MRHref: "/alpha/merge-requests/41", Draft: true}, ""},
+			DepsStatus{Kind: "queued", State: "queued #2", MR: 41, MRHref: "/alpha/merge-requests/41", Draft: true}, ""},
 		{"adopted", func(b *domain.DepBatch) { b.State, b.MR, b.Adopted = domain.DepsIdle, 41, true }, 0,
-			InboxDepsStatus{MR: 41, MRHref: "/alpha/merge-requests/41", Adopted: true}, "View MR"},
+			DepsStatus{MR: 41, MRHref: "/alpha/merge-requests/41", Adopted: true}, "View MR"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -648,7 +644,7 @@ func TestInboxDepsRepoActions(t *testing.T) {
 		rec := post(depsServer(t, inbox, deps), "/-/deps/alpha/recheck", nil, true)
 		assert.Equal(t, 200, rec.Code)
 		body := rec.Body.String()
-		assert.Contains(t, body, `hx-target="#inbox-deps" hx-swap="outerMorph"`)
+		assert.Contains(t, body, `hx-target="#deps" hx-swap="outerMorph"`)
 		assert.Contains(t, body, `<details class="deps-main" open>`)
 		assert.NotContains(t, body, "<html")
 	})
@@ -687,10 +683,10 @@ func TestInboxAsyncDeps(t *testing.T) {
 				assert.Empty(t, w.Header().Get("Location"))
 				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 				body := w.Body.String()
-				assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph"><section id="inbox-deps" data-keep-open`)
+				assert.Contains(t, body, `<hx-partial hx-target="#deps" hx-swap="outerMorph"><section id="deps" data-keep-open`)
 				if gone {
 					assert.NotContains(t, body, `id="deps-alpha"`)
-					assert.Contains(t, body, `<section id="inbox-deps" data-keep-open hidden>`, "the empty table hides, header included")
+					assert.Contains(t, body, `<section id="deps" data-keep-open hidden>`, "the empty table hides, header included")
 				} else {
 					assert.Contains(t, body, "applying")
 					assert.Contains(t, body, `id="deps-alpha-base"`)
@@ -711,7 +707,7 @@ func TestInboxDottedRepoDepsIDs(t *testing.T) {
 			repos := srv.depsRepos(ov.Deps, depsQuery{})
 			require.Len(t, repos, 1)
 			assert.Equal(t, "deps-alpha_2ebeta", repos[0].ID)
-			html := renderToString(t, inboxDepsRepo(repos[0]))
+			html := renderToString(t, depsRepoItem(repos[0]))
 			for _, id := range regexp.MustCompile(`id="([^"]+)"`).FindAllStringSubmatch(html, -1) {
 				assert.Regexp(t, `^[a-zA-Z0-9_-]+$`, id[1])
 			}
@@ -737,7 +733,7 @@ func TestInboxDepsAdoptedWins(t *testing.T) {
 					b.MRVersions = b.MRVersions[:1]
 				}
 				row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b}, "")
-				assert.Equal(t, InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/1"}, row.Primary)
+				assert.Equal(t, DepsAction{Label: "View MR", Href: "/alpha/merge-requests/1"}, row.Primary)
 				assert.Empty(t, row.Ignore)
 				assert.True(t, row.Status.Adopted)
 				assert.False(t, row.Status.Draft)
@@ -748,7 +744,7 @@ func TestInboxDepsAdoptedWins(t *testing.T) {
 	rec := depsRec(t)
 	b := rec.Batches[0]
 	b.MR, b.Adopted = 1, true
-	html := renderToString(t, inboxDepsRow(srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b, Run: depsRun(3, domain.CICompleted)}, "")))
+	html := renderToString(t, depsRowItem(srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b, Run: depsRun(3, domain.CICompleted)}, "")))
 	assert.Contains(t, html, `class="deps-failure"`)
 	assert.Contains(t, html, "the run ended: failure")
 	assert.Contains(t, html, "changed by hand")
@@ -790,8 +786,8 @@ func TestInboxDepsActionRefreshesTheHeader(t *testing.T) {
 	depsServer(t, inbox, deps).ServeHTTP(w, req)
 	require.Equal(t, 200, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph">`)
-	assert.Contains(t, body, `<h2 id="inbox-deps-h"`)
+	assert.Contains(t, body, `<hx-partial hx-target="#deps" hx-swap="outerMorph">`)
+	assert.Contains(t, body, `<h2 id="deps_h"`)
 	assert.Contains(t, body, `<time datetime="2026-03-05T06:00:00Z">2026-03-05 06:00</time>`)
 	assert.Contains(t, body, "1 batch · 3 updates")
 }
@@ -821,10 +817,10 @@ func TestInboxDepsAdoptedMajors(t *testing.T) {
 				b := tc.batch
 				b.State, b.MR, b.Adopted, b.Error = st, 5, true, "boom"
 				row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: b}, "")
-				assert.Equal(t, InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/5"}, row.Primary)
+				assert.Equal(t, DepsAction{Label: "View MR", Href: "/alpha/merge-requests/5"}, row.Primary)
 				assert.Empty(t, row.Ignore)
 				assert.Empty(t, row.Splits)
-				html := renderToString(t, inboxDepsRow(row))
+				html := renderToString(t, depsRowItem(row))
 				assert.NotContains(t, html, "/split")
 				assert.NotContains(t, html, `aria-label="More actions for`)
 			})
@@ -857,7 +853,7 @@ func TestInboxDepsActionRefreshesTheTable(t *testing.T) {
 	require.Equal(t, 200, w.Code)
 	body := w.Body.String()
 	assert.Equal(t, 1, strings.Count(body, "<hx-partial"), "one swap of the section")
-	assert.Contains(t, body, `<hx-partial hx-target="#inbox-deps" hx-swap="outerMorph"><section id="inbox-deps" data-keep-open`)
+	assert.Contains(t, body, `<hx-partial hx-target="#deps" hx-swap="outerMorph"><section id="deps" data-keep-open`)
 	assert.Contains(t, body, "queue 1/1 running, 12 waiting")
 	assert.Regexp(t, `filter=failures" data-nav="keep-scroll" aria-current="page">Failures\s+<span class="count">0</span>`, body)
 	assert.Contains(t, body, "no batch matches this filter.")

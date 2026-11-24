@@ -14,6 +14,25 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
+// WorkRow is one open merge request or issue.
+type WorkRow struct {
+	Repo     string
+	RepoHref string
+	Number   string
+	Href     string
+	Title    string
+	When     string
+	WhenAt   string
+	Cursor   bool
+	// Checks is the CI state of the head of a merge request; zero otherwise.
+	Checks ChecksSummary
+}
+
+// WorkPage is the open merge requests and issues.
+type WorkPage struct {
+	MRs, Issues []WorkRow
+}
+
 // workPath is the owner's open merge requests and issues.
 const workPath = "/-/work"
 
@@ -22,32 +41,34 @@ func (s *Server) work(ctx context.Context, r *http.Request) (templ.Component, in
 	if !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	w, err := s.cfg.Inbox.Work(ctx, principal(ctx))
+	p, err := s.workPage(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
-	var p InboxPage
-	p.MRs, p.IssueRows = s.workRows(ctx, w)
-	l := s.base()
-	l.Title = "Work · " + s.instance
-	l.OwnerNav = s.ownerNav(ctx, "work")
-	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
-	if s.cfg.Events != nil {
-		l.Live, l.LiveURL = true, liveURL("owner", "view=work")
+	return Work(s.ownerLayout(ctx, "work", "Work", ""), p), http.StatusOK, nil
+}
+
+// workPage reads the open merge requests and issues into their rows.
+func (s *Server) workPage(ctx context.Context) (WorkPage, error) {
+	w, err := s.cfg.Inbox.Work(ctx, principal(ctx))
+	if err != nil {
+		return WorkPage{}, err
 	}
-	return Work(l, p), http.StatusOK, nil
+	var p WorkPage
+	p.MRs, p.Issues = s.workRows(ctx, w)
+	return p, nil
 }
 
 // workRows are the rows of the open merge requests and issues, the first row
 // under the cursor. The checks are read once per (repo, head).
-func (s *Server) workRows(ctx context.Context, w ports.InboxWork) (mrs, issues []InboxRow) {
+func (s *Server) workRows(ctx context.Context, w ports.InboxWork) (mrs, issues []WorkRow) {
 	now := s.cfg.Now()
-	row := func(repo domain.RepoName, n int64, href, title string, updated, created time.Time) InboxRow {
+	row := func(repo domain.RepoName, n int64, href, title string, updated, created time.Time) WorkRow {
 		ts := updated
 		if ts.IsZero() {
 			ts = created
 		}
-		r := InboxRow{
+		r := WorkRow{
 			Repo: repo.String(), RepoHref: repoHref(repo.String()),
 			Number: "#" + strconv.FormatInt(n, 10), Href: href, Title: visibleText(title),
 		}

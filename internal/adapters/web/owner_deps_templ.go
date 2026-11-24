@@ -12,7 +12,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // Deps is Bernard's table of dependency updates, on its own page.
-func Deps(l Layout, p InboxPage) templ.Component {
+func Deps(l Layout, p DepsPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -45,7 +45,7 @@ func Deps(l Layout, p InboxPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = InboxDeps(p).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = DepsTable(p).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -63,12 +63,12 @@ func Deps(l Layout, p InboxPage) templ.Component {
 	})
 }
 
-// InboxDeps is Bernard's table: one collapsible row per repository, its patch
+// DepsTable is Bernard's table: one collapsible row per repository, its patch
 // and minor batch first, then its major families, each with its status and
 // actions. It stays as an empty fragment when there is nothing to show.
 // data-keep-open: the live swap keeps the open rows open, and closed ones
 // closed.
-func InboxDeps(p InboxPage) templ.Component {
+func DepsTable(p DepsPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -85,18 +85,18 @@ func InboxDeps(p InboxPage) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section id=\"inbox-deps\" data-keep-open")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<section id=\"deps\" data-keep-open")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if p.DepsBatches == 0 {
+		if p.Batches == 0 {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, " hidden")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		if p.DepsBatches > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " aria-labelledby=\"inbox-deps-h\"")
+		if p.Batches > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " aria-labelledby=\"deps_h\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -105,8 +105,8 @@ func InboxDeps(p InboxPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if p.DepsBatches > 0 {
-			templ_7745c5c3_Err = inboxDepsHeader(p).Render(ctx, templ_7745c5c3_Buffer)
+		if p.Batches > 0 {
+			templ_7745c5c3_Err = depsHeader(p).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -114,7 +114,7 @@ func InboxDeps(p InboxPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, f := range p.DepsFilters {
+			for _, f := range p.Filters {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<a class=\"btn deps-chip\" href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -192,7 +192,7 @@ func InboxDeps(p InboxPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for i, o := range p.DepsSorts {
+			for i, o := range p.Sorts {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -233,7 +233,7 @@ func InboxDeps(p InboxPage) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				if i < len(p.DepsSorts)-1 {
+				if i < len(p.Sorts)-1 {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<span class=\"mute\" aria-hidden=\"true\">·</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
@@ -244,7 +244,7 @@ func InboxDeps(p InboxPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if len(p.Deps) == 0 {
+			if len(p.Repos) == 0 {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<p class=\"dim deps-none\">no batch matches this filter.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -254,8 +254,8 @@ func InboxDeps(p InboxPage) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, r := range p.Deps {
-					templ_7745c5c3_Err = inboxDepsRepo(r).Render(ctx, templ_7745c5c3_Buffer)
+				for _, r := range p.Repos {
+					templ_7745c5c3_Err = depsRepoItem(r).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -274,9 +274,9 @@ func InboxDeps(p InboxPage) templ.Component {
 	})
 }
 
-// inboxDepsHeader is the title of the table with the last check and the
-// queue; #inbox-deps-meta is swapped after an action.
-func inboxDepsHeader(p InboxPage) templ.Component {
+// depsHeader is the title of the table with the last check and the
+// queue; #deps_meta is swapped after an action.
+func depsHeader(p DepsPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -293,19 +293,19 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<h2 id=\"inbox-deps-h\" class=\"rule-h\"><span>Dependency updates</span> <span id=\"inbox-deps-meta\" class=\"dim\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<h2 id=\"deps_h\" class=\"rule-h\"><span>Dependency updates</span> <span id=\"deps_meta\" class=\"dim\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if p.DepsCheckedAt != "" {
+		if p.CheckedAt != "" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "checked <time datetime=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.NewAttributeExpression(p.DepsCheckedAt).Resolve(ctx)
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.NewAttributeExpression(p.CheckedAt).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 85, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 85, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 			if templ_7745c5c3_Err != nil {
@@ -316,9 +316,9 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(p.DepsChecked)
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(p.Checked)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 85, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 85, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -331,7 +331,7 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(" ")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 85, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 85, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -343,9 +343,9 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 			}
 		}
 		var templ_7745c5c3_Var14 string
-		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(plural(p.DepsBatches, "batch", "batches"))
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(plural(p.Batches, "batch", "batches"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 87, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 87, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -356,9 +356,9 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(plural(p.DepsUpdates, "update", "updates"))
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(plural(p.Updates, "update", "updates"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 87, Col: 96}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 87, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -368,7 +368,7 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if p.DepsQueue != "" {
+		if p.Queue != "" {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(" · ")
 			if templ_7745c5c3_Err != nil {
@@ -383,9 +383,9 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var17 string
-			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(p.DepsQueue)
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(p.Queue)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 89, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/owner_deps.templ`, Line: 89, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -406,7 +406,7 @@ func inboxDepsHeader(p InboxPage) templ.Component {
 
 // depsStatusCell is the state of the batch: its run or its place in the
 // queue, and its merge request.
-func depsStatusCell(s InboxDepsStatus) templ.Component {
+func depsStatusCell(s DepsStatus) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -540,7 +540,7 @@ func depsStatusCell(s InboxDepsStatus) templ.Component {
 
 // depsForm is one POST button of a row. The expected versions go in hidden
 // fields (four per update, in the same order) for Open MR and Ignore.
-func depsForm(d InboxDepsRow, action, label, class string, refs bool, id string) templ.Component {
+func depsForm(d DepsRow, action, label, class string, refs bool, id string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -817,7 +817,7 @@ func depsFieldForm(action, field, value, label string) templ.Component {
 
 // depsRepoSummary is the line of a repository: failures, counts, and the
 // state of its patch and minor batch.
-func depsRepoSummary(r InboxDepsRepo) templ.Component {
+func depsRepoSummary(r DepsRepo) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -993,7 +993,7 @@ func depsRepoSummary(r InboxDepsRepo) templ.Component {
 	})
 }
 
-func inboxDepsRepo(r InboxDepsRepo) templ.Component {
+func depsRepoItem(r DepsRepo) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1086,7 +1086,7 @@ func inboxDepsRepo(r InboxDepsRepo) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = inboxDepsRow(*r.Base).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = depsRowItem(*r.Base).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1114,7 +1114,7 @@ func inboxDepsRepo(r InboxDepsRepo) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, d := range r.Majors {
-				templ_7745c5c3_Err = inboxDepsRow(d).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = depsRowItem(d).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1168,7 +1168,7 @@ func inboxDepsRepo(r InboxDepsRepo) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if r.Recheck != "" {
-			templ_7745c5c3_Err = depsForm(InboxDepsRow{}, r.Recheck, "Re-check", "btn", false, r.ID+"-recheck").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = depsForm(DepsRow{}, r.Recheck, "Re-check", "btn", false, r.ID+"-recheck").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1213,7 +1213,7 @@ func inboxDepsRepo(r InboxDepsRepo) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = depsForm(InboxDepsRow{}, r.Snooze, "Snooze", "btn", false, "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = depsForm(DepsRow{}, r.Snooze, "Snooze", "btn", false, "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1232,7 +1232,7 @@ func inboxDepsRepo(r InboxDepsRepo) templ.Component {
 
 // depsFailure is the failure of a batch: the full reason, the commands that
 // redo it by hand, and the link to the log.
-func depsFailure(d InboxDepsRow) templ.Component {
+func depsFailure(d DepsRow) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1361,7 +1361,7 @@ func depsFailure(d InboxDepsRow) templ.Component {
 	})
 }
 
-func inboxDepsRow(d InboxDepsRow) templ.Component {
+func depsRowItem(d DepsRow) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1871,7 +1871,7 @@ func inboxDepsRow(d InboxDepsRow) templ.Component {
 	})
 }
 
-func inboxDepsChanged(p InboxPage) templ.Component {
+func depsChanged(p DepsPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1888,11 +1888,11 @@ func inboxDepsChanged(p InboxPage) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "<hx-partial hx-target=\"#inbox-deps\" hx-swap=\"outerMorph\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "<hx-partial hx-target=\"#deps\" hx-swap=\"outerMorph\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = InboxDeps(p).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = DepsTable(p).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

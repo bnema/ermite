@@ -3,37 +3,37 @@
 package web
 
 // Work is the owner's open merge requests and issues.
-templ Work(l Layout, p InboxPage) {
+templ Work(l Layout, p WorkPage) {
 	@Shell(l, nil) {
 		<div id="view" data-view="work">
 			<h1 class="sr" tabindex="-1">Work</h1>
-			@InboxMRs(p)
-			@InboxIssues(p)
+			@WorkMRs(p)
+			@WorkIssues(p)
 		</div>
 	}
 }
 
-templ InboxMRs(p InboxPage) {
-	<section id="inbox-mrs" aria-labelledby="inbox-mrs-h">
-		<h2 id="inbox-mrs-h" class="rule-h"><span>Open merge requests</span><span class="count">{ itoa(len(p.MRs)) }</span></h2>
-		@inboxRows(p.MRs, "Open merge requests")
+templ WorkMRs(p WorkPage) {
+	<section id="work-mrs" aria-labelledby="work-mrs-h">
+		<h2 id="work-mrs-h" class="rule-h"><span>Open merge requests</span><span class="count">{ itoa(len(p.MRs)) }</span></h2>
+		@workTable(p.MRs, "Open merge requests")
 		if len(p.MRs) == 0 {
 			<p class="lede dim">no open merge requests.</p>
 		}
 	</section>
 }
 
-templ InboxIssues(p InboxPage) {
-	<section id="inbox-issues" aria-labelledby="inbox-issues-h">
-		<h2 id="inbox-issues-h" class="rule-h"><span>Open issues</span><span class="count">{ itoa(len(p.IssueRows)) }</span></h2>
-		@inboxRows(p.IssueRows, "Open issues")
-		if len(p.IssueRows) == 0 {
+templ WorkIssues(p WorkPage) {
+	<section id="work-issues" aria-labelledby="work-issues-h">
+		<h2 id="work-issues-h" class="rule-h"><span>Open issues</span><span class="count">{ itoa(len(p.Issues)) }</span></h2>
+		@workTable(p.Issues, "Open issues")
+		if len(p.Issues) == 0 {
 			<p class="lede dim">no open issues.</p>
 		}
 	</section>
 }
 
-templ inboxRows(rows []InboxRow, label string) {
+templ workTable(rows []WorkRow, label string) {
 	if len(rows) > 0 {
 		<table class="list mrs" aria-label={ label }>
 			<tbody data-rows>
