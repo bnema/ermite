@@ -49,6 +49,72 @@ func (_m *InboxService) EXPECT() *InboxService_Expecter {
 	return &InboxService_Expecter{mock: &_m.Mock}
 }
 
+// Deps provides a mock function for the type InboxService
+func (_mock *InboxService) Deps(ctx context.Context, p domain.Principal) (ports.InboxDepsView, error) {
+	ret := _mock.Called(ctx, p)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Deps")
+	}
+
+	var r0 ports.InboxDepsView
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.InboxDepsView, error)); ok {
+		return returnFunc(ctx, p)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.InboxDepsView); ok {
+		r0 = returnFunc(ctx, p)
+	} else {
+		r0 = ret.Get(0).(ports.InboxDepsView)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) error); ok {
+		r1 = returnFunc(ctx, p)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// InboxService_Deps_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Deps'
+type InboxService_Deps_Call struct {
+	*mock.Call
+}
+
+// Deps is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+func (_e *InboxService_Expecter) Deps(ctx any, p any) *InboxService_Deps_Call {
+	return &InboxService_Deps_Call{Call: _e.mock.On("Deps", ctx, p)}
+}
+
+func (_c *InboxService_Deps_Call) Run(run func(ctx context.Context, p domain.Principal)) *InboxService_Deps_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *InboxService_Deps_Call) Return(inboxDepsView ports.InboxDepsView, err error) *InboxService_Deps_Call {
+	_c.Call.Return(inboxDepsView, err)
+	return _c
+}
+
+func (_c *InboxService_Deps_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.InboxDepsView, error)) *InboxService_Deps_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Journal provides a mock function for the type InboxService
 func (_mock *InboxService) Journal(ctx context.Context, p domain.Principal, window time.Duration) (ports.InboxJournal, error) {
 	ret := _mock.Called(ctx, p, window)
@@ -183,6 +249,138 @@ func (_c *InboxService_Overview_Call) Return(inboxOverview ports.InboxOverview, 
 }
 
 func (_c *InboxService_Overview_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.InboxOverview, error)) *InboxService_Overview_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Runs provides a mock function for the type InboxService
+func (_mock *InboxService) Runs(ctx context.Context, p domain.Principal) (ports.InboxRuns, error) {
+	ret := _mock.Called(ctx, p)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Runs")
+	}
+
+	var r0 ports.InboxRuns
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.InboxRuns, error)); ok {
+		return returnFunc(ctx, p)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.InboxRuns); ok {
+		r0 = returnFunc(ctx, p)
+	} else {
+		r0 = ret.Get(0).(ports.InboxRuns)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) error); ok {
+		r1 = returnFunc(ctx, p)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// InboxService_Runs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Runs'
+type InboxService_Runs_Call struct {
+	*mock.Call
+}
+
+// Runs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+func (_e *InboxService_Expecter) Runs(ctx any, p any) *InboxService_Runs_Call {
+	return &InboxService_Runs_Call{Call: _e.mock.On("Runs", ctx, p)}
+}
+
+func (_c *InboxService_Runs_Call) Run(run func(ctx context.Context, p domain.Principal)) *InboxService_Runs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *InboxService_Runs_Call) Return(inboxRuns ports.InboxRuns, err error) *InboxService_Runs_Call {
+	_c.Call.Return(inboxRuns, err)
+	return _c
+}
+
+func (_c *InboxService_Runs_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.InboxRuns, error)) *InboxService_Runs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Work provides a mock function for the type InboxService
+func (_mock *InboxService) Work(ctx context.Context, p domain.Principal) (ports.InboxWork, error) {
+	ret := _mock.Called(ctx, p)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Work")
+	}
+
+	var r0 ports.InboxWork
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.InboxWork, error)); ok {
+		return returnFunc(ctx, p)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.InboxWork); ok {
+		r0 = returnFunc(ctx, p)
+	} else {
+		r0 = ret.Get(0).(ports.InboxWork)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) error); ok {
+		r1 = returnFunc(ctx, p)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// InboxService_Work_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Work'
+type InboxService_Work_Call struct {
+	*mock.Call
+}
+
+// Work is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+func (_e *InboxService_Expecter) Work(ctx any, p any) *InboxService_Work_Call {
+	return &InboxService_Work_Call{Call: _e.mock.On("Work", ctx, p)}
+}
+
+func (_c *InboxService_Work_Call) Run(run func(ctx context.Context, p domain.Principal)) *InboxService_Work_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *InboxService_Work_Call) Return(inboxWork ports.InboxWork, err error) *InboxService_Work_Call {
+	_c.Call.Return(inboxWork, err)
+	return _c
+}
+
+func (_c *InboxService_Work_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.InboxWork, error)) *InboxService_Work_Call {
 	_c.Call.Return(run)
 	return _c
 }

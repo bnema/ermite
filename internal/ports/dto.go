@@ -500,6 +500,61 @@ type InboxDeps struct {
 // DepsQueue summarizes dependency queue capacity and occupancy.
 type DepsQueue struct{ Running, Limit, Queued int }
 
+// AttentionKind is why an item needs the owner.
+type AttentionKind string
+
+// The kinds of AttentionItem.
+const (
+	AttentionModeration AttentionKind = "moderation"
+	AttentionDepsFailed AttentionKind = "deps-failed"
+	AttentionReady      AttentionKind = "ready"
+	AttentionRelease    AttentionKind = "release-due"
+)
+
+// AttentionItem is one thing waiting on the owner. Exactly one of Pending,
+// Deps, MergeRequest and Unreleased is set, matching Kind.
+type AttentionItem struct {
+	Kind    AttentionKind
+	Repo    domain.RepoName
+	Since   time.Time
+	Pending *domain.PendingIssue
+	Deps    *InboxDeps
+	// MergeRequest has HeadID set.
+	MergeRequest *domain.MergeRequest
+	// Checks are the checks of a ready merge request.
+	Checks     []domain.CICheck
+	Unreleased *UnreleasedRepo
+}
+
+// InboxWork is the open merge requests and issues across every repository,
+// most recently updated first.
+type InboxWork struct {
+	// MergeRequests have HeadID set from their source branch.
+	MergeRequests []domain.MergeRequest
+	Issues        []domain.Issue
+}
+
+// InboxRuns is the CI runs queued or in progress across every repository.
+type InboxRuns struct {
+	// Enabled distinguishes disabled CI from an empty queue.
+	Enabled bool
+	// Runs are newest first.
+	Runs []domain.CIRun
+}
+
+// InboxDepsView is the dependency queue and the visible batches of the
+// non-archived repositories, excluding snoozed records.
+type InboxDepsView struct {
+	Queue DepsQueue
+	Deps  []InboxDeps
+	// CheckedAt is the latest check of the repositories with a batch in Deps;
+	// zero when there is none.
+	CheckedAt time.Time
+}
+
+// OwnerCounts are the numbers shown in the owner navigation.
+type OwnerCounts struct{ Attention, Work int }
+
 // InboxOverview is what the owner has to look at across every repository: the
 // open merge requests and issues, ongoing CI runs, and issues awaiting moderation.
 type InboxOverview struct {

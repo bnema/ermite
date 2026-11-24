@@ -287,3 +287,102 @@ func TestInboxDepsQueue(t *testing.T) {
 	}
 	assert.Equal(t, map[string]int{"alpha/": 2, "alpha/m": 0, "beta/": 1}, pos, "manual first, 1 = next")
 }
+
+func TestInboxFocusedReadsAreOwnerOnly(t *testing.T) {
+	t.Parallel()
+	in, _, _, _ := newInboxUnit(t) // the stores are never read
+	for _, p := range []domain.Principal{domain.Anonymous(), issuePrincipal(domain.ScopeIssueWrite)} {
+		_, err := in.Work(t.Context(), p)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = in.Runs(t.Context(), p)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = in.Deps(t.Context(), p)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	}
+}
+
+func TestInboxWorkSkipsMissingAndIssuesOffWithHeads(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	mrs, is, meta, git := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Git: git})
+	head, err := domain.ParseObjectID(strings.Repeat("b", 40))
+	require.NoError(t, err)
+	alphaMR, betaMR := inboxMR(t, "alpha", 1, t0), inboxMR(t, "beta", 1, t0.Add(time.Hour))
+	alphaMR.Source, betaMR.Source = "a", "b"
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return([]domain.MergeRequest{alphaMR, betaMR, inboxMR(t, "gone", 1, t0)}, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return([]domain.Issue{
+		inboxIssue(t, "alpha", 2, t0), inboxIssue(t, "beta", 2, t0.Add(2*time.Hour)), inboxIssue(t, "quiet", 2, t0),
+	}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(repoWithIssues(t, "alpha", domain.IssuesOwner), nil).Once()
+	meta.EXPECT().Get(mock.Anything, name(t, "beta")).Return(repoWithIssues(t, "beta", domain.IssuesPublic), nil).Once()
+	meta.EXPECT().Get(mock.Anything, name(t, "quiet")).Return(repoWithIssues(t, "quiet", domain.IssuesOff), nil).Once()
+	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound).Once()
+	git.EXPECT().BranchHead(mock.Anything, name(t, "alpha"), "a").Return(head, nil).Once()
+	git.EXPECT().BranchHead(mock.Anything, name(t, "beta"), "b").Return(domain.ObjectID{}, domain.ErrNotFound).Once()
+
+	got, err := in.Work(t.Context(), domain.Owner())
+	require.NoError(t, err)
+	require.Len(t, got.MergeRequests, 2)
+	assert.Equal(t, "beta", got.MergeRequests[0].Repo.String(), "most recently updated first")
+	assert.True(t, got.MergeRequests[0].HeadID.IsZero(), "a gone branch leaves the head zero")
+	assert.Equal(t, head, got.MergeRequests[1].HeadID)
+	require.Len(t, got.Issues, 2, "issues off and missing repositories are skipped")
+	assert.Equal(t, "beta", got.Issues[0].Repo.String())
+}
+
+func TestInboxRunsOnlyOpenOfExistingRepos(t *testing.T) {
+	t.Parallel()
+	meta, ci := mocks.NewRepoMetaStore(t), mocks.NewCIStore(t)
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	alpha, beta := name(t, "alpha"), name(t, "beta")
+	ci.EXPECT().ListOpenRuns(mock.Anything).Return([]domain.CIRun{
+		{Repo: alpha, ID: 1, Status: domain.CIQueued, CreatedAt: now},
+		{Repo: beta, ID: 2, Status: domain.CIInProgress, CreatedAt: now.Add(time.Hour)},
+		{Repo: alpha, ID: 3, Status: domain.CICompleted, CreatedAt: now.Add(2 * time.Hour)},
+		{Repo: name(t, "gone"), ID: 4, Status: domain.CIQueued, CreatedAt: now},
+	}, nil)
+	for _, n := range []string{"alpha", "beta"} {
+		meta.EXPECT().Get(mock.Anything, name(t, n)).Return(repoWithIssues(t, n, domain.IssuesOff), nil).Once()
+	}
+	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound).Once()
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, CI: ci})
+	got, err := in.Runs(t.Context(), domain.Owner())
+	require.NoError(t, err)
+	assert.True(t, got.Enabled)
+	require.Len(t, got.Runs, 2)
+	assert.Equal(t, int64(2), got.Runs[0].ID, "newest first")
+	assert.Equal(t, int64(1), got.Runs[1].ID)
+
+	off, err := usecase.NewInbox(usecase.InboxConfig{Meta: meta}).Runs(t.Context(), domain.Owner())
+	require.NoError(t, err)
+	assert.Equal(t, ports.InboxRuns{}, off, "no CI reads as disabled")
+}
+
+func TestInboxDepsViewSkipsSnoozedArchivedAndMissing(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
+	rec := func(repo string) domain.RepoDeps {
+		return domain.RepoDeps{Repo: name(t, repo), Batches: []domain.DepBatch{{Updates: upd, State: domain.DepsQueued, QueuedAt: now}}}
+	}
+	alpha, snoozed := rec("alpha"), rec("snoozed")
+	alpha.CheckedAt = now.Add(-time.Hour)
+	snoozed.SnoozedUntil = now.Add(time.Hour)
+
+	meta, store, clock := mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, Deps: store, Clock: clock, DepsLimit: 2})
+	clock.EXPECT().Now().Return(now)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{alpha, rec("archived"), rec("gone"), snoozed}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(domain.Repo{Name: name(t, "alpha")}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "archived")).Return(domain.Repo{Name: name(t, "archived"), Archived: true}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
+
+	got, err := in.Deps(t.Context(), domain.Owner())
+	require.NoError(t, err)
+	require.Len(t, got.Deps, 1)
+	assert.Equal(t, "alpha", got.Deps[0].Rec.Repo.String())
+	assert.True(t, got.CheckedAt.Equal(alpha.CheckedAt))
+	assert.Equal(t, 2, got.Queue.Limit)
+	assert.Equal(t, 4, got.Queue.Queued, "the queue spans snoozed, archived and missing records")
+}

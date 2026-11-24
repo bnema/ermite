@@ -225,6 +225,15 @@ type InboxService interface {
 	// Overview needs owner rights and answers domain.ErrNotFound to anyone
 	// else.
 	Overview(ctx context.Context, p domain.Principal) (InboxOverview, error)
+	// Work is the open merge requests and issues. Owner rights as for
+	// Overview.
+	Work(ctx context.Context, p domain.Principal) (InboxWork, error)
+	// Runs is the CI runs queued or in progress. Owner rights as for
+	// Overview.
+	Runs(ctx context.Context, p domain.Principal) (InboxRuns, error)
+	// Deps is the dependency queue and the visible batches. Owner rights as
+	// for Overview.
+	Deps(ctx context.Context, p domain.Principal) (InboxDepsView, error)
 	// Journal is the activity of the window that ends now, newest first, and
 	// the repositories whose default branch is ahead of their nearest tag.
 	// Owner rights as for Overview.

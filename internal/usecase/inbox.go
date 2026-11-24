@@ -404,12 +404,45 @@ func (in *Inbox) unreleased(ctx context.Context, repo domain.Repo) (ports.Unrele
 	return e.u, e.ok, nil
 }
 
-// Overview lists what is open across every repository through the open-item indexes.
-func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxOverview, error) {
-	var out ports.InboxOverview
-	if !p.HasOwnerRights() {
-		return out, domain.ErrNotFound
+// repoLook reads each repository once per call.
+type repoLook struct {
+	meta  ports.RepoMetaStore
+	repos map[domain.RepoName]repoSeen
+}
+
+// repoSeen is what a call needs of a repository.
+type repoSeen struct {
+	exists, issuesOn, archived bool
+}
+
+func newRepoLook(meta ports.RepoMetaStore) *repoLook {
+	return &repoLook{meta: meta, repos: make(map[domain.RepoName]repoSeen)}
+}
+
+// get reads the repository, or answers the cached read. A missing repository
+// reads as not existing.
+func (l *repoLook) get(ctx context.Context, name domain.RepoName) (repoSeen, error) {
+	if r, ok := l.repos[name]; ok {
+		return r, nil
 	}
+	repo, err := lookupRepo(ctx, l.meta, name)
+	var r repoSeen
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+	case err != nil:
+		return r, fmt.Errorf("read repository %q: %w", name, err)
+	default:
+		r = repoSeen{exists: true, issuesOn: repo.Settings.IssuesEnabled(), archived: repo.Archived}
+	}
+	l.repos[name] = r
+	return r, nil
+}
+
+// openWork lists the open merge requests of existing repositories and the
+// open issues of those with issues on, most recently updated first. HeadID is
+// left as stored.
+func (in *Inbox) openWork(ctx context.Context, look *repoLook) (ports.InboxWork, error) {
+	var out ports.InboxWork
 	mrs, err := in.mrs.ListOpenAll(ctx)
 	if err != nil {
 		return out, fmt.Errorf("list open merge requests: %w", err)
@@ -418,156 +451,24 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 	if err != nil {
 		return out, fmt.Errorf("list open issues: %w", err)
 	}
-
-	// exists and issuesOn cache what is read of each repository.
-	issuesOn := make(map[domain.RepoName]bool)
-	exists := make(map[domain.RepoName]bool)
-	look := func(name domain.RepoName) error {
-		if _, ok := exists[name]; ok {
-			return nil
-		}
-		repo, err := lookupRepo(ctx, in.meta, name)
-		switch {
-		case errors.Is(err, domain.ErrNotFound):
-			exists[name] = false
-		case err != nil:
-			return fmt.Errorf("read repository %q: %w", name, err)
-		default:
-			exists[name] = true
-			issuesOn[name] = repo.Settings.IssuesEnabled()
-		}
-		return nil
-	}
-
 	for _, m := range mrs {
-		if err := look(m.Repo); err != nil {
+		r, err := look.get(ctx, m.Repo)
+		if err != nil {
 			return out, err
 		}
-		if !exists[m.Repo] {
-			continue
+		if r.exists {
+			out.MergeRequests = append(out.MergeRequests, m)
 		}
-		out.Counts.MergeRequests++
-		out.MergeRequests = append(out.MergeRequests, m)
 	}
 	for _, i := range issues {
-		if err := look(i.Repo); err != nil {
+		r, err := look.get(ctx, i.Repo)
+		if err != nil {
 			return out, err
 		}
-		if !exists[i.Repo] || !issuesOn[i.Repo] {
-			continue
-		}
-		out.Counts.Issues++
-		out.Issues = append(out.Issues, i)
-	}
-
-	if in.pending != nil {
-		page, err := in.pending.List(ctx, domain.RepoName{}, ports.ListPendingParams{PageSize: domain.MaxPendingIssues})
-		if err != nil {
-			return out, fmt.Errorf("list pending issues: %w", err)
-		}
-		for _, pi := range page.Issues {
-			if err := look(pi.Repo); err != nil {
-				return out, err
-			}
-			if !exists[pi.Repo] || !issuesOn[pi.Repo] {
-				continue
-			}
-			pi.IPHash = nil // the hash is for bans, the page never needs it
-			out.Pending = append(out.Pending, pi)
-		}
-		out.Counts.Pending = len(out.Pending)
-	}
-
-	if in.ci != nil {
-		out.RunsEnabled = true
-		runs, err := in.ci.ListOpenRuns(ctx)
-		if err != nil {
-			return out, fmt.Errorf("list open runs: %w", err)
-		}
-		for _, run := range runs {
-			if run.Status != domain.CIQueued && run.Status != domain.CIInProgress {
-				continue
-			}
-			if err := look(run.Repo); err != nil {
-				return out, err
-			}
-			if !exists[run.Repo] {
-				continue
-			}
-			out.Counts.Running++
-			out.Runs = append(out.Runs, run)
-		}
-		slices.SortStableFunc(out.Runs, func(a, b domain.CIRun) int {
-			return compareRecent(a.CreatedAt, a.CreatedAt, a.Repo, a.ID, b.CreatedAt, b.CreatedAt, b.Repo, b.ID)
-		})
-	}
-
-	if in.deps != nil && in.clock != nil {
-		all, err := in.deps.List(ctx)
-		if err != nil {
-			return out, fmt.Errorf("list dependency updates: %w", err)
-		}
-		now := in.clock.Now()
-		// The queue spans every record, snoozed or archived included: they
-		// hold their place and their slot.
-		queue, order, _ := depsQueueOf(all, in.depsLimit)
-		out.DepsQueue = queue
-		for _, d := range all {
-			if !slices.ContainsFunc(d.Batches, domain.DepBatch.Visible) || d.SnoozedUntil.After(now) {
-				continue
-			}
-			repo, err := lookupRepo(ctx, in.meta, d.Repo)
-			switch {
-			case errors.Is(err, domain.ErrNotFound):
-				continue
-			case err != nil:
-				return out, fmt.Errorf("read repository %q: %w", d.Repo, err)
-			}
-			if repo.Archived {
-				continue
-			}
-			for _, batch := range d.Batches {
-				if !batch.Visible() {
-					continue
-				}
-				out.Counts.Deps++ // one per batch: each is a row of out.Deps
-				// The latest check across eligible repositories.
-				if d.CheckedAt.After(out.DepsCheckedAt) {
-					out.DepsCheckedAt = d.CheckedAt
-				}
-				item := ports.InboxDeps{Rec: d, Batch: batch, QueuePos: domain.DepsQueuePosition(order, d.Repo, batch.Key)}
-				if batch.RunID != 0 && in.ci != nil {
-					run, err := in.ci.GetRun(ctx, d.Repo, batch.RunID)
-					switch {
-					case err == nil:
-						item.Run = &run
-					case !errors.Is(err, domain.ErrNotFound):
-						// The row still tells the state of the record: a run that
-						// cannot be read must not hide the Inbox.
-						ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", batch.RunID).Msg("inbox: read the run of a dependency record")
-					}
-				}
-				out.Deps = append(out.Deps, item)
-			}
+		if r.exists && r.issuesOn {
+			out.Issues = append(out.Issues, i)
 		}
 	}
-
-	if in.git != nil {
-		for i, m := range out.MergeRequests {
-			// Like MergeRequests.withHead: the head comes from the source
-			// branch, zero when the branch is gone.
-			head, err := in.git.BranchHead(ctx, m.Repo, m.Source)
-			switch {
-			case errors.Is(err, domain.ErrNotFound):
-				out.MergeRequests[i].HeadID = domain.ObjectID{}
-			case err != nil:
-				return out, fmt.Errorf("read the head of %q in %q: %w", m.Source, m.Repo, err)
-			default:
-				out.MergeRequests[i].HeadID = head
-			}
-		}
-	}
-
 	slices.SortStableFunc(out.MergeRequests, func(a, b domain.MergeRequest) int {
 		return compareRecent(a.UpdatedAt, a.CreatedAt, a.Repo, a.Number, b.UpdatedAt, b.CreatedAt, b.Repo, b.Number)
 	})
@@ -575,6 +476,203 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 		return compareRecent(a.UpdatedAt, a.CreatedAt, a.Repo, a.Number, b.UpdatedAt, b.CreatedAt, b.Repo, b.Number)
 	})
 	return out, nil
+}
+
+// pendingIssues lists the issues awaiting moderation in the repositories with
+// issues on, oldest first, at most domain.MaxPendingIssues, without their IP
+// hash. Nil without a pending store.
+func (in *Inbox) pendingIssues(ctx context.Context, look *repoLook) ([]domain.PendingIssue, error) {
+	if in.pending == nil {
+		return nil, nil
+	}
+	page, err := in.pending.List(ctx, domain.RepoName{}, ports.ListPendingParams{PageSize: domain.MaxPendingIssues})
+	if err != nil {
+		return nil, fmt.Errorf("list pending issues: %w", err)
+	}
+	var out []domain.PendingIssue
+	for _, pi := range page.Issues {
+		r, err := look.get(ctx, pi.Repo)
+		if err != nil {
+			return nil, err
+		}
+		if !r.exists || !r.issuesOn {
+			continue
+		}
+		pi.IPHash = nil // the hash is for bans, the page never needs it
+		out = append(out, pi)
+	}
+	return out, nil
+}
+
+// openRuns lists the runs queued or in progress of existing repositories,
+// newest first.
+func (in *Inbox) openRuns(ctx context.Context, look *repoLook) (ports.InboxRuns, error) {
+	var out ports.InboxRuns
+	if in.ci == nil {
+		return out, nil
+	}
+	out.Enabled = true
+	runs, err := in.ci.ListOpenRuns(ctx)
+	if err != nil {
+		return out, fmt.Errorf("list open runs: %w", err)
+	}
+	for _, run := range runs {
+		if run.Status != domain.CIQueued && run.Status != domain.CIInProgress {
+			continue
+		}
+		r, err := look.get(ctx, run.Repo)
+		if err != nil {
+			return out, err
+		}
+		if r.exists {
+			out.Runs = append(out.Runs, run)
+		}
+	}
+	slices.SortStableFunc(out.Runs, func(a, b domain.CIRun) int {
+		return compareRecent(a.CreatedAt, a.CreatedAt, a.Repo, a.ID, b.CreatedAt, b.CreatedAt, b.Repo, b.ID)
+	})
+	return out, nil
+}
+
+// visibleDeps lists the visible dependency batches of non-archived
+// repositories, excluding snoozed records, with the run of each batch.
+func (in *Inbox) visibleDeps(ctx context.Context, look *repoLook) (ports.InboxDepsView, error) {
+	var out ports.InboxDepsView
+	if in.deps == nil || in.clock == nil {
+		return out, nil
+	}
+	all, err := in.deps.List(ctx)
+	if err != nil {
+		return out, fmt.Errorf("list dependency updates: %w", err)
+	}
+	now := in.clock.Now()
+	// The queue spans every record, snoozed or archived included: they hold
+	// their place and their slot.
+	queue, order, _ := depsQueueOf(all, in.depsLimit)
+	out.Queue = queue
+	for _, d := range all {
+		if !slices.ContainsFunc(d.Batches, domain.DepBatch.Visible) || d.SnoozedUntil.After(now) {
+			continue
+		}
+		r, err := look.get(ctx, d.Repo)
+		if err != nil {
+			return out, err
+		}
+		if !r.exists || r.archived {
+			continue
+		}
+		for _, batch := range d.Batches {
+			if !batch.Visible() {
+				continue
+			}
+			// The latest check across eligible repositories.
+			if d.CheckedAt.After(out.CheckedAt) {
+				out.CheckedAt = d.CheckedAt
+			}
+			item := ports.InboxDeps{Rec: d, Batch: batch, QueuePos: domain.DepsQueuePosition(order, d.Repo, batch.Key)}
+			if batch.RunID != 0 && in.ci != nil {
+				run, err := in.ci.GetRun(ctx, d.Repo, batch.RunID)
+				switch {
+				case err == nil:
+					item.Run = &run
+				case !errors.Is(err, domain.ErrNotFound):
+					// The row still tells the state of the record: a run that
+					// cannot be read must not hide the Inbox.
+					ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", batch.RunID).Msg("inbox: read the run of a dependency record")
+				}
+			}
+			out.Deps = append(out.Deps, item)
+		}
+	}
+	return out, nil
+}
+
+// withHeads sets the HeadID of each merge request from its source branch,
+// like MergeRequests.withHead: zero when the branch is gone. Unchanged
+// without Git.
+func (in *Inbox) withHeads(ctx context.Context, mrs []domain.MergeRequest) error {
+	if in.git == nil {
+		return nil
+	}
+	for i, m := range mrs {
+		head, err := in.git.BranchHead(ctx, m.Repo, m.Source)
+		switch {
+		case errors.Is(err, domain.ErrNotFound):
+			mrs[i].HeadID = domain.ObjectID{}
+		case err != nil:
+			return fmt.Errorf("read the head of %q in %q: %w", m.Source, m.Repo, err)
+		default:
+			mrs[i].HeadID = head
+		}
+	}
+	return nil
+}
+
+// Overview lists what is open across every repository through the open-item indexes.
+func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxOverview, error) {
+	var out ports.InboxOverview
+	if !p.HasOwnerRights() {
+		return out, domain.ErrNotFound
+	}
+	look := newRepoLook(in.meta)
+	work, err := in.openWork(ctx, look)
+	if err != nil {
+		return out, err
+	}
+	out.MergeRequests, out.Issues = work.MergeRequests, work.Issues
+	out.Counts.MergeRequests, out.Counts.Issues = len(out.MergeRequests), len(out.Issues)
+	if out.Pending, err = in.pendingIssues(ctx, look); err != nil {
+		return out, err
+	}
+	out.Counts.Pending = len(out.Pending)
+	runs, err := in.openRuns(ctx, look)
+	if err != nil {
+		return out, err
+	}
+	out.RunsEnabled, out.Runs, out.Counts.Running = runs.Enabled, runs.Runs, len(runs.Runs)
+	deps, err := in.visibleDeps(ctx, look)
+	if err != nil {
+		return out, err
+	}
+	out.DepsQueue, out.Deps, out.DepsCheckedAt = deps.Queue, deps.Deps, deps.CheckedAt
+	out.Counts.Deps = len(out.Deps) // one per batch: each is a row of out.Deps
+	if err := in.withHeads(ctx, out.MergeRequests); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// Work lists the open merge requests, with their head, and issues across
+// every repository.
+func (in *Inbox) Work(ctx context.Context, p domain.Principal) (ports.InboxWork, error) {
+	if !p.HasOwnerRights() {
+		return ports.InboxWork{}, domain.ErrNotFound
+	}
+	out, err := in.openWork(ctx, newRepoLook(in.meta))
+	if err != nil {
+		return ports.InboxWork{}, err
+	}
+	if err := in.withHeads(ctx, out.MergeRequests); err != nil {
+		return ports.InboxWork{}, err
+	}
+	return out, nil
+}
+
+// Runs lists the CI runs queued or in progress across every repository.
+func (in *Inbox) Runs(ctx context.Context, p domain.Principal) (ports.InboxRuns, error) {
+	if !p.HasOwnerRights() {
+		return ports.InboxRuns{}, domain.ErrNotFound
+	}
+	return in.openRuns(ctx, newRepoLook(in.meta))
+}
+
+// Deps lists the dependency queue and the visible batches across every
+// repository.
+func (in *Inbox) Deps(ctx context.Context, p domain.Principal) (ports.InboxDepsView, error) {
+	if !p.HasOwnerRights() {
+		return ports.InboxDepsView{}, domain.ErrNotFound
+	}
+	return in.visibleDeps(ctx, newRepoLook(in.meta))
 }
 
 // compareRecent orders by update time, most recent first (the creation time
