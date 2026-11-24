@@ -80,6 +80,8 @@ func isolationToPB(i domain.CIIsolation) pb.RunnerIsolation {
 		return pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_SYSBOX
 	case domain.CIIsolationContainerPrivileged:
 		return pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_PRIVILEGED
+	case domain.CIIsolationContainerRootless:
+		return pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_ROOTLESS
 	}
 	return pb.RunnerIsolation_RUNNER_ISOLATION_UNSPECIFIED
 }
@@ -92,6 +94,8 @@ func isolationFromPB(i pb.RunnerIsolation) (domain.CIIsolation, error) {
 		return domain.CIIsolationContainerSysbox, nil
 	case pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_PRIVILEGED:
 		return domain.CIIsolationContainerPrivileged, nil
+	case pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_ROOTLESS:
+		return domain.CIIsolationContainerRootless, nil
 	}
 	return "", fmt.Errorf("%w: isolation is required", domain.ErrInvalid)
 }

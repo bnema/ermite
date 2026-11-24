@@ -19,7 +19,7 @@ type jsonRunner struct {
 	ID           string      `json:"id"`
 	Name         string      `json:"name"`
 	Labels       []string    `json:"labels"`
-	Isolation    string      `json:"isolation" help:"vm, container-sysbox or container-privileged"`
+	Isolation    string      `json:"isolation" help:"vm, container-rootless, container-sysbox or container-privileged"`
 	Version      string      `json:"version"`
 	Arch         string      `json:"arch"`
 	Os           string      `json:"os"`

@@ -217,3 +217,19 @@ func TestUploadSummaryIsAJobCallWithRoomForOneMiB(t *testing.T) {
 	assert.Contains(t, Features, "ci.annotations")
 	assert.Contains(t, Features, "ci.summaries")
 }
+
+func TestIsolationConversion(t *testing.T) {
+	for d, p := range map[domain.CIIsolation]pb.RunnerIsolation{
+		domain.CIIsolationVM:                  pb.RunnerIsolation_RUNNER_ISOLATION_VM,
+		domain.CIIsolationContainerRootless:   pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_ROOTLESS,
+		domain.CIIsolationContainerSysbox:     pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_SYSBOX,
+		domain.CIIsolationContainerPrivileged: pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_PRIVILEGED,
+	} {
+		assert.Equal(t, p, isolationToPB(d), d)
+		got, err := isolationFromPB(p)
+		require.NoError(t, err, p)
+		assert.Equal(t, d, got, p)
+	}
+	_, err := isolationFromPB(pb.RunnerIsolation_RUNNER_ISOLATION_UNSPECIFIED)
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+}

@@ -67,7 +67,7 @@ func (c *CI) Register(ctx context.Context, p domain.Principal, params ports.Regi
 		v.Add("version", "is at most 64 characters")
 	}
 	switch params.Isolation {
-	case domain.CIIsolationVM, domain.CIIsolationContainerSysbox, domain.CIIsolationContainerPrivileged:
+	case domain.CIIsolationVM, domain.CIIsolationContainerRootless, domain.CIIsolationContainerSysbox, domain.CIIsolationContainerPrivileged:
 	default:
 		v.Add("isolation", "is required")
 	}

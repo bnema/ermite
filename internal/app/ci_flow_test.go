@@ -439,6 +439,18 @@ func TestCIRunnerRegistrationRules(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list.GetRunners(), 1)
 	assert.Equal(t, []string{"linux", "self-hosted", "x64"}, list.GetRunners()[0].GetLabels(), "implicit labels, sorted")
+
+	_, err = reg1.runner.RegisterRunner(c.ctx, &pb.RegisterRunnerRequest{
+		Name: "rootless", Version: "v1", Isolation: pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_ROOTLESS, Arch: "x64", Os: "linux",
+	})
+	require.NoError(t, err, "a rootless container runner registers")
+	list, err = reg1.run.ListRunners(c.ctx, &pb.ListRunnersRequest{})
+	require.NoError(t, err)
+	isolations := map[string]pb.RunnerIsolation{}
+	for _, r := range list.GetRunners() {
+		isolations[r.GetName()] = r.GetIsolation()
+	}
+	assert.Equal(t, pb.RunnerIsolation_RUNNER_ISOLATION_CONTAINER_ROOTLESS, isolations["rootless"])
 }
 
 // AC2: after a restart of the server, running jobs go on with their tokens,

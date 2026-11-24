@@ -65,7 +65,7 @@ type jsonRunJob struct {
 	Labels      []string    `json:"labels"`
 	Needs       []string    `json:"needs"`
 	Runner      string      `json:"runner"`
-	Isolation   string      `json:"isolation" help:"vm, container-sysbox or container-privileged"`
+	Isolation   string      `json:"isolation" help:"vm, container-rootless, container-sysbox or container-privileged"`
 	Steps       []jsonStep  `json:"steps"`
 	StartedAt   jsonInstant `json:"started_at"`
 	CompletedAt jsonInstant `json:"completed_at"`
