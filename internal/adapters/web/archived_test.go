@@ -20,7 +20,7 @@ func TestArchivedBadges(t *testing.T) {
 	v := publicRepo(t, "proj")
 	v.Archived = true
 	row := homeRow(v, time.Now(), false, false)
-	assert.Contains(t, renderToString(t, HomeRowView(row)), `class="pill">Archived</span>`)
+	assert.Contains(t, renderToString(t, HomeRowView(row)), `<span class="repo-flag">Archived</span>`)
 	assert.Contains(t, renderToString(t, Header(Layout{Archived: true})), `class="pill">Archived</span>`)
 	assert.NotContains(t, renderToString(t, Header(Layout{})), ">Archived<")
 }

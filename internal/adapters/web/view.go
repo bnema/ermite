@@ -100,17 +100,16 @@ type HomeRow struct {
 	// ActiveAt its RFC 3339 form, "" when it never got a commit.
 	Active   string
 	ActiveAt string
-	Cursor   bool
+	// Empty marks a repository without commits: never pushed, or its default
+	// branch is missing or empty. A failed read does not set it.
+	Empty  bool
+	Cursor bool
 	// Stats are the figures of the row; nil when they could not be read.
 	Stats *HomeStats
 	// Private marks a private repository; only set for a signed-in visitor.
 	Private bool
 	// Fresh marks a row that activity just updated (live updates only).
 	Fresh bool
-	// Commits are the newest of the default branch. NoCommits says there is
-	// none (never pushed, or an empty branch); a failed read says nothing.
-	Commits   []CommitRow
-	NoCommits bool
 	// CI is the latest run of the default branch, nil when there is none to
 	// show.
 	CI *HomeCI
@@ -128,6 +127,8 @@ type HomeStats struct {
 	Visitors string
 	// Pulse is the activity curve; nil when it could not be drawn.
 	Pulse *Heartbeat
+	// Quiet is set when the activity of the last 90 days is all zero.
+	Quiet bool
 }
 
 // HomeCI is the state of the latest run of the default branch of a repository.
@@ -154,9 +155,6 @@ type HomePage struct {
 	Desc  bool
 	Sorts []SortLink
 	Rows  []HomeRow
-	// Traffic is set when the rows draw visitors: a row without a pulse keeps
-	// the room of the visitor strip too.
-	Traffic bool
 }
 
 // InboxButton is the link to the inbox with the number of open items; Count is

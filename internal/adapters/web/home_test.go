@@ -62,14 +62,16 @@ func homeBrowse(t *testing.T) *mocks.BrowseService {
 func TestHomeRowFigures(t *testing.T) {
 	t.Parallel()
 	repo := repoName(t, "proj")
-	head := objectID(t, fmt.Sprintf("%040x", 2))
+	head := objectID(t, fmt.Sprintf("%040x", 1))
 	now := time.Now()
+	activity := make([]int, ports.ActivityDays)
+	activity[ports.ActivityDays-1] = 3
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
-	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 1)}, nil)
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
 		Commits: 12345, Recent: 42, LatestTag: &domain.TagInfo{Name: "v1.2.0", At: now.Add(-3 * time.Hour), CommitID: head},
-		Activity: make([]int, ports.ActivityDays),
+		Activity: activity,
 	}, nil).Once()
 	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse})
 
@@ -78,41 +80,63 @@ func TestHomeRowFigures(t *testing.T) {
 	row := srv.homeRowOf(context.Background(), view, now, false)
 	require.NotNil(t, row.Stats)
 	out := renderRow(t, row)
-	assert.Contains(t, out, "<dt>commits</dt><dd>12\u202f345</dd>")
-	assert.Contains(t, out, "<dt>last 30 days</dt><dd>42</dd>")
-	assert.Contains(t, out, `<a href="/proj/tree/`+head.String()+`" title="v1.2.0 · made 3h ago">v1.2.0</a>`, "by its commit: a branch may share its name")
-	assert.Contains(t, out, "<dt>last activity</dt>")
+	assert.Contains(t, out, `<li data-tip="12`+"\u202f"+`345 commits on the default branch"><span class="ico i-git-commit" aria-hidden="true"></span><b>12`+"\u202f"+`345</b><span class="sr">commits on the default branch</span></li>`)
+	assert.Regexp(t, `<li class="repo-month"><figure class="repo-pulse".*</figure><b>42</b> in 30 days</li>`, out)
+	assert.Contains(t, out, `<li class="repo-tag"><span class="ico i-tag" aria-hidden="true"></span> <a href="/proj/tree/`+head.String()+`" title="Latest tag v1.2.0, made 3h ago">v1.2.0</a></li>`, "by its commit: a branch may share its name")
+	assert.Contains(t, out, `<span class="repo-when tip-end" data-tip="Updated `+row.ActiveAt+`">`)
 	assert.NotContains(t, out, "i-branch", "the default branch is not shown")
-	assert.Contains(t, out, `<ul class="repo-topics" aria-label="Topics of proj" data-fit><li>go</li><li>git</li></ul>`)
-	assert.Contains(t, out, `role="img" aria-label="Activity: 0 commits in the last 90 days"`)
+	assert.Contains(t, out, `<ul class="repo-topics" data-fit aria-label="Topics of proj"><li>go</li><li>git</li></ul>`)
+	assert.Contains(t, out, `role="img" aria-label="Activity: 3 commits in the last 90 days"`)
 	assert.Contains(t, out, `<linearGradient id="hb-proj"`)
 	assert.NotContains(t, out, "pulse-ring", "nothing moves")
 	assert.NotContains(t, out, "90 days ago")
 	assert.NotContains(t, out, "pushed")
-	// The tag comes last, after the last activity.
-	assert.Regexp(t, `<dt>last activity</dt>.*<dt>last tag</dt>`, out)
+	// The tag comes first in the facts, before the commits.
+	assert.Regexp(t, `class="repo-tag".*i-git-commit`, out)
 
-	// Without topics nor figures, the row keeps their room: every card has the
-	// same height.
+	// Without topics nor figures, the row leaves them out.
 	bare := renderRow(t, HomeRow{ID: "repo-bare", Name: "bare", Href: "/bare"})
-	assert.Contains(t, bare, `<div class="repo-topics" aria-hidden="true"></div>`)
-	assert.Contains(t, bare, `<div class="repo-pulse" aria-hidden="true"></div>`)
-	assert.NotContains(t, bare, "last tag")
+	assert.NotContains(t, bare, "repo-topics")
+	assert.NotContains(t, bare, "repo-pulse")
+	assert.NotContains(t, bare, "repo-tag")
+	assert.NotContains(t, bare, "repo-meta", "no empty facts list")
 
-	// Past the cap of the walk, the figures are lower bounds.
+	// Past the cap of the walk, the figures are lower bounds; without a
+	// curve, the recent count stands alone.
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
-		Commits: 300000, Recent: 100000, Activity: make([]int, ports.ActivityDays), Partial: true,
+		Commits: 300000, Recent: 100000, Partial: true,
 	}, nil).Once()
 	out = renderRow(t, srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false))
-	assert.Contains(t, out, "<dt>last 30 days</dt><dd>100\u202f000+</dd>")
-	assert.Contains(t, out, `aria-label="Activity: at least 0 commits in the last 90 days"`)
+	assert.Contains(t, out, "<li><b>100\u202f000+</b> in 30 days</li>")
+	assert.NotContains(t, out, "repo-pulse")
+
+	// Activity only around day 40 ago: not live, but the curve is shown.
+	older := make([]int, ports.ActivityDays)
+	older[ports.ActivityDays-40] = 4
+	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
+		Commits: 4, Activity: older,
+	}, nil).Once()
+	out = renderRow(t, srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false))
+	assert.Regexp(t, `<li class="repo-month"><figure class="repo-pulse" data-days-commits=.*</figure><b>0</b> in 30 days</li>`, out)
+	assert.NotContains(t, out, "data-live")
+	assert.NotContains(t, out, "quiet")
+
+	// A quiet repository says so instead of drawing a flat pulse.
+	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
+		Commits: 3, Activity: make([]int, ports.ActivityDays),
+	}, nil).Once()
+	out = renderRow(t, srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false))
+	assert.Contains(t, out, `<li class="repo-quiet">quiet for 90 days</li>`)
+	assert.NotContains(t, out, "repo-pulse")
+	assert.NotContains(t, out, "in 30 days")
 
 	// A failed read leaves the figures out, not the row.
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{}, errors.New("boom")).Once()
 	row = srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false)
 	assert.Nil(t, row.Stats)
-	assert.Len(t, row.Commits, 2)
-	assert.NotContains(t, renderRow(t, row), "<dt>commits</dt>")
+	out = renderRow(t, row)
+	assert.Contains(t, out, `id="repo-proj"`, "the row is rendered")
+	assert.NotContains(t, out, "i-git-commit")
 }
 
 func TestGrouped(t *testing.T) {
@@ -136,40 +160,54 @@ func mustRevision(t testing.TB, s string) domain.Revision {
 	return r
 }
 
-// Each row lists at most five commits of the default branch, read by the full
-// name of the branch.
-func TestHomeRowShowsFiveCommits(t *testing.T) {
+// Each row reads the head of the default branch by its full name, and the
+// figures of that commit; a server without CI shows no state.
+func TestHomeRowReadsTheDefaultHead(t *testing.T) {
 	t.Parallel()
+	head := objectID(t, fmt.Sprintf("%040x", 7))
 	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "proj"), ports.ListCommitsParams{
-		Revision: mustRevision(t, "refs/heads/main"), PageSize: homeRecent,
-	}).Return(ports.HistoryPage{Commits: homeCommits(t, 7)}, nil).Once()
+		Revision: mustRevision(t, "refs/heads/main"), PageSize: 1,
+	}).Return(ports.HistoryPage{Commits: homeCommits(t, 7)[:1]}, nil).Once()
 	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse})
 
 	row := srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), time.Now(), false)
-	require.Len(t, row.Commits, homeRecent)
-	assert.Equal(t, "subject number 7", row.Commits[0].Subject)
-	assert.False(t, row.NoCommits)
+	require.NotNil(t, row.Stats)
 	assert.Nil(t, row.CI, "a server without CI shows no state")
+	browse.AssertCalled(t, "RepoStats", mock.Anything, mock.Anything, repoName(t, "proj"), head, mock.Anything)
 
 	out := renderRow(t, row)
-	assert.Equal(t, homeRecent, strings.Count(out, `class="rc-sha"`))
-	assert.Contains(t, out, `href="/proj/commit/`+fmt.Sprintf("%040x", 7)+`"`)
-	assert.Contains(t, out, `aria-label="Recent commits of proj"`)
 	assert.NotContains(t, out, `class="repo-ci"`)
 }
 
 func TestHomeRowEmptyRepository(t *testing.T) {
 	t.Parallel()
-	// Never pushed: nothing is read.
-	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "new")), Browse: mocks.NewBrowseService(t), Runs: mocks.NewRunService(t)})
-	row := srv.homeRowOf(context.Background(), publicRepo(t, "new"), time.Now(), false)
-	assert.True(t, row.NoCommits)
+	// Never pushed: nothing is read, though the creation date is known.
+	view := publicRepo(t, "new")
+	view.CreatedAt = time.Now().Add(-48 * time.Hour)
+	srv := newTestServer(t, Config{Repos: reposServing(t, view), Browse: mocks.NewBrowseService(t), Runs: mocks.NewRunService(t)})
+	row := srv.homeRowOf(context.Background(), view, time.Now(), false)
+	assert.True(t, row.Empty)
+	assert.Nil(t, row.Stats)
 	out := renderRow(t, row)
-	assert.Contains(t, out, "no commits yet")
-	assert.Contains(t, out, `<dt>last activity</dt><dd class="mute">never</dd>`)
-	assert.NotContains(t, out, "<dt>commits</dt>", "no figures without a commit")
-	assert.NotContains(t, out, "repo-commits\" aria-label")
+	assert.Contains(t, out, `<div class="repo-state"><span>No commits yet</span> </div>`)
+	assert.NotContains(t, out, "repo-when")
+	assert.NotContains(t, out, "i-git-commit", "no figures without a commit")
+
+	// Pushed, but the default branch is missing or empty.
+	for name, res := range map[string]struct {
+		page ports.HistoryPage
+		err  error
+	}{"missing": {err: domain.ErrNotFound}, "empty": {}} {
+		browse := mocks.NewBrowseService(t)
+		browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(res.page, res.err).Once()
+		srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "new")), Browse: browse})
+		row := srv.homeRowOf(context.Background(), pushedRepo(t, "new"), time.Now(), false)
+		assert.True(t, row.Empty, name)
+		out := renderRow(t, row)
+		assert.Contains(t, out, `<span>No commits yet</span>`, name)
+		assert.NotContains(t, out, "repo-when", name)
+	}
 }
 
 func TestHomeRowCI(t *testing.T) {
@@ -205,7 +243,7 @@ func TestHomeRowCI(t *testing.T) {
 			srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Runs: runs})
 
 			row := srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), time.Now(), false)
-			require.Len(t, row.Commits, 2, "the commits do not depend on CI")
+			require.NotNil(t, row.Stats, "the figures do not depend on CI")
 			out := renderRow(t, row)
 			if tt.label == "" {
 				assert.Nil(t, row.CI)
@@ -232,9 +270,9 @@ func TestHomeRowPrivateBadge(t *testing.T) {
 	srv := newTestServer(t, Config{Repos: reposServing(t, priv, pushedRepo(t, "open")), Browse: browse})
 
 	signed := context.WithValue(context.Background(), signedInKey{}, struct{}{})
-	assert.Contains(t, renderRow(t, srv.homeRowOf(signed, priv, time.Now(), false)), `<span class="pill priv" title="Private repository"><span class="ico i-lock" aria-hidden="true"></span><span class="sr">private</span></span>`)
-	assert.NotContains(t, renderRow(t, srv.homeRowOf(context.Background(), priv, time.Now(), false)), "private")
-	assert.NotContains(t, renderRow(t, srv.homeRowOf(signed, pushedRepo(t, "open"), time.Now(), false)), "private")
+	assert.Contains(t, renderRow(t, srv.homeRowOf(signed, priv, time.Now(), false)), `<span class="repo-flag">Private</span>`)
+	assert.NotContains(t, renderRow(t, srv.homeRowOf(context.Background(), priv, time.Now(), false)), "Private")
+	assert.NotContains(t, renderRow(t, srv.homeRowOf(signed, pushedRepo(t, "open"), time.Now(), false)), "Private")
 }
 
 // A run update re-renders the home row, so its CI state follows the run.
@@ -289,8 +327,8 @@ func TestHomeSurvivesABrokenRepository(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, `id="repo-broken"`)
 	assert.Contains(t, body, `id="repo-fine"`)
-	assert.Equal(t, 3, strings.Count(body, `class="rc-sha"`), "only the readable repository lists commits")
-	assert.NotContains(t, body, "no commits yet", "a failed read is not an empty branch")
+	assert.Equal(t, 1, strings.Count(body, "i-git-commit"), "only the readable repository shows its figures")
+	assert.NotContains(t, body, "No commits yet", "a failed read is not an empty branch")
 }
 
 // The rows are read a few at a time, in the order of the list.
@@ -318,16 +356,15 @@ func TestHomeRowsAreBoundedAndOrdered(t *testing.T) {
 	require.Len(t, rows, n)
 	for i, r := range rows {
 		assert.Equal(t, fmt.Sprintf("r%02d", i), r.Name)
-		assert.Len(t, r.Commits, 1)
+		assert.NotNil(t, r.Stats)
 	}
 	assert.True(t, rows[0].Cursor)
 	assert.LessOrEqual(t, int(peak.Load()), homeWorkers)
 	assert.Greater(t, int(peak.Load()), 1, "the reads overlap")
 }
 
-// The page starts in the cards layout (a script applies the stored choice) and
-// offers the three layouts, "cards" pressed; the store loads before the app.
-func TestHomeOffersTheLayouts(t *testing.T) {
+// The store loads before the app script, which reads it.
+func TestHomeLoadsTheStoreFirst(t *testing.T) {
 	t.Parallel()
 	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
@@ -337,12 +374,8 @@ func TestHomeOffersTheLayouts(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
-	assert.Contains(t, body, `<div class="home" data-layout="cards">`)
-	assert.Contains(t, body, `<div class="layout-switch" role="group" aria-label="Layout" data-js>`)
-	for layout, pressed := range map[string]string{"cards": "true", "split": "false", "compact": "false"} {
-		assert.Contains(t, body, `data-set-layout="`+layout+`" aria-pressed="`+pressed+`"`)
-		assert.Contains(t, body, `class="ico i-`+layout+`"`)
-	}
+	assert.NotContains(t, body, "data-layout")
+	assert.NotContains(t, body, "layout-switch")
 	store := strings.Index(body, "/js/store.")
 	app := strings.Index(body, "/js/ermite.")
 	require.NotEqual(t, -1, store)
@@ -399,23 +432,17 @@ func TestActivityEventsRefreshTheHomeRow(t *testing.T) {
 	}
 }
 
-// The latest tag is marked when the latest release shows it already, so
-// that the compact layout leaves it out.
-func TestHomeTagReleased(t *testing.T) {
+// The latest tag shows in the facts even when the latest release already
+// names it as a badge.
+func TestHomeTagAndRelease(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		release  *LatestRelease
-		released bool
-	}{
-		{nil, false},
-		{&LatestRelease{Tag: "v1.1.0"}, false},
-		{&LatestRelease{Tag: "v1.2.0"}, true},
-	} {
-		out := renderRow(t, HomeRow{Name: "proj", Release: tc.release, Stats: &HomeStats{Tag: "v1.2.0"}})
-		if tc.released {
-			assert.Contains(t, out, `<div class="rs-tag released">`)
+	for _, release := range []*LatestRelease{nil, {Tag: "v1.1.0", Href: "/proj/releases/tag/v1.1.0"}, {Tag: "v1.2.0", Href: "/proj/releases/tag/v1.2.0"}} {
+		out := renderRow(t, HomeRow{Name: "proj", Release: release, Stats: &HomeStats{Tag: "v1.2.0", TagWhen: "3h ago", Commits: "1", Recent: "0"}})
+		assert.Contains(t, out, `<li class="repo-tag"><span class="ico i-tag" aria-hidden="true"></span> <span title="Latest tag v1.2.0, made 3h ago">v1.2.0</span></li>`)
+		if release != nil {
+			assert.Contains(t, out, `<a class="repo-flag repo-release" href="`+release.Href+`" title="Latest release: `+release.Tag+`">`+release.Tag+`</a>`)
 		} else {
-			assert.Contains(t, out, `<div class="rs-tag">`)
+			assert.NotContains(t, out, "repo-release")
 		}
 	}
 }
@@ -444,10 +471,11 @@ func TestHomeReleaseAndLicensePills(t *testing.T) {
 			row.Private, row.Fresh = true, true
 			row.License = &LicenseBadge{ID: "MIT", Href: "/proj/blob/main/LICENSE"}
 			out := renderRow(t, row)
-			assert.Contains(t, out, `class="pill repo-license" href="/proj/blob/main/LICENSE" title="License: MIT">MIT</a>`)
-			assert.Regexp(t, `(?s)>private</span>.*repo-license.*class="repo-activity" title="new activity"><span class="ico i-refresh-cw" aria-hidden="true"></span><span class="sr">new activity</span></span></h2>`, out)
+			assert.Contains(t, out, `<li><a href="/proj/blob/main/LICENSE" title="License: MIT">MIT</a></li>`)
+			assert.Regexp(t, `(?s)<ul class="repo-meta".*title="License: MIT"`, out)
+			assert.Regexp(t, `(?s)<span class="repo-flag">Private</span> <span class="repo-activity" title="new activity"><span class="ico i-refresh-cw" aria-hidden="true"></span><span class="sr">new activity</span></span></h2>`, out)
 			if tc.visible {
-				assert.Regexp(t, `(?s)>proj</a>.*class="pill repo-release".*>v1.2.0</a>.*>private</span>`, out)
+				assert.Regexp(t, `(?s)>proj</a>.*class="repo-flag repo-release".*>v1.2.0</a>.*>Private</span>`, out)
 				assert.Contains(t, out, `href="/proj/releases/tag/v1.2.0"`)
 			} else {
 				assert.NotContains(t, out, `repo-release`)
@@ -455,7 +483,7 @@ func TestHomeReleaseAndLicensePills(t *testing.T) {
 		})
 	}
 	out := renderRow(t, HomeRow{Name: "bare"})
-	assert.NotContains(t, out, `repo-license`)
+	assert.NotContains(t, out, `License:`)
 	assert.NotContains(t, out, `repo-release`)
 }
 
@@ -494,20 +522,26 @@ func TestReleaseEventsRefreshTheHomeRow(t *testing.T) {
 	}
 }
 
-// With traffic, the page says so: a row without a pulse keeps the room of
-// the visitor strip.
-func TestHomeMarksTraffic(t *testing.T) {
+// With traffic, a quiet row shows its visitors without a pulse.
+func TestHomeShowsVisitorsWithoutPulse(t *testing.T) {
 	t.Parallel()
-	browse := homeBrowse(t)
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
+	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(ports.RepoStats{Commits: 3, Activity: make([]int, ports.ActivityDays)}, nil)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
 	traffic := mocks.NewTrafficService(t)
-	traffic.EXPECT().RepoDaily(mock.Anything, mock.Anything, ports.ActivityDays).Return(make([]uint64, ports.ActivityDays), nil).Maybe()
+	daily := make([]uint64, ports.ActivityDays)
+	daily[89] = 5
+	traffic.EXPECT().RepoDaily(mock.Anything, mock.Anything, ports.ActivityDays).Return(daily, nil).Maybe()
 	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Traffic: traffic})
 
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), `<div class="home" data-layout="cards" data-traffic>`)
+	body := rec.Body.String()
+	assert.NotContains(t, body, "repo-pulse", "no commits in 90 days")
+	assert.Contains(t, body, `<li class="tip-end" data-tip="Unique visitors, last 30 days"><span class="ico i-eye" aria-hidden="true"></span><b>5</b><span class="sr">unique visitors in the last 30 days</span></li>`)
 }
 
 func TestHomeVisitors(t *testing.T) {
@@ -518,7 +552,9 @@ func TestHomeVisitors(t *testing.T) {
 			browse := mocks.NewBrowseService(t)
 			browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
 			browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 1)}, nil)
-			browse.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoStats{Activity: make([]int, ports.ActivityDays)}, nil)
+			activity := make([]int, ports.ActivityDays)
+			activity[ports.ActivityDays-1] = 1
+			browse.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoStats{Commits: 1, Recent: 1, Activity: activity}, nil)
 			cfg := Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse}
 			if mode != "disabled" {
 				f := mocks.NewTrafficService(t)
@@ -534,11 +570,10 @@ func TestHomeVisitors(t *testing.T) {
 			srv := newTestServer(t, cfg)
 			out := renderRow(t, srv.homeRowOf(t.Context(), pushedRepo(t, "proj"), fixedNow, false))
 			if mode == "enabled" {
-				assert.Contains(t, out, `aria-label="Activity: 0 commits, 12 visitors in the last 90 days"`)
-				assert.Contains(t, out, `class="pulse-strip"`)
-				assert.Contains(t, out, `<div class="rs-visitors"><dt>visitors</dt><dd title="Daily unique visitors, summed over the last 30 days">12</dd></div>`)
+				assert.Contains(t, out, `aria-label="Activity: 1 commit, 12 visitors in the last 90 days"`)
+				assert.Contains(t, out, `data-days-visitors=`)
+				assert.Contains(t, out, `<li class="tip-end" data-tip="Unique visitors, last 30 days"><span class="ico i-eye" aria-hidden="true"></span><b>12</b><span class="sr">unique visitors in the last 30 days</span></li>`)
 			} else {
-				assert.NotContains(t, out, "pulse-strip")
 				assert.NotContains(t, out, "visitors")
 			}
 		})

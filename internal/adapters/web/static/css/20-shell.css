@@ -8,8 +8,8 @@
     cursor: pointer;
     &:hover { background: var(--bg-strong); color: var(--ink-hi); text-decoration: none; }
     & kbd { margin-right: -4px; }
-    &.primary { background: var(--ink-hi); color: var(--on-ink); border-color: var(--ink-hi); }
-    &.primary:hover { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+    &.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+    &.primary:hover { background: var(--primary-hi); border-color: var(--primary-hi); color: var(--on-primary); }
     &.danger:hover { color: var(--red); border-color: var(--red); }
     &.icon { width: 32px; justify-content: center; padding: 0; }
     &[aria-disabled="true"] { opacity: .45; pointer-events: none; }
@@ -22,19 +22,18 @@
   .i-file { --i: url(icons/file.svg); }
   .i-chevron { --i: url(icons/chevron.svg); }
   .i-tag { --i: url(icons/tag.svg); }
+  .i-history { --i: url(icons/history.svg); }
+  .i-git-commit { --i: url(icons/git-commit.svg); }
+  .i-eye { --i: url(icons/eye.svg); }
   .i-user { --i: url(icons/user.svg); }
   .i-key { --i: url(icons/key.svg); }
   .i-log-in { --i: url(icons/log-in.svg); }
   .i-log-out { --i: url(icons/log-out.svg); }
-  .i-cards { --i: url(icons/cards.svg); }
-  .i-split { --i: url(icons/split.svg); }
-  .i-compact { --i: url(icons/compact.svg); }
   .i-refresh-cw { --i: url(icons/refresh-cw.svg); }
   .i-mailbox { --i: url(icons/mailbox.svg); }
   .i-sun-moon { --i: url(icons/sun-moon.svg); }
   .i-sun { --i: url(icons/sun.svg); }
   .i-moon { --i: url(icons/moon.svg); }
-  .i-lock { --i: url(icons/lock.svg); }
   .i-panel-right-open { --i: url(icons/panel-right-open.svg); }
   .i-shield-check { --i: url(icons/shield-check.svg); }
   .i-shield-alert { --i: url(icons/shield-alert.svg); }
@@ -45,6 +44,20 @@
   .i-alert-warning { --i: url(icons/alert-warning.svg); }
   .i-alert-caution { --i: url(icons/alert-caution.svg); }
 
+  /* a small tooltip from data-tip, shown above on hover; the element keeps
+     its own hidden text for screen readers */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after {
+    content: attr(data-tip); content: attr(data-tip) / "";
+    position: absolute; bottom: calc(100% + 6px); left: 50%; translate: -50% 0; z-index: 30;
+    padding: 4px 8px; white-space: nowrap; pointer-events: none;
+    font: 500 var(--fs-xs) / 16px var(--font); font-style: normal; color: var(--ink);
+    background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-s);
+    box-shadow: var(--shadow);
+  }
+  /* at a right edge: the tooltip ends on the element instead of overflowing */
+  [data-tip].tip-end:hover::after { left: auto; right: 0; translate: none; }
+
   .pill {
     display: inline-flex; align-items: center; height: 18px; padding: 0 var(--s2); margin-left: var(--s1);
     font: 600 var(--fs-2xs) / 1 var(--mono); color: var(--ink-dim); vertical-align: 1px;
@@ -53,26 +66,23 @@
     &:is(a) { text-decoration: none; cursor: pointer; transition: border-color .12s; }
     &:is(a):hover, &:is(a):focus-visible { text-decoration: none; border-color: var(--ink-dim); }
     &.tag::before { content: ""; width: 6px; height: 6px; margin-right: 6px; border: 1.5px solid currentColor; border-radius: 1px; transform: rotate(45deg); }
-    &.new { color: var(--teal); border-color: currentColor; }
+    &.new { color: var(--green); border-color: currentColor; }
     /* the signature of a commit: the protocol, then the verdict, always as text
        (colour never carries it alone). Verified takes the accent, a signature
        that cannot be vouched for keeps the neutral pill with the ink of a
        warning, a bad one is red, "unsigned" (commit page) is dim. */
     &.sig { gap: 5px; }
     &.sig .sig-proto { font-weight: 700; letter-spacing: .02em; }
-    &.sig-ok { color: var(--teal); border-color: currentColor; }
+    &.sig-ok { color: var(--green); border-color: currentColor; }
     &.sig-warn { color: var(--ink-hi); border-style: dashed; }
     &.sig-bad { color: var(--red); border-color: currentColor; }
     &.sig-none { color: var(--ink-mute); border-style: dotted; font-weight: 400; }
-    /* private: a lock on a red pill, to stand out from the neutral ones */
-    &.priv { padding: 0 6px; color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); border-color: color-mix(in srgb, var(--red) 55%, transparent); }
-    &.priv .ico { width: 12px; height: 12px; }
   }
   /* the signature in a list: the shield alone, its shape carries the verdict,
      the tooltip and the hidden text say which and why */
   .sig-ico {
     display: inline-flex; vertical-align: -2px; margin-left: var(--s1); cursor: help;
-    &.sig-ok { color: var(--teal); }
+    &.sig-ok { color: var(--green); }
     &.sig-warn { color: var(--ink-dim); }
     &.sig-bad { color: var(--red); }
   }

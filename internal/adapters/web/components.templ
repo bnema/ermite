@@ -32,79 +32,39 @@ templ CloneBlock(c Clone) {
 	</div>
 }
 
-// HomeRowView is the row of a repository in the home list. On the left what
-// it is: name, description, topics and the pulse of its activity; on the
-// right its figures and CI state over its newest commits. Its id is the
-// target of SSE swaps; the name link comes first, `enter` follows it.
+// HomeRowView is the row of a repository in the home list, flat between
+// hairlines: the name, its badges and the latest release, with the last
+// activity and the CI mark at the far right; the description under them;
+// then the topics, and the facts at the right with the pulse inline,
+// word-sized, before the commits of the last 30 days. Its id is the target of SSE
+// swaps; the name link comes first, `enter` follows it.
 templ HomeRowView(r HomeRow) {
 	<li id={ r.ID } class="repo" data-cursor?={ r.Cursor } data-activity?={ r.Fresh }>
-		<div class="repo-main">
-			<h2 class="repo-name">
-				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
-				if rel := r.Release; rel != nil {
-					<a class="pill repo-release" href={ templ.SafeURL(rel.Href) } title={ "Latest release: " + rel.Tag }>{ rel.Tag }</a>
-				}
-				if r.Archived {
-					<span class="pill">Archived</span>
-				}
-				if r.Private {
-					<span class="pill priv" title="Private repository"><span class="ico i-lock" aria-hidden="true"></span><span class="sr">private</span></span>
-				}
-				if lic := r.License; lic != nil {
-					<a class="pill repo-license" href={ templ.SafeURL(lic.Href) } title={ "License: " + lic.ID }>{ lic.ID }</a>
-				}
-				if r.Fresh {
-					<span class="repo-activity" title="new activity"><span class="ico i-refresh-cw" aria-hidden="true"></span><span class="sr">new activity</span></span>
-				}
-			</h2>
-			if r.Desc != "" {
-				<p class="repo-desc">{ r.Desc }</p>
-			} else {
-				<p class="repo-desc mute">no description</p>
+		<h2 class="repo-name">
+			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+			if rel := r.Release; rel != nil {
+				<a class="repo-flag repo-release" href={ templ.SafeURL(rel.Href) } title={ "Latest release: " + rel.Tag }>{ rel.Tag }</a>
 			}
-			if len(r.Topics) > 0 {
-				<ul class="repo-topics" aria-label={ "Topics of " + r.Name } data-fit>
-					for _, t := range r.Topics {
-						<li>{ t }</li>
-					}
-				</ul>
-			} else {
-				<div class="repo-topics" aria-hidden="true"></div>
+			if r.Private {
+				<span class="repo-flag">Private</span>
 			}
-			if r.Stats != nil && r.Stats.Pulse != nil {
-				@pulse(r.Stats.Pulse)
-			} else {
-				<div class="repo-pulse" aria-hidden="true"></div>
+			if r.Archived {
+				<span class="repo-flag">Archived</span>
 			}
-		</div>
-		<div class="repo-head">
-			<dl class="repo-stats" aria-label={ "Figures of " + r.Name }>
-				if s := r.Stats; s != nil {
-					<div><dt>commits</dt><dd>{ s.Commits }</dd></div>
-					<div><dt>last 30 days</dt><dd>{ s.Recent }</dd></div>
-					if s.Visitors != "" {
-						<div class="rs-visitors"><dt>visitors</dt><dd title="Daily unique visitors, summed over the last 30 days">{ s.Visitors }</dd></div>
-					}
-				}
-				<div class="rs-active">
-					<dt>last activity</dt>
-					if r.ActiveAt != "" {
-						<dd><time datetime={ r.ActiveAt } title={ r.ActiveAt }>{ r.Active }</time></dd>
-					} else {
-						<dd class="mute">never</dd>
-					}
-				</div>
-				if s := r.Stats; s != nil && s.Tag != "" {
-					<div class={ "rs-tag", templ.KV("released", r.Release != nil && r.Release.Tag == s.Tag) }>
-						<dt>last tag</dt>
-						if s.TagHref != "" {
-							<dd><a href={ templ.SafeURL(s.TagHref) } title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</a></dd>
-						} else {
-							<dd title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</dd>
-						}
-					</div>
-				}
-			</dl>
+			if r.Fresh {
+				<span class="repo-activity" title="new activity"><span class="ico i-refresh-cw" aria-hidden="true"></span><span class="sr">new activity</span></span>
+			}
+		</h2>
+		<div class="repo-state">
+			if r.Empty {
+				<span>No commits yet</span>
+			} else if r.ActiveAt != "" {
+				<span class="repo-when tip-end" data-tip={ "Updated " + r.ActiveAt }>
+					<span class="ico i-history" aria-hidden="true"></span>
+					<span class="sr">Updated </span>
+					<time datetime={ r.ActiveAt }>{ r.Active }</time>
+				</span>
+			}
 			if r.CI != nil {
 				<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Label + " · " + r.CI.Title }>
 					<span class={ "ck", "ck-" + r.CI.Kind } aria-hidden="true"></span>
@@ -112,54 +72,72 @@ templ HomeRowView(r HomeRow) {
 				</a>
 			}
 		</div>
-		if len(r.Commits) > 0 {
-			<ul class="repo-commits" aria-label={ "Recent commits of " + r.Name }>
-				for _, c := range r.Commits {
-					<li>
-						<a class="rc-sha" href={ templ.SafeURL(c.CHref) }>{ c.Short }</a>
-						<span class="rc-subject" title={ c.Subject }>{ c.Subject }</span>
-						if c.WhenAt != "" {
-							<time class="dim" datetime={ c.WhenAt } title={ c.WhenAt }>{ c.When }</time>
-						}
-					</li>
+		if r.Desc != "" {
+			<p class="repo-desc">{ r.Desc }</p>
+		}
+		if len(r.Topics) > 0 {
+			<ul class="repo-topics" data-fit aria-label={ "Topics of " + r.Name }>
+				for _, t := range r.Topics {
+					<li>{ t }</li>
 				}
 			</ul>
-		} else if r.NoCommits {
-			<p class="repo-commits mute">no commits yet</p>
+		}
+		if r.Stats != nil || r.License != nil {
+			<ul class="repo-meta" aria-label={ "Facts of " + r.Name }>
+				if s := r.Stats; s != nil {
+					if s.Tag != "" {
+						<li class="repo-tag">
+							<span class="ico i-tag" aria-hidden="true"></span>
+							if s.TagHref != "" {
+								<a href={ templ.SafeURL(s.TagHref) } title={ "Latest tag " + s.Tag + ", made " + s.TagWhen }>{ s.Tag }</a>
+							} else {
+								<span title={ "Latest tag " + s.Tag + ", made " + s.TagWhen }>{ s.Tag }</span>
+							}
+						</li>
+					}
+					<li data-tip={ s.Commits + " commits on the default branch" }><span class="ico i-git-commit" aria-hidden="true"></span><b>{ s.Commits }</b><span class="sr"> commits on the default branch</span></li>
+					if s.Quiet {
+						<li class="repo-quiet">quiet for 90 days</li>
+					} else if s.Pulse != nil {
+						<li class="repo-month">
+							@pulse(s.Pulse)
+							<b>{ s.Recent }</b> in 30 days
+						</li>
+					} else {
+						<li><b>{ s.Recent }</b> in 30 days</li>
+					}
+				}
+				if lic := r.License; lic != nil {
+					<li><a href={ templ.SafeURL(lic.Href) } title={ "License: " + lic.ID }>{ lic.ID }</a></li>
+				}
+				if s := r.Stats; s != nil && s.Visitors != "" {
+					<li class="tip-end" data-tip="Unique visitors, last 30 days"><span class="ico i-eye" aria-hidden="true"></span><b>{ s.Visitors }</b><span class="sr"> unique visitors in the last 30 days</span></li>
+				}
+			</ul>
 		}
 	</li>
 }
 
-// pulse is the activity curve of a home row: a smooth line over a fading
-// area on a faint grid, and a dot at today, in colour while the repository
-// is active. Nothing moves: the page stays idle. The SVG scales evenly with
-// its column, so the dot stays round.
+// pulse is the activity curve of a home row: a word-sized curve over a
+// fading area, stretched to its box (preserveAspectRatio="none"). data-live
+// marks a repository active in the last week; the page greys the others.
+// Nothing moves: the page stays idle.
 templ pulse(h *Heartbeat) {
 	<figure class="repo-pulse" data-live?={ h.Live } data-days-commits={ h.DaysCommits } data-end={ h.End } data-end-x={ h.X }
 		if h.DaysVisitors != "" {
 			data-days-visitors={ h.DaysVisitors }
 		}
 	>
-		<svg viewBox="0 0 600 64" role="img" aria-label={ h.Label } focusable="false">
+		<svg viewBox="0 0 600 64" preserveAspectRatio="none" role="img" aria-label={ h.Label } focusable="false">
 			<defs>
 				<linearGradient id={ h.GradID } x1="0" y1="0" x2="0" y2="1">
 					<stop class="pulse-stop-top" offset="0"></stop>
 					<stop class="pulse-stop-bottom" offset="1"></stop>
 				</linearGradient>
 			</defs>
-			<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke"></path>
 			<path class="pulse-area" d={ h.Area } fill={ "url(#" + h.GradID + ")" }></path>
 			<path class="pulse-line" d={ h.Line } vector-effect="non-scaling-stroke"></path>
-			<circle class="pulse-dot" cx={ h.X } cy={ h.Y } r="3.5"></circle>
 		</svg>
-		if h.Visitors {
-			<svg class="pulse-strip" viewBox="0 0 600 1" preserveAspectRatio="none" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
-				<rect class="none" width="600" height="1"></rect>
-				for _, c := range h.Strip {
-					<rect x={ c.X } width={ c.W } height="1" fill-opacity={ c.Level }></rect>
-				}
-			</svg>
-		}
 	</figure>
 }
 

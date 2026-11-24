@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>example.test</title>
 <meta name="theme-color" data-scheme="light" media="(prefers-color-scheme: light)" content="#ffffff">
-<meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" content="#0c0c0c">
+<meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" content="#0b0e12">
 <meta name="apple-mobile-web-app-title" content="ermite">
 <link rel="icon" type="image/svg+xml" href="/-/static/img/icon.HASH.svg">
 <link rel="apple-touch-icon" href="/-/static/app/apple-touch-icon.HASH.png">
@@ -54,7 +54,7 @@
 <div id="action-status" aria-live="polite">
 </div>
 <h1 class="sr">Repositories</h1>
-<div class="home" data-layout="cards" data-traffic>
+<div class="home">
 <section class="home-repos" aria-label="Repositories">
 <div class="home-bar">
 <div class="filter">
@@ -68,116 +68,47 @@
 </a>
 <a href="/?sort=name&amp;dir=asc">name </a>
 </nav>
-<div class="layout-switch" role="group" aria-label="Layout" data-js>
-<button type="button" class="btn icon" data-set-layout="cards" aria-pressed="true" title="Cards" aria-label="Cards">
-<span class="ico i-cards" aria-hidden="true">
-</span>
-</button>
-<button type="button" class="btn icon" data-set-layout="split" aria-pressed="false" title="Two columns" aria-label="Two columns">
-<span class="ico i-split" aria-hidden="true">
-</span>
-</button>
-<button type="button" class="btn icon" data-set-layout="compact" aria-pressed="false" title="Compact list" aria-label="Compact list">
-<span class="ico i-compact" aria-hidden="true">
-</span>
-</button>
-</div>
 </div>
 <ul class="repos" id="repo-rows" data-rows data-sort="activity" data-desc="true">
 <li id="repo-quiet" class="repo" data-cursor>
-<div class="repo-main">
 <h2 class="repo-name">
 <a href="/quiet">quiet</a>
 </h2>
-<p class="repo-desc mute">no description</p>
-<div class="repo-topics" aria-hidden="true">
+<div class="repo-state">
+<span>No commits yet</span>
 </div>
-<div class="repo-pulse" aria-hidden="true">
-</div>
-</div>
-<div class="repo-head">
-<dl class="repo-stats" aria-label="Figures of quiet">
-<div class="rs-active">
-<dt>last activity</dt>
-<dd>
-<time datetime="STAMP" title="STAMP">AGO</time>
-</dd>
-</div>
-</dl>
-</div>
-<p class="repo-commits mute">no commits yet</p>
 </li>
 <li id="repo-demo" class="repo">
-<div class="repo-main">
 <h2 class="repo-name">
 <a href="/demo">demo</a>
 </h2>
+<div class="repo-state">
+<span class="repo-when tip-end" data-tip="Updated STAMP">
+<span class="ico i-history" aria-hidden="true">
+</span>
+<span class="sr">Updated </span>
+<time datetime="STAMP">AGO</time>
+</span>
+</div>
 <p class="repo-desc">A demo repository</p>
-<div class="repo-topics" aria-hidden="true">
-</div>
-<figure class="repo-pulse" data-days-commits="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0" data-end="DATE" data-end-x="590" data-days-visitors="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0">
-<svg viewBox="0 0 600 64" role="img" aria-label="Activity: 0 commits, 0 visitors in the last 90 days" focusable="false">
-<defs>
-<linearGradient id="hb-demo" x1="0" y1="0" x2="0" y2="1">
-<stop class="pulse-stop-top" offset="0">
-</stop>
-<stop class="pulse-stop-bottom" offset="1">
-</stop>
-</linearGradient>
-</defs>
-<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke">
-</path>
-<path class="pulse-area" d="M0 58 C98.3 58 491.7 58 590 58 L590 64 L0 64 Z" fill="url(#hb-demo)">
-</path>
-<path class="pulse-line" d="M0 58 C98.3 58 491.7 58 590 58" vector-effect="non-scaling-stroke">
-</path>
-<circle class="pulse-dot" cx="590" cy="58" r="3.5">
-</circle>
-</svg>
-<svg class="pulse-strip" viewBox="0 0 600 1" preserveAspectRatio="none" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
-<rect class="none" width="600" height="1">
-</rect>
-</svg>
-</figure>
-</div>
-<div class="repo-head">
-<dl class="repo-stats" aria-label="Figures of demo">
-<div>
-<dt>commits</dt>
-<dd>2</dd>
-</div>
-<div>
-<dt>last 30 days</dt>
-<dd>0</dd>
-</div>
-<div class="rs-visitors">
-<dt>visitors</dt>
-<dd title="Daily unique visitors, summed over the last 30 days">0</dd>
-</div>
-<div class="rs-active">
-<dt>last activity</dt>
-<dd>
-<time datetime="STAMP" title="STAMP">AGO</time>
-</dd>
-</div>
-<div class="rs-tag">
-<dt>last tag</dt>
-<dd>
-<a href="/demo/tree/SHA40" title="v0.2.0 · made AGO">v0.2.0</a>
-</dd>
-</div>
-</dl>
-</div>
-<ul class="repo-commits" aria-label="Recent commits of demo">
-<li>
-<a class="rc-sha" href="/demo/commit/SHA40">SHA7</a>
-<span class="rc-subject" title="add main.go">add main.go</span>
-<time class="dim" datetime="STAMP" title="STAMP">AGO</time>
+<ul class="repo-meta" aria-label="Facts of demo">
+<li class="repo-tag">
+<span class="ico i-tag" aria-hidden="true">
+</span>
+<a href="/demo/tree/SHA40" title="Latest tag v0.2.0, made AGO">v0.2.0</a>
 </li>
-<li>
-<a class="rc-sha" href="/demo/commit/SHA40">SHA7</a>
-<span class="rc-subject" title="first commit">first commit</span>
-<time class="dim" datetime="STAMP" title="STAMP">AGO</time>
+<li data-tip="2 commits on the default branch">
+<span class="ico i-git-commit" aria-hidden="true">
+</span>
+<b>2</b>
+<span class="sr">commits on the default branch</span>
+</li>
+<li class="repo-quiet">quiet for 90 days</li>
+<li class="tip-end" data-tip="Unique visitors, last 30 days">
+<span class="ico i-eye" aria-hidden="true">
+</span>
+<b>0</b>
+<span class="sr">unique visitors in the last 30 days</span>
 </li>
 </ul>
 </li>

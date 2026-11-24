@@ -1,6 +1,6 @@
 // store.js: window.ermiteStore, a small client for what the pages remember in
 // the browser (localStorage): the preferences. Loaded before ermite.js, which
-// builds on it (ermiteKeys, ermiteLayout).
+// builds on it (ermiteKeys, ermiteWide).
 //
 // It never throws. Without storage (disabled, private mode, sandboxed frame)
 // or when the browser refuses a write (quota), the value is held in memory:

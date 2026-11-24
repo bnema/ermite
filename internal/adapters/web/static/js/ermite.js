@@ -13,9 +13,8 @@
 //  6. The lines a diff hides load in place (ermiteGaps; e and E).
 //  7. The service worker (ermiteInstall).
 //  8. Chip lists kept on one line, with a … chip (ermiteFit).
-//  9. The layout of the home page, remembered in the browser (ermiteLayout).
-// 10. The wide mode: every page takes the whole width (ermiteWide).
-// 11. The theme switch of the footer (ermiteThemeSwitch).
+//  9. The wide mode: every page takes the whole width (ermiteWide).
+// 10. The theme switch of the footer (ermiteThemeSwitch).
 //
 // Preferences are kept by ermiteStore (store.js, loaded first).
 (() => {
@@ -553,39 +552,6 @@
       // blocks says whether the preference turns this key off.
       blocks: (e) => isOff() && e.key.length === 1,
     };
-  })();
-
-  // The layout of the home page: "cards" (the default), "split" (two
-  // repositories per row) or "compact" (one line each). The choice is kept by
-  // ermiteStore ("home-layout"), made with the buttons [data-set-layout] of
-  // the layout switch, and shown as .home[data-layout], which the styles
-  // follow, and as aria-pressed on the buttons. Another tab's change applies
-  // here at once. The topic chips are fitted again: their room changes with the
-  // layout. Self-contained with store.js: jstest/layout.test.mjs evaluates
-  // this block.
-  window.ermiteLayout = (() => {
-    const values = ['cards', 'split', 'compact'];
-    const pref = window.ermiteStore.pref('home-layout', { values, fallback: 'cards' });
-    function apply() {
-      const layout = pref.get();
-      const home = document.querySelector('.home');
-      if (home) home.setAttribute('data-layout', layout);
-      for (const b of document.querySelectorAll('[data-set-layout]')) {
-        b.setAttribute('aria-pressed', String(b.getAttribute('data-set-layout') === layout));
-      }
-      window.ermiteFit?.all();
-    }
-    function set(v) {
-      pref.set(v);
-      apply();
-    }
-    addEventListener('click', (e) => {
-      const btn = e.target.closest?.('[data-set-layout]');
-      if (btn) set(btn.getAttribute('data-set-layout'));
-    });
-    pref.watch(apply);
-    apply();
-    return { get: pref.get, set, apply, values };
   })();
 
   // The wide mode (w, on every page): the work area takes the whole width of

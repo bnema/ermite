@@ -104,8 +104,7 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	sortRepos(repos, key, desc)
 
 	now := s.cfg.Now()
-	_, traffic := s.cfg.Traffic.(TrafficDailyReader)
-	p := HomePage{Sort: key, Desc: desc, Traffic: traffic}
+	p := HomePage{Sort: key, Desc: desc}
 	for _, c := range homeSorts {
 		sl := SortLink{Label: c.label}
 		next := "asc"
@@ -133,14 +132,11 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	return Home(l, p), http.StatusOK, nil
 }
 
-// homeRecent is how many commits a row of the home list shows.
-const homeRecent = 5
-
-// homeWorkers bounds the repositories whose commits and run are read at once.
+// homeWorkers bounds the repositories whose figures and run are read at once.
 const homeWorkers = 8
 
 // homeRows builds the rows of repos, in order: each repository costs a read
-// of its commits and of its latest run, so they are read a few at a time. A
+// of its figures and of its latest run, so they are read a few at a time. A
 // repository whose reads fail still has its row.
 func (s *Server) homeRows(ctx context.Context, repos []ports.RepoView, now time.Time) []HomeRow {
 	rows := make([]HomeRow, len(repos))
@@ -161,16 +157,19 @@ func (s *Server) homeRows(ctx context.Context, repos []ports.RepoView, now time.
 }
 
 // homeRowOf is the row of a repository with what the visitor may read of it:
-// the newest commits of its default branch and the state of its latest run.
+// the figures of its default branch and the state of its latest run.
 func (s *Server) homeRowOf(ctx context.Context, r ports.RepoView, now time.Time, cursor bool) HomeRow {
 	row := homeRow(r, now, cursor, SignedIn(ctx))
 	row.Release = s.summaryRelease(ctx, r.Name, now)
-	if r.PushedAt.IsZero() || r.DefaultBranch == "" {
-		row.NoCommits = r.PushedAt.IsZero()
+	if r.PushedAt.IsZero() {
+		row.Empty = true
 		return row
 	}
-	var head string
-	row.Commits, head, row.NoCommits = s.homeCommits(ctx, r, now)
+	if r.DefaultBranch == "" {
+		return row
+	}
+	head, empty := s.homeHead(ctx, r)
+	row.Empty = empty
 	if head != "" {
 		row.License = s.repositoryLicense(ctx, r.Name, head)
 		row.CI = s.homeCI(ctx, r, head)
@@ -179,27 +178,24 @@ func (s *Server) homeRowOf(ctx context.Context, r ports.RepoView, now time.Time,
 	return row
 }
 
-// homeCommits reads the newest commits of the default branch. It reports an
-// empty branch; a failed read is logged and gives neither commits nor that
-// note, since the row does not depend on them.
-func (s *Server) homeCommits(ctx context.Context, r ports.RepoView, now time.Time) (rows []CommitRow, head string, none bool) {
+// homeHead is the id of the head commit of the default branch. It is "" for
+// a missing or empty branch, which also reports empty, and for a failed read
+// (logged), which does not: the row does not depend on it.
+func (s *Server) homeHead(ctx context.Context, r ports.RepoView) (head string, empty bool) {
 	// By its full name, so that a tag of the same name is not read.
-	page, err := s.commitList(ctx, r.Name, "refs/heads/"+r.DefaultBranch, "", homeRecent, "")
+	page, err := s.commitList(ctx, r.Name, "refs/heads/"+r.DefaultBranch, "", 1, "")
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return nil, "", true
+		return "", true
 	case err != nil:
 		log := zerowrap.FromCtx(ctx)
-		log.Warn().Err(err).Str("repo", r.Name.String()).Msg("read the recent commits of the home page")
-		return nil, "", false
+		log.Warn().Err(err).Str("repo", r.Name.String()).Msg("read the head of the home page")
+		return "", false
 	}
-	for _, c := range page.Commits[:min(len(page.Commits), homeRecent)] {
-		rows = append(rows, commitRow(r.Name.String(), c, now))
+	if len(page.Commits) == 0 {
+		return "", true
 	}
-	if len(page.Commits) > 0 {
-		head = page.Commits[0].ID.String()
-	}
-	return rows, head, len(rows) == 0
+	return page.Commits[0].ID.String(), false
 }
 
 // homeStats are the figures of a row; nil when the read fails (logged), since
@@ -228,6 +224,7 @@ func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, n
 		}
 	}
 	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent), Pulse: s.pulses.get(r.Name.String(), st.Activity, st.Partial, visitors)}
+	hs.Quiet = len(st.Activity) > 0 && !slices.ContainsFunc(st.Activity, func(d int) bool { return d != 0 })
 	if hs.Pulse != nil {
 		pulse := *hs.Pulse // cached curves are shared and immutable
 		pulse.End = s.cfg.Now().UTC().Format("2006-01-02")

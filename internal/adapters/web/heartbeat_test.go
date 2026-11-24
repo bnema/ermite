@@ -42,7 +42,7 @@ func TestHeartbeat(t *testing.T) {
 	quiet := heartbeatOf("q", make([]int, 90), false)
 	require.NotNil(t, quiet)
 	assert.False(t, quiet.Live)
-	assert.Equal(t, num(heartbeatH-heartbeatPad), quiet.Y, "a flat line on the base")
+	assert.True(t, strings.HasSuffix(quiet.Line, quiet.X+" "+num(heartbeatH-heartbeatPad)), "a flat line on the base")
 	assert.Equal(t, 1, strings.Count(quiet.Line, " C"), "two points")
 	assert.Equal(t, "Activity: 0 commits in the last 90 days", quiet.Label)
 
@@ -89,7 +89,6 @@ func TestPulseVisitors(t *testing.T) {
 	visitors[10], visitors[59], visitors[60], visitors[89] = 30, 100, 1000, 4
 	h := c.get("proj", days, false, visitors)
 	assert.Equal(t, "Activity: 2 commits, 1134 visitors in the last 90 days", h.Label)
-	assert.Equal(t, stripOf(visitors), h.Strip)
 	assert.True(t, h.Visitors)
 	assert.Equal(t, uint64(1004), h.RecentVisitors, "only the last 30 days")
 	assert.Same(t, h, c.get("proj", days, false, visitors))
@@ -97,34 +96,6 @@ func TestPulseVisitors(t *testing.T) {
 	assert.NotSame(t, h, c.get("proj", days, false, visitors))
 	assert.False(t, c.get("proj", days, false).Visitors)
 	assert.False(t, c.get("proj", days, false, visitors[:89]).Visitors, "misaligned data is omitted")
-}
-
-func TestStripOf(t *testing.T) {
-	t.Parallel()
-	assert.Nil(t, stripOf([]uint64{5}))
-	cells := stripOf([]uint64{0, 1, 50, 100})
-	require.Len(t, cells, 3, "a quiet day has no cell")
-	assert.Equal(t, StripCell{X: "98.3", W: "196.7", Level: "0.16"}, cells[0], "one visitor is faint but seen")
-	assert.Equal(t, "0.57", cells[1].Level)
-	assert.Equal(t, "1.00", cells[2].Level, "the busiest day of the row")
-	at := func(s string) float64 {
-		f, err := strconv.ParseFloat(s, 64)
-		require.NoError(t, err)
-		return f
-	}
-	for _, n := range []int{2, 13, 90, 365} {
-		daily := make([]uint64, n)
-		for i := range daily {
-			daily[i] = 1
-		}
-		cells := stripOf(daily)
-		require.Len(t, cells, n)
-		assert.Zero(t, at(cells[0].X))
-		for i := 1; i < n; i++ {
-			assert.InDelta(t, at(cells[i].X), at(cells[i-1].X)+at(cells[i-1].W), 1e-9, "no seam: n=%d, cell %d", n, i)
-		}
-		assert.InDelta(t, heartbeatW, at(cells[n-1].X)+at(cells[n-1].W), 1e-9, "to the end of the box: n=%d", n)
-	}
 }
 
 func TestPulseMarkup(t *testing.T) {
@@ -141,12 +112,12 @@ func TestPulseMarkup(t *testing.T) {
 			assert.NotContains(t, b.String(), `tabindex`)
 			if visitors == nil {
 				assert.NotContains(t, b.String(), "data-days-visitors")
-				assert.NotContains(t, b.String(), "pulse-strip")
 			} else {
 				assert.Contains(t, b.String(), `data-days-visitors="7,0,12"`)
-				assert.Contains(t, b.String(), `class="pulse-strip"`)
-				assert.Equal(t, 1, strings.Count(b.String(), `<rect class="none"`))
 			}
+			assert.NotContains(t, b.String(), "pulse-strip")
+			assert.NotContains(t, b.String(), "pulse-dot")
+			assert.NotContains(t, b.String(), "pulse-grid")
 		})
 	}
 }

@@ -202,8 +202,8 @@ func TestWebLoginEndToEnd(t *testing.T) {
 	}
 	home = b.get("/", as(token))
 	assert.Contains(t, home.body, "secret")
-	assert.Equal(t, 1, strings.Count(home.body, `<span class="pill priv"`), "only the private repository has the badge")
-	assert.Regexp(t, `(?s)<li id="repo-secret".*?<span class="pill priv".*?</li>\s*<li id="repo-pub"|<li id="repo-pub".*?</li>\s*<li id="repo-secret".*?<span class="pill priv"`, home.body)
+	assert.Equal(t, 1, strings.Count(home.body, `<span class="repo-flag">Private</span>`), "only the private repository has the badge")
+	assert.Regexp(t, `(?s)<li id="repo-secret".*?<span class="repo-flag">Private</span>.*?</li>\s*<li id="repo-pub"|<li id="repo-pub".*?</li>\s*<li id="repo-secret".*?<span class="repo-flag">Private</span>`, home.body)
 	assert.Contains(t, home.body, `<form class="owner" method="post" action="/-/logout">`)
 	assert.Contains(t, b.get("/secret/blob/main/notes.txt", as(token)).body, "notes.txt")
 	raw := b.get("/secret/raw/main/notes.txt", as(token))
