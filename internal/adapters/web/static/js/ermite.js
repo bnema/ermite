@@ -113,8 +113,11 @@
     go(sel) {
       $(sel)?.click();
     },
+    // tab clicks the tab of a g key and says whether there was one.
     tab(key) {
-      $(`.tabs [data-key="g ${key}"]`)?.click();
+      const el = $(`.tabs [data-key="g ${key}"]`);
+      el?.click();
+      return !!el;
     },
 
     // The preference "single-key shortcuts" (ermiteKeys): the checkbox of the
@@ -630,7 +633,7 @@
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
   // Section keys are the second letter of the g sequence.
-  const goto = { h: 'gh', s: 's', f: 'f', c: 'c', b: 'b', m: 'm', i: 'i', r: 'r', a: 'a', g: 'top' };
+  const goto = { h: 'gh', s: 's', f: 'f', c: 'c', b: 'b', m: 'm', i: 'i', r: 'r', a: 'a', w: 'w', d: 'd', n: 'n', g: 'top' };
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {

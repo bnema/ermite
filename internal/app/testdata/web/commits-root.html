@@ -1365,7 +1365,7 @@
          k-refs from:body -> ermite.dialog('panel-refs', 'refs-filter');
          k-cmd from:body -> ermite.dialog('panel-cmd', 'cmd-q'); ermiteFinder.load();
          k-filter from:body -> ermite.focusFilter();
-         k-gh from:body -> ermite.go('.brand');
+         k-gh from:body -> ermite.tab('h') || ermite.go('.brand');
          k-s from:body -> ermite.tab('s');
          k-f from:body -> ermite.tab('f');
          k-b from:body -> ermite.tab('b');
@@ -1374,6 +1374,9 @@
          k-r from:body -> ermite.tab('r');
          k-m from:body -> ermite.tab('m');
          k-i from:body -> ermite.tab('i');
+         k-w from:body -> ermite.tab('w');
+         k-d from:body -> ermite.tab('d');
+         k-n from:body -> ermite.tab('n');
          k-inbox from:body -> ermite.go('[data-inbox]');
          k-next from:body -> ermite.nextNote();
          k-split from:body -> ermite.layout('split');

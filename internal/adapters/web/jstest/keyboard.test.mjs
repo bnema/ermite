@@ -30,8 +30,8 @@ test('sections require g and have no old t alias', () => {
   const k = keyboard();
   for (const key of ['s', 't', 'c', 'r', 'm', 'i']) k.press(key);
   assert.deepEqual(k.fired, []);
-  for (const key of ['s', 'f', 'c', 'b', 'm', 'i', 'r', 'a', 'h', 'g', 't']) { k.press('g'); k.press(key); }
-  assert.deepEqual(k.fired, ['s', 'f', 'c', 'b', 'm', 'i', 'r', 'a', 'gh', 'top']);
+  for (const key of ['s', 'f', 'c', 'b', 'm', 'i', 'r', 'a', 'w', 'd', 'n', 'h', 'g', 't']) { k.press('g'); k.press(key); }
+  assert.deepEqual(k.fired, ['s', 'f', 'c', 'b', 'm', 'i', 'r', 'a', 'w', 'd', 'n', 'gh', 'top']);
 });
 test('uppercase actions work with either reported casing and interrupt prefixes', () => {
   for (const [key, action] of Object.entries({ G: 'bottom', M: 'merge', R: 'read', E: 'expandAll', I: 'inbox' })) {
@@ -81,4 +81,13 @@ test('panel blocks background navigation and modal shortcuts, including command-
   k.press('k', false, { ctrlKey: true });
   k.press('k', false, { metaKey: true });
   assert.deepEqual(k.fired, []);
+});
+
+test('tab says whether it clicked a tab', () => {
+  const body = source.match(/\n    tab\(key\) \{\n([\s\S]*?)\n    \},/)[1];
+  let clicked = 0;
+  const tab = new Function('$', 'key', body);
+  assert.equal(tab((sel) => (sel === '.tabs [data-key="g w"]' ? { click: () => clicked++ } : null), 'w'), true);
+  assert.equal(clicked, 1);
+  assert.equal(tab(() => null, 'w'), false);
 });
