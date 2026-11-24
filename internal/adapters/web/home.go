@@ -123,9 +123,7 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	}
 	p.Rows = s.homeRows(ctx, repos, now)
 	l := s.base()
-	if n, show := s.inboxCount(ctx); show {
-		l.Inbox = &InboxButton{Href: inboxPath, Count: n}
-	}
+	l.OwnerNav = s.ownerNav(ctx, "home")
 	l.Title = s.instance
 	l.Live, l.LiveURL = true, liveURL("home", "")
 	l.Cmd = append([]CmdItem{{Kind: "go", Label: "home", Href: "/"}}, repoCmds(repos, "")...)

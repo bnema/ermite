@@ -30,7 +30,6 @@
   .i-log-in { --i: url(icons/log-in.svg); }
   .i-log-out { --i: url(icons/log-out.svg); }
   .i-refresh-cw { --i: url(icons/refresh-cw.svg); }
-  .i-mailbox { --i: url(icons/mailbox.svg); }
   .i-sun-moon { --i: url(icons/sun-moon.svg); }
   .i-sun { --i: url(icons/sun.svg); }
   .i-moon { --i: url(icons/moon.svg); }
@@ -122,11 +121,6 @@
   }
   /* the hermit by his fire: a grey picture in its own rounded square */
   .brand-mark { width: 32px; height: 32px; flex: none; background: url(icons/brand.svg) center / contain no-repeat; }
-  /* the inbox, right of the logo on the home page: its number in a darker badge */
-  .inbox-btn {
-    flex: none;
-    & .count { margin-left: 0; color: var(--ink-hi); background: var(--bg-canvas); box-shadow: inset 0 0 0 1px var(--border); }
-  }
   .crumbs {
     min-width: 0; flex: 1 1 auto; overflow: hidden;
     & ol { display: flex; align-items: center; min-width: 0; font-family: var(--mono); font-size: var(--fs); }

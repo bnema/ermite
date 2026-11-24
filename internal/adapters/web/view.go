@@ -77,9 +77,6 @@ type Layout struct {
 	IssueForm bool
 	// MDEditor enhances Markdown textareas on writing pages.
 	MDEditor bool
-	// Inbox is the button to the owner's inbox, next to the logo; set on the
-	// home page only, for the signed-in owner.
-	Inbox *InboxButton
 	// OwnerNav is the navigation between the owner's spaces, below the top
 	// row; nil for anyone else and on repository pages.
 	OwnerNav *OwnerNav
@@ -168,13 +165,6 @@ type HomePage struct {
 	Desc  bool
 	Sorts []SortLink
 	Rows  []HomeRow
-}
-
-// InboxButton is the link to the inbox with the number of open items; Count is
-// negative when it could not be read.
-type InboxButton struct {
-	Href  string
-	Count int
 }
 
 // Fact is one key/value row of the facts block.

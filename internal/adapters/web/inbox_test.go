@@ -139,21 +139,28 @@ func TestInboxNotMountedWithoutTheService(t *testing.T) {
 	assert.Equal(t, 404, inboxGet(srv, "/-/inbox", true).Code)
 }
 
-func TestInboxButtonOnHomeIsForTheOwnerOnly(t *testing.T) {
+func TestOwnerNavOnHomeIsForTheOwnerOnly(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Work: 5}, nil).Once() // the owner's home only
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 2, Work: 5}, nil).Once() // the owner's home only
 	srv := inboxServer(t, svc)
 
 	anon := inboxGet(srv, "/", false)
 	require.Equal(t, 200, anon.Code)
 	assert.NotContains(t, anon.Body.String(), "/-/inbox")
 	assert.NotContains(t, anon.Body.String(), "Inbox")
+	assert.NotContains(t, anon.Body.String(), "owner-nav")
+	assert.Contains(t, anon.Body.String(), `<div id="view" data-view="home">`)
 
 	owner := inboxGet(srv, "/", true)
 	require.Equal(t, 200, owner.Code)
-	assert.Contains(t, owner.Body.String(), `href="/-/inbox"`)
-	assert.Contains(t, owner.Body.String(), `<span class="count">5</span>`)
+	body := owner.Body.String()
+	assert.Contains(t, body, `id="owner-nav"`)
+	assert.Contains(t, body, `href="/" data-nav data-key="g h" aria-label="Repositories" aria-current="page"`)
+	assert.Contains(t, body, `href="/-/inbox"`)
+	assert.Contains(t, body, `<span class="count hot">2</span>`)
+	assert.Contains(t, body, `<span class="count">5</span>`)
+	assert.NotContains(t, body, "inbox-btn")
 }
 
 func TestInboxStreamIsTheOwnersAlone(t *testing.T) {

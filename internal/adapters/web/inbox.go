@@ -634,6 +634,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	}
 	l := s.base()
 	l.Title = "inbox · " + s.instance
+	l.OwnerNav = s.ownerNav(ctx, "inbox")
 	l.Crumbs = []Crumb{{Label: "inbox", Current: true}}
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
 	if s.cfg.Events != nil {
@@ -647,20 +648,6 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 		l.Live, l.LiveURL = true, liveURL("owner", q)
 	}
 	return Inbox(l, page), http.StatusOK, nil
-}
-
-// inboxCount is the number of open items the home button shows, and whether
-// there is a button: only for the signed-in owner, and only when the inbox is
-// there. A failed read leaves the button without a number.
-func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
-	if s.cfg.Inbox == nil || !SignedIn(ctx) {
-		return 0, false
-	}
-	c, err := s.cfg.Inbox.Counts(ctx, principal(ctx))
-	if err != nil {
-		return -1, true
-	}
-	return c.Work, true
 }
 
 // inbox renders the fragments an event of a merge request, an issue, a
