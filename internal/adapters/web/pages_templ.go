@@ -43,7 +43,7 @@ func Home(l Layout, p HomePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"view\" data-view=\"home\"><h1 class=\"sr\">Repositories</h1><div class=\"home\"><section class=\"home-repos\" aria-label=\"Repositories\"><div class=\"home-bar\"><div class=\"filter\"><label for=\"home-filter\" class=\"sr\">filter</label> <input id=\"home-filter\" type=\"search\" data-filter=\"#repo-rows > li\" placeholder=\"Filter repositories…\" autocomplete=\"off\" hx-on:input=\"ermite.filter(this)\"></div><nav class=\"sort\" aria-label=\"Sort repositories\"><span class=\"mute\">sort</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"view\" data-view=\"home\"><h1 class=\"sr\" tabindex=\"-1\">Repositories</h1><div class=\"home\"><section class=\"home-repos\" aria-label=\"Repositories\"><div class=\"home-bar\"><div class=\"filter\"><label for=\"home-filter\" class=\"sr\">filter</label> <input id=\"home-filter\" type=\"search\" data-filter=\"#repo-rows > li\" placeholder=\"Filter repositories…\" autocomplete=\"off\" hx-on:input=\"ermite.filter(this)\"></div><nav class=\"sort\" aria-label=\"Sort repositories\"><span class=\"mute\">sort</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
