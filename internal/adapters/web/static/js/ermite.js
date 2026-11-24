@@ -729,6 +729,53 @@
   // PageUp/PageDown and space scroll the content without a click first.
   if (!location.hash) document.getElementById('main')?.focus({ preventScroll: true });
 
+  // N. Owner navigation: an a[data-nav] link between owner pages swaps the
+  // regions of the page (nav, view, command panel, live stream) in place of a
+  // full load. Anything unexpected falls back to a plain load of the link.
+  window.ermiteNav = (() => {
+    let gen = 0;
+    const regions = ['#owner-nav', '#view', '#panel-cmd', '.hint-live'];
+    async function go(href, { push = false, keepScroll = false } = {}) {
+      const mine = ++gen;
+      try {
+        const res = await fetch(href, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+        if (!res.ok || res.redirected) return location.assign(href);
+        const page = new DOMParser().parseFromString(await res.text(), 'text/html');
+        if (mine !== gen) return;
+        if (!page.querySelector('#view')) return location.assign(href);
+        if (!document.querySelector('.hint-live') !== !page.querySelector('.hint-live')) return location.assign(href);
+        for (const sel of regions) {
+          const old = document.querySelector(sel), fresh = page.querySelector(sel);
+          if (old && fresh) await window.ermiteLive.replaceRegion(old, fresh);
+        }
+        document.title = page.title;
+        if (push) history.pushState({ ermiteNav: 1 }, '', href);
+        if (!keepScroll) {
+          scrollTo(0, 0);
+          document.querySelector('#view h1')?.focus({ preventScroll: true });
+        }
+        window.ermiteFit?.all();
+        window.ermiteLayout?.apply?.();
+        for (const input of document.querySelectorAll('#view input[data-filter]')) {
+          if (input.value) window.ermite?.hide(input);
+        }
+      } catch {
+        location.assign(href);
+      }
+    }
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest?.('a[data-nav]');
+      if (!a || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      if (new URL(a.href, location.href).origin !== location.origin) return;
+      e.preventDefault();
+      go(a.href, { push: true, keepScroll: a.dataset.nav === 'keep-scroll' });
+    });
+    if (document.querySelector('#view')) history.replaceState({ ermiteNav: 1 }, '', location.href);
+    addEventListener('popstate', (e) => { if (e.state?.ermiteNav) go(location.href, { push: false }); });
+    return { go };
+  })();
+  // end owner navigation
+
   // 4. The table of contents of a diff marks the file in view: the last file
   // in the top third of the window, else the last file whose top is above that
   // line (the first file when none is). One observer tracks the files in the
