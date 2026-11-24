@@ -275,6 +275,7 @@ const (
 	CIIsolation_CI_ISOLATION_VM                   CIIsolation = 1
 	CIIsolation_CI_ISOLATION_CONTAINER_SYSBOX     CIIsolation = 2
 	CIIsolation_CI_ISOLATION_CONTAINER_PRIVILEGED CIIsolation = 3
+	CIIsolation_CI_ISOLATION_CONTAINER_ROOTLESS   CIIsolation = 4
 )
 
 // Enum value maps for CIIsolation.
@@ -284,12 +285,14 @@ var (
 		1: "CI_ISOLATION_VM",
 		2: "CI_ISOLATION_CONTAINER_SYSBOX",
 		3: "CI_ISOLATION_CONTAINER_PRIVILEGED",
+		4: "CI_ISOLATION_CONTAINER_ROOTLESS",
 	}
 	CIIsolation_value = map[string]int32{
 		"CI_ISOLATION_UNSPECIFIED":          0,
 		"CI_ISOLATION_VM":                   1,
 		"CI_ISOLATION_CONTAINER_SYSBOX":     2,
 		"CI_ISOLATION_CONTAINER_PRIVILEGED": 3,
+		"CI_ISOLATION_CONTAINER_ROOTLESS":   4,
 	}
 )
 
@@ -3106,12 +3109,13 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x12CI_JOB_PHASE_READY\x10\x02\x12\x19\n" +
 	"\x15CI_JOB_PHASE_ASSIGNED\x10\x03\x12\x18\n" +
 	"\x14CI_JOB_PHASE_RUNNING\x10\x04\x12\x16\n" +
-	"\x12CI_JOB_PHASE_ENDED\x10\x05*\x8a\x01\n" +
+	"\x12CI_JOB_PHASE_ENDED\x10\x05*\xaf\x01\n" +
 	"\vCIIsolation\x12\x1c\n" +
 	"\x18CI_ISOLATION_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fCI_ISOLATION_VM\x10\x01\x12!\n" +
 	"\x1dCI_ISOLATION_CONTAINER_SYSBOX\x10\x02\x12%\n" +
-	"!CI_ISOLATION_CONTAINER_PRIVILEGED\x10\x03*\x8b\x01\n" +
+	"!CI_ISOLATION_CONTAINER_PRIVILEGED\x10\x03\x12#\n" +
+	"\x1fCI_ISOLATION_CONTAINER_ROOTLESS\x10\x04*\x8b\x01\n" +
 	"\x0eCICancelReason\x12 \n" +
 	"\x1cCI_CANCEL_REASON_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CI_CANCEL_REASON_USER\x10\x01\x12\x1e\n" +

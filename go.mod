@@ -13,7 +13,7 @@ tool (
 
 require (
 	bnema.dev/ermite-actions v0.2.1
-	bnema.dev/ermite-api v0.28.0
+	bnema.dev/ermite-api v0.29.0
 	bnema.dev/ermite-git v0.1.1
 	bnema.dev/ermite-kv v0.1.2
 	bnema.dev/kvconf v0.2.0

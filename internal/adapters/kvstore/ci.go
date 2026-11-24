@@ -203,6 +203,7 @@ var isolations = []struct {
 	{domain.CIIsolationVM, storagepb.CIIsolation_CI_ISOLATION_VM},
 	{domain.CIIsolationContainerSysbox, storagepb.CIIsolation_CI_ISOLATION_CONTAINER_SYSBOX},
 	{domain.CIIsolationContainerPrivileged, storagepb.CIIsolation_CI_ISOLATION_CONTAINER_PRIVILEGED},
+	{domain.CIIsolationContainerRootless, storagepb.CIIsolation_CI_ISOLATION_CONTAINER_ROOTLESS},
 }
 
 func encodeIsolation(i domain.CIIsolation) storagepb.CIIsolation {

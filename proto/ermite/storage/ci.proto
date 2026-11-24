@@ -64,6 +64,7 @@ enum CIIsolation {
   CI_ISOLATION_VM = 1;
   CI_ISOLATION_CONTAINER_SYSBOX = 2;
   CI_ISOLATION_CONTAINER_PRIVILEGED = 3;
+  CI_ISOLATION_CONTAINER_ROOTLESS = 4;
 }
 
 // CICancelReason says why a job is asked to stop.

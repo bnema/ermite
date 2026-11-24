@@ -87,6 +87,7 @@ const (
 	CIIsolationVM                  CIIsolation = "vm"
 	CIIsolationContainerSysbox     CIIsolation = "container-sysbox"
 	CIIsolationContainerPrivileged CIIsolation = "container-privileged"
+	CIIsolationContainerRootless   CIIsolation = "container-rootless"
 )
 
 // CICancelReason says why a job is asked to stop.
