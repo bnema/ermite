@@ -147,48 +147,8 @@ func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 		{Key: "soon", Label: "Soon", Open: true},
 		{Key: "later", Label: "Nothing urgent"},
 	}
-	unreleased := append([]ports.UnreleasedRepo(nil), j.Unreleased...)
-	sort.Slice(unreleased, func(i, k int) bool {
-		a, b := unreleased[i], unreleased[k]
-		at, bt := a.Distance.Tag.At, b.Distance.Tag.At
-		ak := a.Distance.Tag.Name != "" && !at.IsZero()
-		bk := b.Distance.Tag.Name != "" && !bt.IsZero()
-		if ak != bk {
-			return ak
-		}
-		if ak && !at.Equal(bt) {
-			return at.Before(bt)
-		}
-		if a.Distance.Commits != b.Distance.Commits {
-			return a.Distance.Commits > b.Distance.Commits
-		}
-		return a.Repo.String() < b.Repo.String()
-	})
-	for _, u := range unreleased {
-		repo := u.Repo.String()
-		n := itoa(u.Distance.Commits)
-		if u.Distance.More {
-			n += "+"
-		}
-		word := " commits"
-		if u.Distance.Commits == 1 && !u.Distance.More {
-			word = " commit"
-		}
-		row := UnreleasedRow{
-			Repo: repo, RepoHref: repoHref(repo),
-			Commits: n + word, CommitsHref: repoHref(repo, "commits", u.Branch),
-		}
-		if t := u.Distance.Tag; t.Name != "" {
-			row.Tag, row.TagHref = visibleText(t.Name), repoHref(repo, "tree", t.Name)
-			_, row.WhenAt = whenOf(now, t.At)
-			if !t.At.IsZero() {
-				row.Title = absolute(t.At)
-				row.When = itoa(max(0, int(now.Sub(t.At)/(24*time.Hour)))) + "d"
-			}
-		}
-		if row.When == "" {
-			row.When = "—"
-		}
+	for _, u := range sortedUnreleased(j.Unreleased) {
+		row := unreleasedRow(now, u)
 		for i := range groups {
 			if groups[i].Key == string(domain.ReleaseUrgency(u.Distance, now)) {
 				groups[i].Rows = append(groups[i].Rows, row)
@@ -205,6 +165,58 @@ func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 		v.Rows = append(v.Rows, journalRow(now, e))
 	}
 	return v
+}
+
+// sortedUnreleased orders a copy of the unreleased repositories: those with a
+// dated tag first, oldest tag first, then the most commits, then by name.
+func sortedUnreleased(in []ports.UnreleasedRepo) []ports.UnreleasedRepo {
+	out := append([]ports.UnreleasedRepo(nil), in...)
+	sort.Slice(out, func(i, k int) bool {
+		a, b := out[i], out[k]
+		at, bt := a.Distance.Tag.At, b.Distance.Tag.At
+		ak := a.Distance.Tag.Name != "" && !at.IsZero()
+		bk := b.Distance.Tag.Name != "" && !bt.IsZero()
+		if ak != bk {
+			return ak
+		}
+		if ak && !at.Equal(bt) {
+			return at.Before(bt)
+		}
+		if a.Distance.Commits != b.Distance.Commits {
+			return a.Distance.Commits > b.Distance.Commits
+		}
+		return a.Repo.String() < b.Repo.String()
+	})
+	return out
+}
+
+// unreleasedRow is the line of a repository ahead of its nearest tag.
+func unreleasedRow(now time.Time, u ports.UnreleasedRepo) UnreleasedRow {
+	repo := u.Repo.String()
+	n := itoa(u.Distance.Commits)
+	if u.Distance.More {
+		n += "+"
+	}
+	word := " commits"
+	if u.Distance.Commits == 1 && !u.Distance.More {
+		word = " commit"
+	}
+	row := UnreleasedRow{
+		Repo: repo, RepoHref: repoHref(repo),
+		Commits: n + word, CommitsHref: repoHref(repo, "commits", u.Branch),
+	}
+	if t := u.Distance.Tag; t.Name != "" {
+		row.Tag, row.TagHref = visibleText(t.Name), repoHref(repo, "tree", t.Name)
+		_, row.WhenAt = whenOf(now, t.At)
+		if !t.At.IsZero() {
+			row.Title = absolute(t.At)
+			row.When = itoa(max(0, int(now.Sub(t.At)/(24*time.Hour)))) + "d"
+		}
+	}
+	if row.When == "" {
+		row.When = "—"
+	}
+	return row
 }
 
 // journalRow is the row of an entry: the texts fit to display, a link to the
