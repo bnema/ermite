@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// ownerNavItem is one link of the owner navigation; Count < 0 shows none.
+type ownerNavItem struct {
+	Key, Href, Label, Icon, G string
+	Count                     int
+	Hot                       bool
+}
+
+func ownerNavItems(n OwnerNav) []ownerNavItem {
+	items := []ownerNavItem{
+		{Key: "home", Href: "/", Label: "Repositories", Icon: "i-folder-git", G: "h", Count: -1},
+		{Key: "inbox", Href: "/-/inbox", Label: "Inbox", Icon: "i-inbox", G: "i", Count: n.Attention, Hot: n.Attention > 0},
+		{Key: "work", Href: "/-/work", Label: "Work", Icon: "i-git-pull-request", G: "w", Count: n.Work},
+		{Key: "activity", Href: "/-/activity", Label: "Activity", Icon: "i-activity", G: "a", Count: -1},
+	}
+	if n.Deps {
+		items = append(items, ownerNavItem{Key: "deps", Href: "/-/deps", Label: "Dependencies", Icon: "i-package", G: "d", Count: -1})
+	}
+	if n.Insights {
+		items = append(items, ownerNavItem{Key: "insights", Href: "/-/insights", Label: "Insights", Icon: "i-chart-line", G: "n", Count: -1})
+	}
+	return items
+}
+
+// ariaLabel is the label of the link, with its count when there is one.
+func (it ownerNavItem) ariaLabel() string {
+	if it.Count < 0 {
+		return it.Label
+	}
+	return it.Label + " (" + itoa(it.Count) + ")"
+}
+
+// OwnerNavBar is the navigation between the owner's spaces, below the top row of
+// the header.
+templ OwnerNavBar(n OwnerNav) {
+	<nav id="owner-nav" class="tabs owner-nav" aria-label="Owner">
+		<ul>
+			for _, it := range ownerNavItems(n) {
+				<li>
+					<a
+						href={ templ.SafeURL(it.Href) }
+						data-nav
+						data-key={ "g " + it.G }
+						aria-label={ it.ariaLabel() }
+						if it.Key == n.Current {
+							aria-current="page"
+						}
+					>
+						<span class={ "ico " + it.Icon } aria-hidden="true"></span>
+						<span class="on-label">{ it.Label }</span>
+						if it.Count >= 0 {
+							if it.Hot {
+								<span class="count hot">{ itoa(it.Count) }</span>
+							} else {
+								<span class="count">{ itoa(it.Count) }</span>
+							}
+						}
+						<kbd aria-hidden="true">{ "g" + it.G }</kbd>
+					</a>
+				</li>
+			}
+		</ul>
+	</nav>
+}

@@ -80,6 +80,19 @@ type Layout struct {
 	// Inbox is the button to the owner's inbox, next to the logo; set on the
 	// home page only, for the signed-in owner.
 	Inbox *InboxButton
+	// OwnerNav is the navigation between the owner's spaces, below the top
+	// row; nil for anyone else and on repository pages.
+	OwnerNav *OwnerNav
+}
+
+// OwnerNav is the navigation between the owner's spaces. Current is the key of
+// the shown space (home, inbox, work, activity, deps, insights). Attention and
+// Work are negative when they could not be read. Deps and Insights tell
+// whether those spaces exist.
+type OwnerNav struct {
+	Current         string
+	Attention, Work int
+	Deps, Insights  bool
 }
 
 // Link is a plain label + href pair.

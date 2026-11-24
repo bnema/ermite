@@ -176,6 +176,9 @@ templ Header(l Layout) {
 				}
 			</div>
 		</div>
+		if l.OwnerNav != nil {
+			@OwnerNavBar(*l.OwnerNav)
+		}
 		if len(l.Sections) > 0 {
 			<nav class="tabs" aria-label="Sections">
 				<ul>

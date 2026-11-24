@@ -43,6 +43,12 @@
   .i-alert-important { --i: url(icons/alert-important.svg); }
   .i-alert-warning { --i: url(icons/alert-warning.svg); }
   .i-alert-caution { --i: url(icons/alert-caution.svg); }
+  .i-folder-git { --i: url(icons/folder-git.svg); }
+  .i-inbox { --i: url(icons/inbox.svg); }
+  .i-git-pull-request { --i: url(icons/git-pull-request.svg); }
+  .i-activity { --i: url(icons/activity.svg); }
+  .i-package { --i: url(icons/package.svg); }
+  .i-chart-line { --i: url(icons/chart-line.svg); }
 
   /* a small tooltip from data-tip, shown above on hover; the element keeps
      its own hidden text for screen readers */
@@ -165,6 +171,13 @@
     & a[aria-current]::after { background: var(--accent); }
     & kbd { opacity: .55; }
     & a:hover kbd, & a:focus-visible kbd, & a[aria-current] kbd { opacity: 1; }
+  }
+  /* the owner's spaces: links in the tabs look, below the top row; the
+     counts sit in a badge, the Inbox one in the accent when it holds items */
+  .owner-nav {
+    & a { gap: var(--s2); }
+    & .count { margin-left: 0; }
+    & .count.hot { color: var(--on-primary); background: var(--primary); }
   }
 
   /* work area: content and rail, centred, the page scrolls */
@@ -314,5 +327,10 @@
     .work { padding-top: var(--s4); }
     .tabs kbd { display: none; }
     .list .c-who, .list .c-desc, .list .c-sub, .list .c-ref, .list .c-size, .list .c-lang { display: none; }
+  }
+  @media (max-width: 640px) {
+    /* the icons and counts carry the owner's spaces; each link keeps its aria-label */
+    .owner-nav { overflow-x: auto; }
+    .owner-nav .on-label { display: none; }
   }
 }
