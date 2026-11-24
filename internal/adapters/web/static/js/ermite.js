@@ -742,6 +742,13 @@
     // The stream goes first: the old one is torn down before the new view lands.
     const regions = ['.hint-live', '#owner-nav', '#view', '#panel-cmd'];
     const focus = (el) => el?.focus({ preventScroll: true });
+    // scroller is what scrolls the page: #main when the shell makes it scroll
+    // (overflow-y auto or scroll), else the document.
+    const scroller = () => {
+      const main = document.querySelector('#main');
+      const y = main && getComputedStyle(main).overflowY;
+      return y === 'auto' || y === 'scroll' ? main : document.scrollingElement;
+    };
     async function go(href, { push = false, replace = false, keepScroll = false, focusHref = '' } = {}) {
       const mine = ++gen;
       const fallback = () => { if (mine === gen) location.assign(href); return false; };
@@ -760,10 +767,10 @@
         }
         document.title = page.title;
         if (push) {
-          history.replaceState({ ermiteNav: 1, y: scrollY }, '');
+          history.replaceState({ ermiteNav: 1, y: scroller().scrollTop }, '');
           history.pushState({ ermiteNav: 1 }, '', href);
         } else if (replace) history.replaceState({ ermiteNav: 1 }, '', href);
-        if (!keepScroll) scrollTo(0, 0);
+        if (!keepScroll) scroller().scrollTop = 0;
         const link = focusHref && [...document.querySelectorAll('#view a[href]')].find((l) => l.href === focusHref);
         focus(link || document.querySelector('#view h1'));
         if (document.activeElement === document.body) focus(document.querySelector('#main'));
@@ -790,7 +797,7 @@
     addEventListener('popstate', async (e) => {
       if (!e.state?.ermiteNav) return;
       const y = e.state.y ?? 0;
-      if (await go(location.href, { push: false, keepScroll: true })) scrollTo(0, y);
+      if (await go(location.href, { push: false, keepScroll: true })) scroller().scrollTop = y;
     });
     return { go };
   })();

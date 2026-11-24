@@ -11,13 +11,21 @@ const block = src.slice(src.indexOf('  // 11. Owner navigation'), src.indexOf(' 
 const ORIGIN = 'https://forge.test';
 const el = (name, extra = {}) => ({ name, ...extra });
 
-function setup({ current = ['#owner-nav', '#view', '#panel-cmd', '.hint-live'], pages = {} } = {}) {
+function setup({ shell = false, current = ['#owner-nav', '#view', '#panel-cmd', '.hint-live'], pages = {} } = {}) {
   const log = [];
   const listeners = {}, winListeners = {};
   const g0 = {};
   const focusable = (name) => ({ focus(o) { log.push(['focus', name, o]); g0.doc.activeElement = this; } });
   const h1 = focusable('h1');
   const main = focusable('main');
+  // A scroll position that logs its writes, for #main and the document.
+  const scrolls = (box, name, top) => {
+    let v = top;
+    Object.defineProperty(box, 'scrollTop', { get: () => v, set: (y) => { v = y; log.push(['scroll', name, y]); } });
+    return box;
+  };
+  scrolls(main, 'main', 120);
+  const root = scrolls({}, 'root', 80);
   const links = [Object.assign(focusable('link'), { href: ORIGIN + '/-/activity?range=7d' })];
   const doc = Object.fromEntries(current.map((s) => [s, el('old ' + s)]));
   const filter = { value: 'abc' };
@@ -30,6 +38,7 @@ function setup({ current = ['#owner-nav', '#view', '#panel-cmd', '.hint-live'], 
     document: {
       title: 'old',
       body: {},
+      scrollingElement: root,
       activeElement: null,
       querySelector: (s) => (s === '#view h1' ? h1 : s === '#main' ? main : doc[s] || null),
       querySelectorAll: (s) => (s === '#view input[data-filter]' ? [filter, { value: '' }] : s === '#view a[href]' ? links : []),
@@ -45,8 +54,7 @@ function setup({ current = ['#owner-nav', '#view', '#panel-cmd', '.hint-live'], 
       return { ok: r.ok ?? true, redirected: !!r.redirected, text: async () => { await r.wait; if (r.throw) throw new Error('x'); return r.html; } };
     },
     respond: () => ({ html: 'full' }),
-    scrollY: 120,
-    scrollTo: (x, y) => log.push(['scroll', x, y]),
+    getComputedStyle: (e) => ({ overflowY: e === main && shell ? 'auto' : 'visible' }),
     addEventListener: (n, fn) => { winListeners[n] = fn; },
   };
   g0.doc = g.document;
@@ -100,9 +108,9 @@ test('a plain click swaps the regions in order, then pushes, titles, focuses and
     ['region', 'old #owner-nav', 'new #owner-nav'],
     ['region', 'old #view', 'new #view'],
     ['region', 'old #panel-cmd', 'new #panel-cmd'],
-    ['replace', { ermiteNav: 1, y: 120 }, undefined],
+    ['replace', { ermiteNav: 1, y: 80 }, undefined],
     ['push', { ermiteNav: 1 }, ORIGIN + '/-/work'],
-    ['scroll', 0, 0],
+    ['scroll', 'root', 0],
     ['focus', 'h1', { preventScroll: true }],
     ['fit'],
     ['hide', 'abc'],
@@ -179,7 +187,7 @@ test('popstate of an owner page swaps without pushing; other states are left alo
   assert.equal(log[0][1], ORIGIN + '/-/inbox');
   assert.ok(log.some((l) => l[0] === 'region'));
   assert.ok(!log.some((l) => l[0] === 'push' || l[0] === 'replace'));
-  assert.deepEqual(log.filter((l) => l[0] === 'scroll'), [['scroll', 0, 300]], 'only the saved position');
+  assert.deepEqual(log.filter((l) => l[0] === 'scroll'), [['scroll', 'root', 300]], 'only the saved position');
 });
 
 for (const [name, slow] of [['refused', { ok: false }], ['throwing', { throw: true }]]) {
@@ -243,4 +251,17 @@ test('a click on the current page swaps and replaces the history entry', async (
   assert.equal(c.prevented(), true);
   assert.ok(!log.some((l) => l[0] === 'push'));
   assert.deepEqual(log.filter((l) => l[0] === 'replace'), [['replace', { ermiteNav: 1 }, ORIGIN + '/-/work']]);
+});
+
+test('in the app shell #main is the scroller: saved, reset and restored there', async () => {
+  const { nav, winListeners, log, g } = setup({ shell: true, pages: { full: all } });
+  log.length = 0;
+  await nav.go(ORIGIN + '/-/work', { push: true });
+  assert.deepEqual(log.filter((l) => l[0] === 'replace' || l[0] === 'scroll'),
+    [['replace', { ermiteNav: 1, y: 120 }, undefined], ['scroll', 'main', 0]]);
+  g.location.href = ORIGIN + '/';
+  log.length = 0;
+  winListeners.popstate({ state: { ermiteNav: 1, y: 120 } });
+  await flush();
+  assert.deepEqual(log.filter((l) => l[0] === 'scroll'), [['scroll', 'main', 120]]);
 });
