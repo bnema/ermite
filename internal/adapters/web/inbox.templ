@@ -172,47 +172,6 @@ templ InboxPending(p InboxPage) {
 	</section>
 }
 
-templ InboxMRs(p InboxPage) {
-	<section id="inbox-mrs" aria-labelledby="inbox-mrs-h">
-		<h2 id="inbox-mrs-h" class="rule-h"><span>Open merge requests</span><span class="count">{ itoa(len(p.MRs)) }</span></h2>
-		@inboxRows(p.MRs, "Open merge requests")
-		if len(p.MRs) == 0 {
-			<p class="lede dim">no open merge requests.</p>
-		}
-	</section>
-}
-
-templ InboxIssues(p InboxPage) {
-	<section id="inbox-issues" aria-labelledby="inbox-issues-h">
-		<h2 id="inbox-issues-h" class="rule-h"><span>Open issues</span><span class="count">{ itoa(len(p.IssueRows)) }</span></h2>
-		@inboxRows(p.IssueRows, "Open issues")
-		if len(p.IssueRows) == 0 {
-			<p class="lede dim">no open issues.</p>
-		}
-	</section>
-}
-
-templ inboxRows(rows []InboxRow, label string) {
-	if len(rows) > 0 {
-		<table class="list mrs" aria-label={ label }>
-			<tbody data-rows>
-				for _, m := range rows {
-					<tr data-cursor?={ m.Cursor } data-state="open">
-						<td class="c-n mute">{ m.Number }</td>
-						<td class="c-subject"><a href={ templ.SafeURL(m.Href) }>{ m.Title }</a> <a class="mute" href={ templ.SafeURL(m.RepoHref) }>{ m.Repo }</a></td>
-						<td class="c-ck">@CommitChecks(m.Checks)</td>
-						<td class="c-when nowrap dim">
-							if m.WhenAt != "" {
-								<time datetime={ m.WhenAt } title={ m.WhenAt }>{ m.When }</time>
-							}
-						</td>
-					</tr>
-				}
-			</tbody>
-		</table>
-	}
-}
-
 // InboxRuns stays as an empty fragment when CI is disabled.
 templ InboxRuns(p InboxPage) {
 	<section

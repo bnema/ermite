@@ -393,23 +393,6 @@ func TestInboxZeroHeadReadsNoChecks(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "ck-sum")
 }
 
-func TestInboxReadsChecksOncePerHead(t *testing.T) {
-	t.Parallel()
-	head := fmt.Sprintf("%040x", 7)
-	repo := repoName(t, "alpha")
-	ov := inboxOverviewWithHead(t, head)
-	second := ov.MergeRequests[0]
-	second.Number = 5
-	ov.MergeRequests = append(ov.MergeRequests, second)
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, ov)
-	runs := mocks.NewRunService(t)
-	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{}, nil).Once()
-	srv := inboxChecksServer(t, svc, runs)
-
-	require.Equal(t, 200, inboxGet(srv, "/-/inbox", true).Code)
-}
-
 // Every tab shows the open work count and its own count, but renders only its
 // own sections, including on live refresh. Plain hrefs make selection work without JavaScript.
 func TestInboxTabs(t *testing.T) {

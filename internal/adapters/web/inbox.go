@@ -428,42 +428,7 @@ func (s *Server) inboxPage(ctx context.Context, d inboxReads, tab string, rng in
 	for _, pi := range d.pending {
 		p.Pending = append(p.Pending, s.pendingRow(now, pi))
 	}
-	row := func(repo domain.RepoName, n int64, href, title string, updated, created time.Time) InboxRow {
-		ts := updated
-		if ts.IsZero() {
-			ts = created
-		}
-		r := InboxRow{
-			Repo: repo.String(), RepoHref: repoHref(repo.String()),
-			Number: "#" + strconv.FormatInt(n, 10), Href: href, Title: visibleText(title),
-		}
-		r.When, r.WhenAt = whenOf(now, ts)
-		return r
-	}
-	sums := make(map[string]ChecksSummary) // one read per (repo, head)
-	for _, m := range d.work.MergeRequests {
-		r := row(m.Repo, m.Number, mrHref(m.Repo.String(), m.Number), m.Title.String(), m.UpdatedAt, m.CreatedAt)
-		if !m.HeadID.IsZero() {
-			head := m.HeadID.String()
-			key := m.Repo.String() + "@" + head
-			sum, ok := sums[key]
-			if !ok {
-				sum = checksSummary(m.Repo, head, s.checksFor(ctx, m.Repo, head))
-				sums[key] = sum
-			}
-			r.Checks = sum
-		}
-		p.MRs = append(p.MRs, r)
-	}
-	for _, i := range d.work.Issues {
-		p.IssueRows = append(p.IssueRows, row(i.Repo, i.Number, issueHref(i.Repo.String(), i.Number), i.Title.String(), i.UpdatedAt, i.CreatedAt))
-	}
-	switch {
-	case len(p.MRs) > 0:
-		p.MRs[0].Cursor = true
-	case len(p.IssueRows) > 0:
-		p.IssueRows[0].Cursor = true
-	}
+	p.MRs, p.IssueRows = s.workRows(ctx, d.work)
 	p.Journal = s.journalView(d.journal, rng)
 	// Open work is counted on every tab; the other tabs are counted only on
 	// themselves, where their data is read.
