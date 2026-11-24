@@ -760,6 +760,8 @@
         if (mine !== gen) return false;
         if (!page.querySelector('#view')) return fallback();
         if (regions.some((sel) => !document.querySelector(sel) !== !page.querySelector(sel))) return fallback();
+        // Read before the swaps: a shorter new view clamps the scroll.
+        const y = scroller().scrollTop;
         for (const sel of regions) {
           const old = document.querySelector(sel), fresh = page.querySelector(sel);
           if (old && fresh) await window.ermiteLive.replaceRegion(old, fresh);
@@ -767,7 +769,7 @@
         }
         document.title = page.title;
         if (push) {
-          history.replaceState({ ermiteNav: 1, y: scroller().scrollTop }, '');
+          history.replaceState({ ermiteNav: 1, y }, '');
           history.pushState({ ermiteNav: 1 }, '', href);
         } else if (replace) history.replaceState({ ermiteNav: 1 }, '', href);
         if (!keepScroll) scroller().scrollTop = 0;
@@ -793,7 +795,11 @@
       const same = a.href === location.href;
       go(a.href, { push: !same, replace: same, keepScroll, focusHref: keepScroll ? a.href : '' });
     });
-    if (document.querySelector('#view')) history.replaceState({ ermiteNav: 1 }, '', location.href);
+    if (document.querySelector('#view')) {
+      // The popstate handler restores the scroll; the browser must not jump first.
+      history.scrollRestoration = 'manual';
+      history.replaceState({ ermiteNav: 1 }, '', location.href);
+    }
     addEventListener('popstate', async (e) => {
       if (!e.state?.ermiteNav) return;
       const y = e.state.y ?? 0;

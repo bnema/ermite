@@ -66,7 +66,7 @@ function setup({ shell = false, current = ['#owner-nav', '#view', '#panel-cmd', 
   };
   const names = Object.keys(g);
   const nav = new Function(...names, block.replaceAll('window.ermiteNav =', 'return'))(...names.map((n) => g[n]));
-  return { nav, g, log, listeners, winListeners, h1, doc };
+  return { nav, g, log, listeners, winListeners, h1, doc, root, main };
 }
 
 const all = ['#owner-nav', '#view', '#panel-cmd', '.hint-live'];
@@ -78,8 +78,9 @@ const click = (over = {}) => {
 };
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-test('load records the owner page in history', () => {
-  const { log } = setup();
+test('load records the owner page in history and takes over scroll restoration', () => {
+  const { log, g } = setup();
+  assert.equal(g.history.scrollRestoration, 'manual');
   assert.deepEqual(log, [['replace', { ermiteNav: 1 }, ORIGIN + '/']]);
 });
 
@@ -264,4 +265,13 @@ test('in the app shell #main is the scroller: saved, reset and restored there', 
   winListeners.popstate({ state: { ermiteNav: 1, y: 120 } });
   await flush();
   assert.deepEqual(log.filter((l) => l[0] === 'scroll'), [['scroll', 'main', 120]]);
+});
+
+test('the saved position is read before a shorter view clamps it', async () => {
+  const { nav, log, g, root } = setup({ pages: { full: all } });
+  const swap = g.window.ermiteLive.replaceRegion;
+  g.window.ermiteLive.replaceRegion = async (o, f) => { if (o.name === 'old #view') root.scrollTop = 10; return swap(o, f); };
+  log.length = 0;
+  await nav.go(ORIGIN + '/-/work', { push: true });
+  assert.deepEqual(log.find((l) => l[0] === 'replace'), ['replace', { ermiteNav: 1, y: 80 }, undefined]);
 });
