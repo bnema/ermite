@@ -23,7 +23,7 @@ func TestInboxTraffic(t *testing.T) {
 		t.Run(rng, func(t *testing.T) {
 			t.Parallel()
 			svc := mocks.NewInboxService(t)
-			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil)
+			expectInbox(svc, inboxFixture{})
 			srv := inboxServer(t, svc)
 			f := mocks.NewTrafficService(t)
 			data := ports.TrafficForge{
@@ -80,7 +80,7 @@ func TestInboxTrafficUnavailableAndEmpty(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			svc := mocks.NewInboxService(t)
-			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
+			expectInbox(svc, inboxFixture{})
 			srv := inboxServer(t, svc)
 			switch mode {
 			case "recorder only":

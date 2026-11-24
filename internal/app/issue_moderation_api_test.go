@@ -119,11 +119,16 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 
 	// The inbox lists what awaits.
 	r.pending("pub", "fourth")
-	ov, err := r.forge.Inbox.Overview(ctx, domain.Root())
+	items, err := r.forge.Inbox.Attention(ctx, domain.Root())
 	require.NoError(t, err)
-	assert.Equal(t, 1, ov.Counts.Pending)
-	require.Len(t, ov.Pending, 1)
-	assert.Nil(t, ov.Pending[0].IPHash)
+	var pending []*domain.PendingIssue
+	for _, it := range items {
+		if it.Kind == ports.AttentionModeration {
+			pending = append(pending, it.Pending)
+		}
+	}
+	require.Len(t, pending, 1)
+	assert.Nil(t, pending[0].IPHash)
 
 	// The public mode is accepted.
 	pub := domain.IssuesPublic

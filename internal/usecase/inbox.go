@@ -166,7 +166,7 @@ func NewInbox(cfg InboxConfig) *Inbox {
 
 // Journal reads the entries of the window from the journal, leaving out those
 // of repositories that are gone or were created again since, and the issues of
-// a repository whose issues are off (as Overview does). The store applies
+// a repository whose issues are off (as Work does). The store applies
 // that filter during its one scan and keeps the newest MaxJournalEntries:
 // entries left out do not hide older ones. It
 // also measures, for each repository with a tag, the commits of its default
@@ -607,40 +607,6 @@ func (in *Inbox) withHeads(ctx context.Context, mrs []domain.MergeRequest) error
 		}
 	}
 	return nil
-}
-
-// Overview lists what is open across every repository through the open-item indexes.
-func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxOverview, error) {
-	var out ports.InboxOverview
-	if !p.HasOwnerRights() {
-		return out, domain.ErrNotFound
-	}
-	look := newRepoLook(in.meta)
-	work, err := in.openWork(ctx, look)
-	if err != nil {
-		return out, err
-	}
-	out.MergeRequests, out.Issues = work.MergeRequests, work.Issues
-	out.Counts.MergeRequests, out.Counts.Issues = len(out.MergeRequests), len(out.Issues)
-	if out.Pending, err = in.pendingIssues(ctx, look); err != nil {
-		return out, err
-	}
-	out.Counts.Pending = len(out.Pending)
-	runs, err := in.openRuns(ctx, look)
-	if err != nil {
-		return out, err
-	}
-	out.RunsEnabled, out.Runs, out.Counts.Running = runs.Enabled, runs.Runs, len(runs.Runs)
-	deps, err := in.visibleDeps(ctx, look)
-	if err != nil {
-		return out, err
-	}
-	out.DepsQueue, out.Deps, out.DepsCheckedAt = deps.Queue, deps.Deps, deps.CheckedAt
-	out.Counts.Deps = len(out.Deps) // one per batch: each is a row of out.Deps
-	if err := in.withHeads(ctx, out.MergeRequests); err != nil {
-		return out, err
-	}
-	return out, nil
 }
 
 // Work lists the open merge requests, with their head, and issues across

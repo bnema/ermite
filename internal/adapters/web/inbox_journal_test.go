@@ -22,7 +22,7 @@ import (
 
 func journalServer(t *testing.T, svc *mocks.InboxService) *Server {
 	t.Helper()
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
+	expectInbox(svc, inboxFixture{})
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -136,7 +136,7 @@ func TestInboxJournalStreamRange(t *testing.T) {
 	t.Parallel()
 	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
+	expectInbox(svc, inboxFixture{})
 	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(sampleJournal(t), nil).Once()
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,

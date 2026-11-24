@@ -37,12 +37,11 @@ func depsRun(number int64, status domain.CIStatus) *domain.CIRun {
 	return &domain.CIRun{ID: 12, Number: number, Status: status}
 }
 
-func depsOverview(t testing.TB) ports.InboxOverview {
+func depsOverview(t testing.TB) inboxFixture {
 	rec := depsRec(t)
 	ov := inboxOverview(t)
 	ov.Deps = []ports.InboxDeps{{Rec: rec, Batch: *rec.Base(), Run: depsRun(3, domain.CICompleted)}}
 	ov.DepsCheckedAt = rec.CheckedAt
-	ov.Counts.Deps = 1
 	return ov
 }
 
@@ -191,7 +190,7 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	emptyJournal(svc)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
+	expectInbox(svc, depsOverview(t))
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -205,7 +204,7 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 func TestInboxDepsEmptyFragmentIsHidden(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverview(t), nil)
+	expectInbox(svc, inboxOverview(t))
 	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox?tab=deps", true).Body.String()
 	assert.Regexp(t, `<section id="inbox-deps" data-keep-open hidden>`, body)
 	assert.NotContains(t, body, "Dependency updates<")
@@ -289,7 +288,7 @@ func TestInboxDepsActions(t *testing.T) {
 func TestInboxDepsLiveFragment(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
+	expectInbox(svc, depsOverview(t))
 	srv := depsServer(t, svc, mocks.NewDepsService(t))
 	ls := &liveStream{s: srv, view: "inbox", tab: "deps"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.DependencyUpdatesFound{Repo: repoName(t, "alpha"), Count: 2}})
@@ -305,7 +304,7 @@ func TestInboxDepsLiveFragment(t *testing.T) {
 func TestInboxDepsChangedRefreshesTheLiveView(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
+	expectInbox(svc, depsOverview(t))
 	ls := &liveStream{s: depsServer(t, svc, mocks.NewDepsService(t)), view: "inbox", tab: "deps"}
 	ev := ports.WatchEvent{ID: "b-2", Event: domain.DependencyUpdatesChanged{Repo: repoName(t, "alpha")}}
 	assert.True(t, liveEvent(ev))
@@ -335,7 +334,7 @@ func depsUp(eco domain.DepsEcosystem, name, cur, ver string) domain.DepUpdate {
 
 // treeOverview: gordon has a failed base batch and two major families; lazy
 // has more updates but no failure; idle has a single base batch.
-func treeOverview(t testing.TB) ports.InboxOverview {
+func treeOverview(t testing.TB) inboxFixture {
 	ov := depsOverview(t)
 	gordon := depsRec(t)
 	gordon.Repo = repoName(t, "gordon")
@@ -371,10 +370,10 @@ func treeOverview(t testing.TB) ports.InboxOverview {
 	return ov
 }
 
-func depsSection(t *testing.T, path string, ov ports.InboxOverview) string {
+func depsSection(t *testing.T, path string, ov inboxFixture) string {
 	t.Helper()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
+	expectInbox(svc, ov)
 	rec := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), path, true)
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
@@ -666,7 +665,7 @@ func TestInboxDepsRepoActions(t *testing.T) {
 	t.Run("htmx swaps the repository row, open", func(t *testing.T) {
 		t.Parallel()
 		inbox := mocks.NewInboxService(t)
-		inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil).Once()
+		expectInbox(inbox, depsOverview(t))
 		deps := mocks.NewDepsService(t)
 		deps.EXPECT().Check(mock.Anything, mock.Anything, alpha).Return(domain.RepoDeps{}, nil).Once()
 		rec := post(depsServer(t, inbox, deps), "/-/inbox/deps/alpha/recheck", nil, true)
@@ -690,7 +689,7 @@ func TestInboxAsyncDeps(t *testing.T) {
 				if gone {
 					after.Deps = nil
 				}
-				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+				expectInbox(inbox, after)
 				switch op {
 				case "open":
 					deps.EXPECT().Open(mock.Anything, mock.Anything, repoName(t, "alpha"), domain.DepBatchKey(""), mock.Anything).Return(domain.RepoDeps{}, nil).Once()
@@ -804,7 +803,7 @@ func TestInboxDepsActionRefreshesTheHeader(t *testing.T) {
 	ov := depsOverview(t)
 	ov.DepsCheckedAt = time.Date(2026, 3, 5, 6, 0, 0, 0, time.UTC)
 	inbox := mocks.NewInboxService(t)
-	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+	expectInbox(inbox, ov)
 	deps := mocks.NewDepsService(t)
 	deps.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha")).Return(domain.RepoDeps{}, nil).Once()
 	req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/recheck", nil)
@@ -869,7 +868,7 @@ func TestInboxDepsActionRefreshesTheTable(t *testing.T) {
 		}
 	}
 	inbox := mocks.NewInboxService(t)
-	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+	expectInbox(inbox, after)
 	deps := mocks.NewDepsService(t)
 	deps.EXPECT().Open(mock.Anything, mock.Anything, repoName(t, "gordon"), domain.DepBatchKey(""), mock.Anything).Return(domain.RepoDeps{}, nil).Once()
 	req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/gordon/open?filter=failures", strings.NewReader(url.Values{"batch": {""}}.Encode()))
@@ -890,7 +889,7 @@ func TestInboxDepsActionRefreshesTheTable(t *testing.T) {
 	// without a filter, the acted-on row comes back open, the others as
 	// the server shows them (the page keeps what the user opened)
 	inbox = mocks.NewInboxService(t)
-	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+	expectInbox(inbox, after)
 	deps = mocks.NewDepsService(t)
 	deps.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "lazy")).Return(domain.RepoDeps{}, nil).Once()
 	req = httptest.NewRequest(http.MethodPost, "/-/inbox/deps/lazy/recheck", nil)

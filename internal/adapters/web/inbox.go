@@ -360,26 +360,37 @@ func inboxHref(tab string, rng int) string {
 	return inboxPath
 }
 
-// inboxPage builds the page from the overview and the journal.
-func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, tab string, rng int, dq depsQuery) InboxPage {
+// inboxReads is what a tab read: the data of its own section, and the
+// owner counts for the labels of the other tabs.
+type inboxReads struct {
+	work    ports.InboxWork
+	runs    ports.InboxRuns
+	deps    ports.InboxDepsView
+	pending []domain.PendingIssue
+	journal ports.InboxJournal
+	counts  ports.OwnerCounts
+}
+
+// inboxPage builds the page from what the tab read.
+func (s *Server) inboxPage(ctx context.Context, d inboxReads, tab string, rng int, dq depsQuery) InboxPage {
 	// Links to other tabs reset the traffic-specific window.
 	if tab == "traffic" {
 		rng = 0
 	}
 	now := s.cfg.Now()
-	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Tab: tab}
-	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
-	p.DepsCount, p.DepsEnabled = ov.Counts.Deps, s.cfg.Deps != nil
+	p := InboxPage{MergeRequests: len(d.work.MergeRequests), Issues: len(d.work.Issues), PendingCount: len(d.pending), Tab: tab}
+	p.Running, p.RunsEnabled = len(d.runs.Runs), d.runs.Enabled
+	p.DepsCount, p.DepsEnabled = len(d.deps.Deps), s.cfg.Deps != nil
 	var all []InboxDepsRow
-	for _, d := range ov.Deps {
+	for _, d := range d.deps.Deps {
 		row := s.depsRow(d, "")
 		all = append(all, row)
 		p.DepsUpdates += row.Count
 	}
 	p.DepsBatches = len(all)
-	p.Deps = s.depsRepos(ov.Deps, dq)
+	p.Deps = s.depsRepos(d.deps.Deps, dq)
 	p.DepsFilters = depsFilters(all, dq, rng)
-	p.DepsQueue = depsQueueText(ov.DepsQueue)
+	p.DepsQueue = depsQueueText(d.deps.Queue)
 	sort := dq.sort
 	for _, o := range []struct{ param, label string }{{"", "most updates"}, {depsSortName, "name"}} {
 		href := inboxHref("deps", rng)
@@ -399,10 +410,10 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		}
 		p.DepsSorts = append(p.DepsSorts, InboxNavLink{Label: o.label, Href: href + "#inbox-deps", Current: o.param == sort})
 	}
-	if !ov.DepsCheckedAt.IsZero() {
-		p.DepsChecked, p.DepsCheckedAt = ov.DepsCheckedAt.UTC().Format("2006-01-02 15:04"), rfc3339(ov.DepsCheckedAt)
+	if at := d.deps.CheckedAt; !at.IsZero() {
+		p.DepsChecked, p.DepsCheckedAt = at.UTC().Format("2006-01-02 15:04"), rfc3339(at)
 	}
-	for _, run := range ov.Runs {
+	for _, run := range d.runs.Runs {
 		r := InboxRunRow{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}
 		if run.Status == domain.CIInProgress {
 			r.State = "in progress"
@@ -414,7 +425,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		r.When, r.WhenAt = whenOf(now, ts)
 		p.Runs = append(p.Runs, r)
 	}
-	for _, pi := range ov.Pending {
+	for _, pi := range d.pending {
 		p.Pending = append(p.Pending, s.pendingRow(now, pi))
 	}
 	row := func(repo domain.RepoName, n int64, href, title string, updated, created time.Time) InboxRow {
@@ -430,7 +441,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		return r
 	}
 	sums := make(map[string]ChecksSummary) // one read per (repo, head)
-	for _, m := range ov.MergeRequests {
+	for _, m := range d.work.MergeRequests {
 		r := row(m.Repo, m.Number, mrHref(m.Repo.String(), m.Number), m.Title.String(), m.UpdatedAt, m.CreatedAt)
 		if !m.HeadID.IsZero() {
 			head := m.HeadID.String()
@@ -444,7 +455,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		}
 		p.MRs = append(p.MRs, r)
 	}
-	for _, i := range ov.Issues {
+	for _, i := range d.work.Issues {
 		p.IssueRows = append(p.IssueRows, row(i.Repo, i.Number, issueHref(i.Repo.String(), i.Number), i.Title.String(), i.UpdatedAt, i.CreatedAt))
 	}
 	switch {
@@ -453,17 +464,27 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 	case len(p.IssueRows) > 0:
 		p.IssueRows[0].Cursor = true
 	}
-	p.Journal = s.journalView(j, rng)
+	p.Journal = s.journalView(d.journal, rng)
+	// Open work is counted on every tab; the other tabs are counted only on
+	// themselves, where their data is read.
+	work := d.counts.Work
+	if tab == "work" {
+		work = p.MergeRequests + p.Issues
+	}
 	for _, t := range []struct {
 		key, label string
 		count      int
 	}{
 		{"deps", "Deps Updates", p.DepsUpdates},
-		{"work", "Open Issues & Merge Requests", p.MergeRequests + p.Issues},
+		{"work", "Open Issues & Merge Requests", work},
 		{"activity", "Activity", len(p.Runs) + len(p.Journal.Rows) + p.Journal.unreleasedCount()},
 		{"moderation", "Awaiting Moderation", p.PendingCount},
 	} {
-		p.Tabs = append(p.Tabs, InboxNavLink{Label: t.label + " (" + itoa(t.count) + ")", Href: inboxHref(t.key, rng), Current: t.key == tab})
+		label := t.label
+		if t.key == tab || t.key == "work" {
+			label += " (" + itoa(t.count) + ")"
+		}
+		p.Tabs = append(p.Tabs, InboxNavLink{Label: label, Href: inboxHref(t.key, rng), Current: t.key == tab})
 	}
 
 	if _, ok := s.cfg.Traffic.(TrafficForgeReader); ok {
@@ -472,34 +493,60 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 	return p
 }
 
-// inboxData reads what the page shows: the overview and the journal of the
-// range.
+// inboxData reads what the tab shows, and the owner counts for the work tab
+// label when the tab is not open work itself.
 func (s *Server) inboxData(ctx context.Context, tab string, rng int, sort depsQuery) (InboxPage, error) {
 	if tab == "traffic" {
 		if _, ok := s.cfg.Traffic.(TrafficForgeReader); !ok {
 			return InboxPage{}, errNotFound
 		}
 	}
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
+	p := principal(ctx)
+	var d inboxReads
+	var err error
+	switch tab {
+	case "work":
+		d.work, err = s.cfg.Inbox.Work(ctx, p)
+	case "activity":
+		if d.runs, err = s.cfg.Inbox.Runs(ctx, p); err == nil {
+			d.journal, err = s.cfg.Inbox.Journal(ctx, p, journalRanges[rng].window)
+		}
+	case "deps":
+		d.deps, err = s.cfg.Inbox.Deps(ctx, p)
+	case "moderation":
+		d.pending, err = s.pendingIssues(ctx)
+	}
 	if err != nil {
 		return InboxPage{}, err
 	}
-	journalRange := rng
-	if tab == "traffic" {
-		journalRange = 0
+	if tab != "work" {
+		if d.counts, err = s.cfg.Inbox.Counts(ctx, p); err != nil {
+			return InboxPage{}, err
+		}
 	}
-	j, err := s.cfg.Inbox.Journal(ctx, principal(ctx), journalRanges[journalRange].window)
-	if err != nil {
-		return InboxPage{}, err
-	}
-	p := s.inboxPage(ctx, ov, j, tab, rng, sort)
+	page := s.inboxPage(ctx, d, tab, rng, sort)
 	if tab == "traffic" {
-		p.Traffic, err = s.inboxTraffic(ctx, rng)
+		page.Traffic, err = s.inboxTraffic(ctx, rng)
 		if err != nil {
 			return InboxPage{}, err
 		}
 	}
-	return p, nil
+	return page, nil
+}
+
+// pendingIssues is the moderation queue: the moderation items of Attention.
+func (s *Server) pendingIssues(ctx context.Context) ([]domain.PendingIssue, error) {
+	items, err := s.cfg.Inbox.Attention(ctx, principal(ctx))
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.PendingIssue
+	for _, it := range items {
+		if it.Kind == ports.AttentionModeration && it.Pending != nil {
+			out = append(out, *it.Pending)
+		}
+	}
+	return out, nil
 }
 
 // pendingRow is the row of a pending issue: the texts as plain strings, the
@@ -609,11 +656,11 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 	if s.cfg.Inbox == nil || !SignedIn(ctx) {
 		return 0, false
 	}
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
+	c, err := s.cfg.Inbox.Counts(ctx, principal(ctx))
 	if err != nil {
 		return -1, true
 	}
-	return ov.Counts.MergeRequests + ov.Counts.Issues, true
+	return c.Work, true
 }
 
 // inbox renders the fragments an event of a merge request, an issue, a
@@ -655,11 +702,11 @@ func (s *Server) pendingResult(ctx context.Context, r *http.Request) (ActionResu
 	if !isHX(r) {
 		return result, nil
 	}
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
+	pending, err := s.pendingIssues(ctx)
 	if err != nil {
 		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
-	result.Fragment = inboxModerated(pendingRowID(r.PathValue("repo"), r.PathValue("id")), ov.Counts.Pending)
+	result.Fragment = inboxModerated(pendingRowID(r.PathValue("repo"), r.PathValue("id")), len(pending))
 	return result, nil
 }
 

@@ -563,12 +563,12 @@ func (s *Server) depsResult(ctx context.Context, r *http.Request) (ActionResult,
 	if !isHX(r) {
 		return result, nil
 	}
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
+	deps, err := s.cfg.Inbox.Deps(ctx, principal(ctx))
 	if err != nil {
 		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	repo := r.PathValue("repo")
-	p := s.inboxPage(ctx, ov, ports.InboxJournal{}, "deps", 0, depsQueryOf(r))
+	p := s.inboxPage(ctx, inboxReads{deps: deps}, "deps", 0, depsQueryOf(r))
 	for i := range p.Deps {
 		if p.Deps[i].Repo == repo {
 			p.Deps[i].Open = true

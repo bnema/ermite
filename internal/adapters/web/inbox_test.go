@@ -22,20 +22,46 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-func inboxOverview(t testing.TB) ports.InboxOverview {
+// inboxFixture is what the inbox tests serve: every section at once.
+// expectInbox answers each focused read of InboxService from it.
+type inboxFixture struct {
+	DepsQueue     ports.DepsQueue
+	Deps          []ports.InboxDeps
+	DepsCheckedAt time.Time
+	Runs          []domain.CIRun
+	RunsEnabled   bool
+	MergeRequests []domain.MergeRequest
+	Issues        []domain.Issue
+	Pending       []domain.PendingIssue
+}
+
+// expectInbox lets svc answer every focused read from ov, as many times as
+// asked.
+func expectInbox(svc *mocks.InboxService, ov inboxFixture) {
+	svc.EXPECT().Work(mock.Anything, mock.Anything).Return(ports.InboxWork{MergeRequests: ov.MergeRequests, Issues: ov.Issues}, nil).Maybe()
+	svc.EXPECT().Runs(mock.Anything, mock.Anything).Return(ports.InboxRuns{Enabled: ov.RunsEnabled, Runs: ov.Runs}, nil).Maybe()
+	svc.EXPECT().Deps(mock.Anything, mock.Anything).Return(ports.InboxDepsView{Queue: ov.DepsQueue, Deps: ov.Deps, CheckedAt: ov.DepsCheckedAt}, nil).Maybe()
+	var items []ports.AttentionItem
+	for i := range ov.Pending {
+		items = append(items, ports.AttentionItem{Kind: ports.AttentionModeration, Repo: ov.Pending[i].Repo, Pending: &ov.Pending[i]})
+	}
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return(items, nil).Maybe()
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: len(items), Work: len(ov.MergeRequests) + len(ov.Issues)}, nil).Maybe()
+}
+
+func inboxOverview(t testing.TB) inboxFixture {
 	t.Helper()
 	mrTitle, err := domain.ParseMRTitle("fix <b>search</b>")
 	require.NoError(t, err)
 	isTitle, err := domain.ParseIssueTitle("crash on start")
 	require.NoError(t, err)
 	at := time.Now().Add(-2 * time.Hour)
-	ov := ports.InboxOverview{
+	ov := inboxFixture{
 		MergeRequests: []domain.MergeRequest{{
 			Repo: repoName(t, "alpha"), Number: 4, Title: mrTitle, State: domain.MRStateOpen, UpdatedAt: at,
 		}},
 		Issues: []domain.Issue{{Repo: repoName(t, "beta"), Number: 7, Title: isTitle, State: domain.IssueStateOpen, UpdatedAt: at}},
 	}
-	ov.Counts = ports.InboxCounts{MergeRequests: 1, Issues: 1}
 	return ov
 }
 
@@ -69,7 +95,7 @@ func inboxGet(srv *Server, path string, owner bool) *httptest.ResponseRecorder {
 func TestInboxPageForTheOwner(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverview(t), nil)
+	expectInbox(svc, inboxOverview(t))
 	srv := inboxServer(t, svc)
 
 	rec := inboxGet(srv, "/-/inbox", true)
@@ -116,9 +142,7 @@ func TestInboxNotMountedWithoutTheService(t *testing.T) {
 func TestInboxButtonOnHomeIsForTheOwnerOnly(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	ov := inboxOverview(t)
-	ov.Counts = ports.InboxCounts{MergeRequests: 3, Issues: 2}
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once() // the owner's home only
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Work: 5}, nil).Once() // the owner's home only
 	srv := inboxServer(t, svc)
 
 	anon := inboxGet(srv, "/", false)
@@ -165,7 +189,7 @@ func TestInboxStreamIsTheOwnersAlone(t *testing.T) {
 func TestInboxLiveFragments(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverview(t), nil)
+	expectInbox(svc, inboxOverview(t))
 	srv := inboxServer(t, svc)
 	ls := &liveStream{s: srv, view: "inbox"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
@@ -232,7 +256,7 @@ func TestInboxStreamEndsWhenTheSessionEnds(t *testing.T) {
 	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
 	sess, ended := newRevocable(t, "tok")
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverview(t), nil).Maybe()
+	expectInbox(svc, inboxOverview(t))
 	emptyJournal(svc)
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
@@ -286,9 +310,9 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			after := ports.InboxOverview{}
+			after := inboxFixture{}
 			svc := mocks.NewInboxService(t)
-			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil)
+			expectInbox(svc, after)
 			srv := inboxServer(t, svc)
 			ls := &liveStream{s: srv, view: "inbox"}
 			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
@@ -305,7 +329,7 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 	}
 }
 
-func inboxOverviewWithHead(t testing.TB, head string) ports.InboxOverview {
+func inboxOverviewWithHead(t testing.TB, head string) inboxFixture {
 	t.Helper()
 	ov := inboxOverview(t)
 	if head != "" {
@@ -330,7 +354,7 @@ func TestInboxMRRowsShowTheCIIcon(t *testing.T) {
 	head := fmt.Sprintf("%040x", 7)
 	repo := repoName(t, "alpha")
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverviewWithHead(t, head), nil).Twice()
+	expectInbox(svc, inboxOverviewWithHead(t, head))
 	runs := mocks.NewRunService(t)
 	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
 		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CICompleted, Conclusion: domain.CISuccess}},
@@ -353,7 +377,7 @@ func TestInboxMRRowsShowTheCIIcon(t *testing.T) {
 func TestInboxZeroHeadReadsNoChecks(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverviewWithHead(t, ""), nil)
+	expectInbox(svc, inboxOverviewWithHead(t, ""))
 	runs := mocks.NewRunService(t) // any ListChecks call fails the test
 	srv := inboxChecksServer(t, svc, runs)
 
@@ -371,7 +395,7 @@ func TestInboxReadsChecksOncePerHead(t *testing.T) {
 	second.Number = 5
 	ov.MergeRequests = append(ov.MergeRequests, second)
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
+	expectInbox(svc, ov)
 	runs := mocks.NewRunService(t)
 	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{}, nil).Once()
 	srv := inboxChecksServer(t, svc, runs)
@@ -379,8 +403,8 @@ func TestInboxReadsChecksOncePerHead(t *testing.T) {
 	require.Equal(t, 200, inboxGet(srv, "/-/inbox", true).Code)
 }
 
-// Every tab keeps all counts, but renders only its own sections, including on
-// live refresh. Plain hrefs make selection work without JavaScript.
+// Every tab shows the open work count and its own count, but renders only its
+// own sections, including on live refresh. Plain hrefs make selection work without JavaScript.
 func TestInboxTabs(t *testing.T) {
 	for _, tc := range []struct {
 		query, tab string
@@ -395,16 +419,23 @@ func TestInboxTabs(t *testing.T) {
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			ov := depsOverview(t)
-			ov.Counts.Pending = 2
+			ov.Pending = []domain.PendingIssue{testPendingIssue(t), testPendingIssue(t)}
 			ov.RunsEnabled = true
 			ov.Runs = []domain.CIRun{{Repo: repoName(t, "alpha"), ID: 1, Status: domain.CIQueued}}
 			svc := mocks.NewInboxService(t)
-			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
-			svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything).Return(sampleJournal(t), nil)
+			expectInbox(svc, ov)
+			svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything).Return(sampleJournal(t), nil).Maybe()
 			srv := inboxServer(t, svc)
 			body := inboxGet(srv, inboxPath+tc.query, true).Body.String()
-			for _, label := range []string{"Deps Updates (3)", "Open Issues &amp; Merge Requests (2)", "Activity (8)", "Awaiting Moderation (2)"} {
-				assert.Contains(t, body, label)
+			assert.Contains(t, body, "Open Issues &amp; Merge Requests (2)")
+			for _, l := range []struct{ tab, label, count string }{
+				{"deps", "Deps Updates", " (3)"}, {"activity", "Activity", " (8)"}, {"moderation", "Awaiting Moderation", " (2)"},
+			} {
+				want := l.label + "</a>"
+				if l.tab == tc.tab {
+					want = l.label + l.count + "</a>"
+				}
+				assert.Contains(t, body, want, "a tab is counted only when it is open")
 			}
 			assert.Contains(t, body, `href="`+inboxHref(tc.tab, 0)+`" aria-current="page"`)
 			for _, section := range []string{"mrs", "issues", "deps", "runs", "journal", "pending"} {

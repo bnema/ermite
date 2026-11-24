@@ -45,9 +45,8 @@ func TestInboxShowsPendingIssuesAsPlainText(t *testing.T) {
 	p := testPendingIssue(t)
 	ov := inboxOverview(t)
 	ov.Pending = []domain.PendingIssue{p, {ID: p.ID, Repo: repoName(t, "beta"), Title: p.Title, CreatedAt: time.Now()}}
-	ov.Counts.Pending = 2
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
+	expectInbox(svc, ov)
 	srv := moderationServer(t, svc, mocks.NewIssueModerationService(t))
 
 	rec := inboxGet(srv, "/-/inbox?tab=moderation", true)
@@ -141,8 +140,8 @@ func TestInboxAsyncModeration(t *testing.T) {
 		t.Run(op, func(t *testing.T) {
 			inbox := mocks.NewInboxService(t)
 			ov := inboxOverview(t)
-			ov.Counts.Pending = 4
-			inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+			ov.Pending = make([]domain.PendingIssue, 4)
+			expectInbox(inbox, ov)
 			mod := mocks.NewIssueModerationService(t)
 			id, err := domain.ParsePendingIssueID(testPendingID)
 			require.NoError(t, err)
@@ -184,7 +183,7 @@ func TestInboxModerationEnhancedForms(t *testing.T) {
 func TestInboxDottedRepoPendingIDs(t *testing.T) {
 	inbox := mocks.NewInboxService(t)
 	ov := inboxOverview(t)
-	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+	expectInbox(inbox, ov)
 	srv := moderationServer(t, inbox, mocks.NewIssueModerationService(t))
 	p := testPendingIssue(t)
 	p.Repo = repoName(t, "alpha.beta")

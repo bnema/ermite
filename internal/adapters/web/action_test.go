@@ -92,7 +92,11 @@ func TestPresentationFailuresPreserveSuccessfulAction(t *testing.T) {
 				h = s.mrComment
 			case "moderation", "deps":
 				inbox := mocks.NewInboxService(t)
-				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, failure).Once()
+				if kind == "moderation" {
+					inbox.EXPECT().Attention(mock.Anything, mock.Anything).Return(nil, failure).Once()
+				} else {
+					inbox.EXPECT().Deps(mock.Anything, mock.Anything).Return(ports.InboxDepsView{}, failure).Once()
+				}
 				if kind == "moderation" {
 					mod := mocks.NewIssueModerationService(t)
 					mod.EXPECT().Reject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(nil).Once()
