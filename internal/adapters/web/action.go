@@ -65,7 +65,7 @@ func (s *Server) actionRefreshFailed(ctx context.Context, r *http.Request, resul
 // actionBack also works at the session gate, before routing binds path values.
 func actionBack(r *http.Request) string {
 	path := r.URL.Path
-	if strings.HasPrefix(path, inboxPath+"/pending/") {
+	if strings.HasPrefix(path, moderationPath+"/") {
 		return pendingBack(r)
 	}
 	if strings.HasPrefix(path, depsPath+"/") {

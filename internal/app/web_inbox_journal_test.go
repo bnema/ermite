@@ -33,14 +33,8 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	r.writeFile(r.wt, "c.txt", []byte("c\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
 
-	stream := ownerStream(t, r.harness, token, "activity")
 	mr, err := r.forge.MergeRequests.Create(ctx, domain.Root(), r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
-	var live strings.Builder
-	for range inboxFragments {
-		live.WriteString(nextFragment(t, stream).data)
-	}
-	assert.Contains(t, live.String(), `<tr data-kind="mr_opened">`, "the journal is refreshed live")
 
 	_, err = r.forge.MergeRequests.Merge(ctx, domain.Owner(), r.name("proj"), mr.Number, ports.MergeParams{Mode: domain.MergeModeMerge, HeadID: mustOID(t, r.headOf("feat/search"))})
 	require.NoError(t, err)
@@ -54,7 +48,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 
 	// The merge was recorded before Merge returned; the hooks of the pushes
 	// ran before git push returned.
-	page := b.get("/-/inbox?tab=activity", as(token)).body
+	page := b.get("/-/activity", as(token)).body
 	require.Contains(t, page, `data-kind="mr_merged"`)
 	sec := page[strings.Index(page, `id="inbox-journal"`):]
 
@@ -75,13 +69,13 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	assert.Contains(t, sec, `href="/proj/commits/main">5 commits</a>`)
 	assert.Contains(t, sec, `<a class="u-tag" href="/proj/tree/v0.0.1">v0.0.1</a>`)
 
-	// The activity tab keeps the range and includes every repository.
-	other := b.get("/-/inbox?tab=activity&range=7d", as(token))
+	// The activity page keeps the range and includes every repository.
+	other := b.get("/-/activity?range=7d", as(token))
 	require.Equal(t, 200, other.status)
 	assert.Contains(t, other.body, `data-kind="mr_merged"`)
 	assert.Contains(t, other.body, `aria-current="page">7 days</a>`)
 
-	assert.Equal(t, 404, b.get("/-/inbox?range=7d", nil).status)
+	assert.Equal(t, 404, b.get("/-/activity?range=7d", nil).status)
 }
 
 func mustOID(t *testing.T, s string) domain.ObjectID {

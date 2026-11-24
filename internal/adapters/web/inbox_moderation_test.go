@@ -3,6 +3,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,10 +50,10 @@ func TestInboxShowsPendingIssuesAsPlainText(t *testing.T) {
 	expectInbox(svc, ov)
 	srv := moderationServer(t, svc, mocks.NewIssueModerationService(t))
 
-	rec := inboxGet(srv, "/-/inbox?tab=moderation", true)
+	rec := inboxGet(srv, "/-/inbox", true)
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
-	assert.Contains(t, body, "Awaiting Moderation (2)")
+	assert.Contains(t, body, `<span class="count hot">2</span>`, "the nav counts the items")
 
 	assert.NotContains(t, body, `id="inbox-mrs"`)
 	assert.Contains(t, body, "&lt;script&gt;alert(1)&lt;/script&gt; crash")
@@ -64,7 +65,7 @@ func TestInboxShowsPendingIssuesAsPlainText(t *testing.T) {
 	assert.Contains(t, body, "Eve &lt;i&gt;")
 	assert.Contains(t, body, ">anonymous<", "no label")
 	assert.Contains(t, body, "…</p>", "a preview of about 300 characters")
-	assert.Contains(t, body, `action="/-/inbox/pending/alpha/`+p.ID.String()+`/approve"`)
+	assert.Contains(t, body, `action="/-/moderation/alpha/`+p.ID.String()+`/approve"`)
 	assert.Contains(t, body, `/reject"`)
 	assert.Contains(t, body, `/ban"`)
 	assert.Contains(t, body, "Reject and ban")
@@ -91,43 +92,43 @@ func TestInboxModerationActions(t *testing.T) {
 		t.Parallel()
 		mod := mocks.NewIssueModerationService(t)
 		mod.EXPECT().Approve(mock.Anything, mock.Anything, alpha, id).Return(domain.Issue{}, nil).Once()
-		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/approve", site)
+		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/moderation/alpha/"+testPendingID+"/approve", site)
 		assert.Equal(t, 303, rec.Code)
-		assert.Equal(t, "/-/inbox?tab=moderation", rec.Header().Get("Location"))
+		assert.Equal(t, "/-/inbox", rec.Header().Get("Location"))
 		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	})
 	t.Run("reject", func(t *testing.T) {
 		t.Parallel()
 		mod := mocks.NewIssueModerationService(t)
 		mod.EXPECT().Reject(mock.Anything, mock.Anything, alpha, id, false).Return(nil).Once()
-		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/reject", site)
+		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/moderation/alpha/"+testPendingID+"/reject", site)
 		assert.Equal(t, 303, rec.Code)
-		assert.Equal(t, "/-/inbox?tab=moderation", rec.Header().Get("Location"))
+		assert.Equal(t, "/-/inbox", rec.Header().Get("Location"))
 	})
 	t.Run("ban", func(t *testing.T) {
 		t.Parallel()
 		mod := mocks.NewIssueModerationService(t)
 		mod.EXPECT().Reject(mock.Anything, mock.Anything, alpha, id, true).Return(nil).Once()
-		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/ban", site)
+		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/moderation/alpha/"+testPendingID+"/ban", site)
 		assert.Equal(t, 303, rec.Code)
 	})
 	t.Run("gone", func(t *testing.T) {
 		t.Parallel()
 		mod := mocks.NewIssueModerationService(t)
 		mod.EXPECT().Approve(mock.Anything, mock.Anything, alpha, id).Return(domain.Issue{}, domain.ErrNotFound).Once()
-		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/approve", site)
+		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/moderation/alpha/"+testPendingID+"/approve", site)
 		assert.Equal(t, 404, rec.Code)
 	})
 	t.Run("a malformed id is not found and calls nothing", func(t *testing.T) {
 		t.Parallel()
-		rec := post(moderationServer(t, mocks.NewInboxService(t), mocks.NewIssueModerationService(t)), "/-/inbox/pending/alpha/nope/approve", site)
+		rec := post(moderationServer(t, mocks.NewInboxService(t), mocks.NewIssueModerationService(t)), "/-/moderation/alpha/nope/approve", site)
 		assert.Equal(t, 404, rec.Code)
 	})
 	t.Run("the gate: no origin, no session", func(t *testing.T) {
 		t.Parallel()
 		srv := moderationServer(t, mocks.NewInboxService(t), mocks.NewIssueModerationService(t))
-		assert.Equal(t, 403, post(srv, "/-/inbox/pending/alpha/"+testPendingID+"/approve", nil).Code)
-		req := httptest.NewRequest(http.MethodPost, "/-/inbox/pending/alpha/"+testPendingID+"/approve", nil)
+		assert.Equal(t, 403, post(srv, "/-/moderation/alpha/"+testPendingID+"/approve", nil).Code)
+		req := httptest.NewRequest(http.MethodPost, "/-/moderation/alpha/"+testPendingID+"/approve", nil)
 		req.Header.Set("Origin", testPublicURL)
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
@@ -140,7 +141,7 @@ func TestInboxAsyncModeration(t *testing.T) {
 		t.Run(op, func(t *testing.T) {
 			inbox := mocks.NewInboxService(t)
 			ov := inboxOverview(t)
-			ov.Pending = make([]domain.PendingIssue, 4)
+			ov.Pending = make([]domain.PendingIssue, 3) // what is left after the action
 			expectInbox(inbox, ov)
 			mod := mocks.NewIssueModerationService(t)
 			id, err := domain.ParsePendingIssueID(testPendingID)
@@ -151,7 +152,7 @@ func TestInboxAsyncModeration(t *testing.T) {
 				mod.EXPECT().Reject(mock.Anything, mock.Anything, repoName(t, "alpha"), id, op == "ban").Return(nil).Once()
 			}
 			srv := moderationServer(t, inbox, mod)
-			req := httptest.NewRequest(http.MethodPost, "/-/inbox/pending/alpha/"+testPendingID+"/"+op, nil)
+			req := httptest.NewRequest(http.MethodPost, "/-/moderation/alpha/"+testPendingID+"/"+op, nil)
 			req.Header.Set("Origin", testPublicURL)
 			req.Header.Set("HX-Request", "true")
 			req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
@@ -161,7 +162,11 @@ func TestInboxAsyncModeration(t *testing.T) {
 			assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 			assert.Empty(t, w.Header().Get("Location"))
 			assert.Contains(t, w.Body.String(), `hx-target="#pending-alpha-`+testPendingID+`" hx-swap="delete"`)
-			assert.Contains(t, w.Body.String(), `id="inbox-pending-count" class="count" hx-swap-oob="true">4</span>`)
+			assert.NotContains(t, w.Body.String(), "inbox-pending-count")
+			nav := w.Body.String()[strings.Index(w.Body.String(), `<nav id="owner-nav"`):]
+			assert.Contains(t, nav, `aria-label="Owner" hx-swap-oob="outerHTML"`)
+			assert.Contains(t, nav, `aria-label="Inbox (3)" aria-current="page"`)
+			assert.Contains(t, nav, `<span class="count hot">3</span>`, "the count after the action")
 			assert.Contains(t, w.Body.String(), `id="action-status"`)
 			assert.NotContains(t, w.Body.String(), "<html")
 		})
@@ -172,7 +177,7 @@ func TestInboxModerationEnhancedForms(t *testing.T) {
 	p := testPendingIssue(t)
 	srv := moderationServer(t, mocks.NewInboxService(t), mocks.NewIssueModerationService(t))
 	row := srv.pendingRow(time.Now(), p)
-	html := renderToString(t, InboxPending(InboxPage{Pending: []PendingRow{row}, PendingCount: 1}))
+	html := renderToString(t, InboxPending(InboxPage{Pending: []PendingRow{row}}))
 	assert.Contains(t, html, `id="pending-alpha-`+p.ID.String()+`"`)
 	assert.Contains(t, html, `hx-post="`+row.Approve+`"`)
 	assert.Contains(t, html, `hx-post="`+row.Reject+`"`)
@@ -192,8 +197,8 @@ func TestInboxDottedRepoPendingIDs(t *testing.T) {
 	require.Equal(t, "pending-alpha_2ebeta-"+testPendingID, row.ID)
 	html := renderToString(t, InboxPending(InboxPage{Pending: []PendingRow{row}}))
 	assert.Contains(t, html, `id="`+row.ID+`"`)
-	assert.Contains(t, html, `/pending/alpha.beta/`)
-	r := httptest.NewRequest(http.MethodPost, "/-/inbox/pending/alpha.beta/"+testPendingID+"/approve", nil)
+	assert.Contains(t, html, `/-/moderation/alpha.beta/`)
+	r := httptest.NewRequest(http.MethodPost, "/-/moderation/alpha.beta/"+testPendingID+"/approve", nil)
 	r.SetPathValue("repo", "alpha.beta")
 	r.SetPathValue("id", testPendingID)
 	r.Header.Set("HX-Request", "true")
@@ -201,4 +206,25 @@ func TestInboxDottedRepoPendingIDs(t *testing.T) {
 	require.NoError(t, err)
 	fragment := renderToString(t, result.Fragment)
 	assert.Contains(t, fragment, `hx-target="#`+row.ID+`"`)
+}
+
+// A failed read of the counts does not hide a done moderation: the row goes,
+// the nav comes back without counts.
+func TestModerationWithoutCounts(t *testing.T) {
+	inbox := mocks.NewInboxService(t)
+	inbox.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, errors.New("down")).Once()
+	mod := mocks.NewIssueModerationService(t)
+	mod.EXPECT().Reject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(nil).Once()
+	srv := moderationServer(t, inbox, mod)
+	req := httptest.NewRequest(http.MethodPost, "/-/moderation/alpha/"+testPendingID+"/reject", nil)
+	req.Header.Set("Origin", testPublicURL)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `hx-target="#pending-alpha-`+testPendingID+`" hx-swap="delete"`)
+	assert.Contains(t, body, `hx-swap-oob="outerHTML"`)
+	assert.NotContains(t, body, `class="count`)
 }

@@ -36,7 +36,19 @@ func (it ownerNavItem) ariaLabel() string {
 // OwnerNavBar is the navigation between the owner's spaces, below the top row of
 // the header.
 templ OwnerNavBar(n OwnerNav) {
-	<nav id="owner-nav" class="tabs owner-nav" aria-label="Owner">
+	@ownerNavBar(n, false)
+}
+
+// ownerNavBar is the navigation; oob replaces the one in the page.
+templ ownerNavBar(n OwnerNav, oob bool) {
+	<nav
+		id="owner-nav"
+		class="tabs owner-nav"
+		aria-label="Owner"
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
 		<ul>
 			for _, it := range ownerNavItems(n) {
 				<li>

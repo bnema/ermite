@@ -114,18 +114,9 @@ func parseTopic(topic string) (repo string, ok bool) {
 }
 
 // ownerStreamOK tells whether the request may follow the owner topic: the
-// signed-in owner, with the inbox view, a valid range, on a
-// server that has the inbox.
+// signed-in owner, with the inbox view, on a server that has the inbox.
 func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 	if s.cfg.Inbox == nil || !SignedIn(ctx) || q.Get("view") != "inbox" {
-		return false
-	}
-	if q.Get("tab") == "traffic" {
-		if _, ok := s.cfg.Traffic.(TrafficForgeReader); !ok {
-			return false
-		}
-	}
-	if _, err := inboxTabRange(q.Get("range"), inboxTab(q.Get("tab"))); err != nil {
 		return false
 	}
 	return true
@@ -273,7 +264,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), state: q.Get("state"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
 	if topic == ownerTopic {
-		st.tab, st.rng, st.sort, st.filter = inboxTab(q.Get("tab")), q.Get("range"), q.Get("sort"), q.Get("filter")
+		st.rng, st.sort, st.filter = q.Get("range"), q.Get("sort"), q.Get("filter")
 	}
 	handle := func(m recvd) bool {
 		if m.err != nil {

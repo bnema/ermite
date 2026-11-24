@@ -68,7 +68,9 @@ func TestAction(t *testing.T) {
 }
 
 func TestPresentationFailuresPreserveSuccessfulAction(t *testing.T) {
-	for _, kind := range []string{"issue comment", "MR comment", "moderation", "deps", "CI"} {
+	// Moderation is not here: its response reads only the nav counts, and a
+	// failed read leaves the nav without counts (TestModerationWithoutCounts).
+	for _, kind := range []string{"issue comment", "MR comment", "deps", "CI"} {
 		t.Run(kind, func(t *testing.T) {
 			failure := errors.New("private read failure")
 			var s *Server
@@ -90,28 +92,15 @@ func TestPresentationFailuresPreserveSuccessfulAction(t *testing.T) {
 				svc.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything, int64(3), mock.Anything).Return(domain.Comment{ID: 7}, nil).Once()
 				svc.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything, int64(3), mock.Anything).Return(ports.MergeRequestDetail{}, failure).Once()
 				h = s.mrComment
-			case "moderation", "deps":
+			case "deps":
 				inbox := mocks.NewInboxService(t)
-				if kind == "moderation" {
-					inbox.EXPECT().Attention(mock.Anything, mock.Anything).Return(nil, failure).Once()
-				} else {
-					inbox.EXPECT().Deps(mock.Anything, mock.Anything).Return(ports.InboxDepsView{}, failure).Once()
-				}
-				if kind == "moderation" {
-					mod := mocks.NewIssueModerationService(t)
-					mod.EXPECT().Reject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(nil).Once()
-					s = moderationServer(t, inbox, mod)
-					h = s.pendingReject(false)
-					path = "/alpha/pending"
-					back = pendingBack(nil)
-				} else {
-					deps := mocks.NewDepsService(t)
-					deps.EXPECT().Open(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.RepoDeps{}, nil).Once()
-					s = depsServer(t, inbox, deps)
-					h = s.depsAction(depsOpen)
-					path = "/alpha/deps"
-					back = "/-/deps"
-				}
+				inbox.EXPECT().Deps(mock.Anything, mock.Anything).Return(ports.InboxDepsView{}, failure).Once()
+				deps := mocks.NewDepsService(t)
+				deps.EXPECT().Open(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.RepoDeps{}, nil).Once()
+				s = depsServer(t, inbox, deps)
+				h = s.depsAction(depsOpen)
+				path = "/alpha/deps"
+				back = "/-/deps"
 			case "CI":
 				runs := mocks.NewRunService(t)
 				runs.EXPECT().CancelRun(mock.Anything, mock.Anything, mock.Anything, int64(3)).Return(domain.CIRun{}, nil).Once()
@@ -126,14 +115,10 @@ func TestPresentationFailuresPreserveSuccessfulAction(t *testing.T) {
 			if kind == "issue comment" {
 				r.SetPathValue("repo", "proj")
 			}
-			if kind == "moderation" || kind == "deps" {
+			if kind == "deps" {
 				r.SetPathValue("repo", "alpha")
 			}
-			if kind == "moderation" {
-				r.SetPathValue("id", testPendingID)
-			} else {
-				r.SetPathValue("id", "3")
-			}
+			r.SetPathValue("id", "3")
 			r = r.WithContext(withOwner(r.Context()))
 			r.Header.Set("HX-Request", "true")
 			w := httptest.NewRecorder()
@@ -152,7 +137,7 @@ func TestActionFailureAndGateBackLinks(t *testing.T) {
 		"/demo/issues/3/comments":                "/demo/issues/3",
 		"/demo/merge-requests/3/comments/7/edit": "/demo/merge-requests/3",
 		"/demo/actions/runs/8/rerun-failed":      "/demo/actions/runs/8",
-		"/-/inbox/pending/demo/abc/ban":          "/-/inbox?tab=moderation",
+		"/-/moderation/demo/abc/ban":             "/-/inbox",
 		"/-/deps/demo/open":                      "/-/deps",
 	} {
 		t.Run(path, func(t *testing.T) {

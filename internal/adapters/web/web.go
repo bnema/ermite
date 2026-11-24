@@ -233,9 +233,9 @@ func (s *Server) routes() *http.ServeMux {
 			mux.HandleFunc("POST "+depsPath+"/{repo}/split", s.action(depsBack, s.depsAction(depsSplit)))
 		}
 		if s.cfg.Moderation != nil {
-			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.action(pendingBack, s.pendingApprove))
-			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/reject", s.action(pendingBack, s.pendingReject(false)))
-			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/ban", s.action(pendingBack, s.pendingReject(true)))
+			mux.HandleFunc("POST "+moderationPath+"/{repo}/{id}/approve", s.action(pendingBack, s.pendingApprove))
+			mux.HandleFunc("POST "+moderationPath+"/{repo}/{id}/reject", s.action(pendingBack, s.pendingReject(false)))
+			mux.HandleFunc("POST "+moderationPath+"/{repo}/{id}/ban", s.action(pendingBack, s.pendingReject(true)))
 		}
 	}
 	mux.HandleFunc("GET /{$}", s.page(s.home))

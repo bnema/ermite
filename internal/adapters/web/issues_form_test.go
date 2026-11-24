@@ -295,7 +295,7 @@ func TestAnonymousPostOpensOnlyTheIssueForm(t *testing.T) {
 	for _, p := range []string{
 		"/x/issues/new/extra", "/x/issues/123", "/x/issues", "/x/issues/new/", "/x/issues/123/close", "/x/issues/new/close",
 		"/x%2Fissues/new", "/x%2Fy/issues/new", "/%2Fissues/new", "/issues/new", "//issues/new", "/X/issues/new",
-		"/a/b/issues/new", "/x.git/issues/new", "/../issues/new", "/-/inbox/pending/x/y/approve", "/x/merge-requests",
+		"/a/b/issues/new", "/x.git/issues/new", "/../issues/new", "/-/moderation/x/y/approve", "/x/merge-requests",
 		"/x/issues%2Fnew", "/x/issues/new%2Fextra", "/x/issues/%6Eew",
 	} {
 		u := &url.URL{Path: p}

@@ -2,47 +2,14 @@
 
 package web
 
-// Inbox is the owner's inbox. The live stream replaces its content as a whole.
+// Inbox is the owner's inbox: for now, the issues awaiting moderation.
 templ Inbox(l Layout, p InboxPage) {
 	@Shell(l, nil) {
-		<h1 class="sr">Inbox</h1>
-		@InboxContent(p)
+		<div id="view" data-view="inbox">
+			<h1 class="sr" tabindex="-1">Inbox</h1>
+			@InboxPending(p)
+		</div>
 	}
-}
-
-templ InboxContent(p InboxPage) {
-	<div id="inbox-content" class="inbox" data-keep-open>
-		<nav class="tabs" aria-label="Inbox sections">
-			<ul>
-				for _, t := range p.Tabs {
-					<li>
-						<a
-							href={ templ.SafeURL(t.Href) }
-							if t.Current {
-								aria-current="page"
-							}
-						>{ t.Label }</a>
-					</li>
-				}
-			</ul>
-		</nav>
-		switch p.Tab {
-			case "deps":
-				@InboxDeps(p)
-			case "activity":
-				@InboxRuns(p)
-				@InboxJournal(p)
-			case "traffic":
-				if p.Traffic != nil {
-					@InboxTraffic(*p.Traffic)
-				}
-			case "moderation":
-				@InboxPending(p)
-			default:
-				@InboxMRs(p)
-				@InboxIssues(p)
-		}
-	</div>
 }
 
 // InboxPending is the issues awaiting moderation, first on the page. Their
@@ -50,7 +17,7 @@ templ InboxContent(p InboxPage) {
 // never as Markdown.
 templ InboxPending(p InboxPage) {
 	<section id="inbox-pending" aria-labelledby="inbox-pending-h">
-		<h2 id="inbox-pending-h" class="rule-h"><span>Awaiting moderation</span><span id="inbox-pending-count" class="count">{ itoa(p.PendingCount) }</span></h2>
+		<h2 id="inbox-pending-h" class="rule-h"><span>Awaiting moderation</span></h2>
 		if len(p.Pending) > 0 {
 			<ul class="pending-list">
 				for _, m := range p.Pending {
@@ -88,7 +55,11 @@ templ InboxPending(p InboxPage) {
 	</section>
 }
 
-templ inboxModerated(id string, count int) {
+// inboxModerated removes the row of the moderated issue and sends the owner
+// navigation again, its counts read after the action.
+templ inboxModerated(id string, nav *OwnerNav) {
 	@RemoveEl(id)
-	@CountOOB("inbox-pending-count", count)
+	if nav != nil {
+		@ownerNavBar(*nav, true)
+	}
 }

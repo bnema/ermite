@@ -81,14 +81,6 @@ type UnreleasedGroup struct {
 	Open       bool
 }
 
-func (j JournalView) unreleasedCount() int {
-	n := 0
-	for _, g := range j.Unreleased {
-		n += len(g.Rows)
-	}
-	return n
-}
-
 // UnreleasedRow is a repository whose default branch is ahead of its nearest
 // tag.
 type UnreleasedRow struct {

@@ -4,7 +4,6 @@ package web
 
 import (
 	"errors"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -97,8 +96,7 @@ func TestInsightsUnavailableAndEmpty(t *testing.T) {
 			case "nil", "recorder only":
 				assert.Equal(t, 404, rec.Code)
 				body := inboxGet(srv, inboxPath, true).Body.String()
-				assert.NotContains(t, body, `tab=traffic`)
-				assert.False(t, srv.ownerStreamOK(withOwner(t.Context()), url.Values{"view": {"inbox"}, "tab": {"traffic"}}))
+				assert.NotContains(t, body, insightsPath, "no Insights in the nav")
 			case "empty":
 				require.Equal(t, 200, rec.Code)
 				assert.Contains(t, rec.Body.String(), "no traffic yet.")
@@ -135,24 +133,4 @@ func insightsServer(t *testing.T, svc *mocks.InboxService) *Server {
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
 	})
-}
-
-// The inbox stream still renders the traffic tab, until the owner stream
-// follows the views.
-func TestInboxTrafficStream(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxFixture{})
-	srv := inboxServer(t, svc)
-	f := mocks.NewTrafficService(t)
-	f.EXPECT().Forge(mock.Anything, 30*24*time.Hour).Return(ports.TrafficForge{Referrers: []ports.TrafficReferrer{{Domain: "example.org", Count: 1}}}, nil).Once()
-	srv.cfg.Traffic = f
-	q := url.Values{"view": {"inbox"}, "tab": {"traffic"}, "range": {"30d"}}
-	assert.True(t, srv.ownerStreamOK(withOwner(t.Context()), q))
-	assert.False(t, srv.ownerStreamOK(t.Context(), q))
-	fragments, err := (&liveStream{s: srv, view: "inbox", tab: "traffic", rng: "30d"}).inbox(withOwner(t.Context()), ports.WatchEvent{Event: domain.JournalUpdated{}})
-	require.NoError(t, err)
-	require.Len(t, fragments, 1)
-	assert.Contains(t, fragments[0].html, `id="inbox-traffic"`)
-	assert.Contains(t, fragments[0].html, "example.org")
 }

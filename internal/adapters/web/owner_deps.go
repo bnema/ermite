@@ -546,6 +546,18 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 	}
 }
 
+// depsSortName is ?sort= for the deps rows by repository name; the default
+// puts the repositories with the most updates first.
+const depsSortName = "name"
+
+// depsSortParam reads ?sort=: "" (most updates first) or "name".
+func depsSortParam(raw string) string {
+	if raw == depsSortName {
+		return raw
+	}
+	return ""
+}
+
 // depsBack is the page an action returns to, with its sort and filter.
 func depsBack(r *http.Request) string { return depsHref(depsQueryOf(r)) }
 
@@ -578,7 +590,6 @@ func (s *Server) deps(ctx context.Context, r *http.Request) (templ.Component, in
 
 // fillDeps sets the table of p from what Inbox.Deps read.
 func (s *Server) fillDeps(p *InboxPage, v ports.InboxDepsView, dq depsQuery) {
-	p.DepsCount, p.DepsEnabled = len(v.Deps), s.cfg.Deps != nil
 	var all []InboxDepsRow
 	for _, d := range v.Deps {
 		row := s.depsRow(d, "")

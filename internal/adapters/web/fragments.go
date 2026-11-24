@@ -20,13 +20,11 @@ import (
 
 // liveStream turns the events of Watch into the fragments one page shows.
 type liveStream struct {
-	s    *Server
-	repo string // "" on the home page
-	// tab is the selected inbox tab.
-	tab    string
-	rng    string // inbox: the range of the journal (?range=), "" for the default
-	sort   string // inbox: the order of the deps rows (?sort=), "" for the default
-	filter string // inbox: the filter of the deps rows (?filter=), "" for all
+	s      *Server
+	repo   string // "" on the home page
+	rng    string // owner: the range of the view (?range=), "" for the default
+	sort   string // owner: the order of the deps rows (?sort=), "" for the default
+	filter string // owner: the filter of the deps rows (?filter=), "" for all
 	state  string // mrs: the selected list tab
 	view   string // "summary", "refs" or "commits"
 	ref    string // commits: the branch listed

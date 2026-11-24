@@ -196,8 +196,12 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
 	})
 	assert.Equal(t, 404, inboxGet(srv, depsPath, true).Code, "no page without the service")
-	body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()
-	sec := body[strings.Index(body, `id="inbox-deps"`):]
+	sec := renderToString(t, InboxDeps(func() InboxPage {
+		var p InboxPage
+		srv.fillDeps(&p, ports.InboxDepsView{Deps: depsOverview(t).Deps}, depsQuery{})
+		return p
+	}()))
+	assert.Contains(t, sec, `id="inbox-deps"`)
 	assert.NotContains(t, sec, "<form")
 	assert.NotContains(t, sec, "More actions")
 }
@@ -284,34 +288,6 @@ func TestInboxDepsActions(t *testing.T) {
 		rec := post(depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t)), "/-/deps/alpha/ignore", url.Values{"name": {"x"}})
 		assert.NotEqual(t, 303, rec.Code)
 	})
-}
-
-func TestInboxDepsLiveFragment(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, depsOverview(t))
-	srv := depsServer(t, svc, mocks.NewDepsService(t))
-	ls := &liveStream{s: srv, view: "inbox", tab: "deps"}
-	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.DependencyUpdatesFound{Repo: repoName(t, "alpha"), Count: 2}})
-	require.NoError(t, err)
-	all := ""
-	for _, f := range frags {
-		all += f.html
-	}
-	assert.Contains(t, all, "golang.org/x/text")
-	assert.True(t, liveEvent(ports.WatchEvent{Event: domain.DependencyUpdatesFound{}}))
-}
-
-func TestInboxDepsChangedRefreshesTheLiveView(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, depsOverview(t))
-	ls := &liveStream{s: depsServer(t, svc, mocks.NewDepsService(t)), view: "inbox", tab: "deps"}
-	ev := ports.WatchEvent{ID: "b-2", Event: domain.DependencyUpdatesChanged{Repo: repoName(t, "alpha")}}
-	assert.True(t, liveEvent(ev))
-	frags, err := ls.render(withOwner(t.Context()), ev)
-	require.NoError(t, err)
-	assert.NotEmpty(t, frags)
 }
 
 func TestInboxIDPartEncoding(t *testing.T) {
@@ -720,7 +696,6 @@ func TestInboxAsyncDeps(t *testing.T) {
 					assert.Contains(t, body, `id="deps-alpha-base"`)
 					assert.Contains(t, body, `/deps/alpha/open?sort=name`, "the swapped row keeps the order")
 				}
-				assert.NotContains(t, body, `id="inbox-content"`)
 			})
 		}
 	}

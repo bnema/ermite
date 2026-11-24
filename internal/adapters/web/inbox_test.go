@@ -95,21 +95,30 @@ func inboxGet(srv *Server, path string, owner bool) *httptest.ResponseRecorder {
 func TestInboxPageForTheOwner(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxOverview(t))
-	srv := inboxServer(t, svc)
+	pending := testPendingIssue(t)
+	svc.EXPECT().Attention(mock.Anything, mock.Anything).Return([]ports.AttentionItem{
+		{Kind: ports.AttentionModeration, Repo: pending.Repo, Pending: &pending},
+		{Kind: ports.AttentionRelease, Repo: repoName(t, "beta")},
+	}, nil).Once()
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Attention: 2, Work: 5}, nil).Once()
+	srv := newTestServer(t, Config{
+		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
+		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
+	})
 
-	rec := inboxGet(srv, "/-/inbox", true)
+	rec := inboxGet(srv, "/-/inbox?tab=deps", true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
-	assert.Contains(t, body, "Open Issues &amp; Merge Requests (2)")
-	assert.Contains(t, body, "Open merge requests")
-	assert.Contains(t, body, "Open issues")
-	assert.Contains(t, body, `href="/alpha/merge-requests/4"`)
-	assert.Contains(t, body, "fix &lt;b&gt;search&lt;/b&gt;")
-	assert.Contains(t, body, `href="/beta/issues/7"`)
-	assert.Contains(t, body, "#7")
-	assert.Contains(t, body, "2h ago")
-	assert.Contains(t, body, `href="/-/inbox?tab=deps"`, "the dependency tab")
+	assert.Contains(t, body, "<title>Inbox · ")
+	assert.Contains(t, body, `<div id="view" data-view="inbox"><h1 class="sr" tabindex="-1">Inbox</h1>`)
+	assert.Contains(t, body, `href="/-/inbox" data-nav data-key="g i" aria-label="Inbox (2)" aria-current="page"`)
+	assert.Contains(t, body, `id="inbox-pending"`)
+	assert.Contains(t, body, `id="pending-alpha-`+pending.ID.String()+`"`)
+	assert.Contains(t, body, "Awaiting moderation</span></h2>")
+	assert.NotContains(t, body, "inbox-pending-count")
+	for _, gone := range []string{"tab=", `id="inbox-mrs"`, `id="inbox-deps"`, `id="inbox-journal"`, `class="crumbs"`, `aria-label="Inbox sections"`} {
+		assert.NotContains(t, body, gone, "?tab= is ignored")
+	}
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 }
 
@@ -195,26 +204,28 @@ func TestInboxStreamIsTheOwnersAlone(t *testing.T) {
 
 func TestInboxLiveFragments(t *testing.T) {
 	t.Parallel()
+	ov := inboxOverview(t)
+	ov.Pending = []domain.PendingIssue{testPendingIssue(t)}
 	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxOverview(t))
+	expectInbox(svc, ov)
 	srv := inboxServer(t, svc)
 	ls := &liveStream{s: srv, view: "inbox"}
-	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
+	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueSubmitted{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)
 	require.Len(t, frags, 1)
-	assert.Contains(t, frags[0].html, `id="inbox-content"`)
-	assert.Contains(t, frags[0].html, `id="inbox-mrs"`)
-	assert.Contains(t, frags[0].html, `id="inbox-issues"`)
-	assert.NotContains(t, frags[0].html, `id="inbox-pending"`)
+	assert.Contains(t, frags[0].html, `id="inbox-pending"`)
+	assert.Contains(t, frags[0].html, `id="pending-alpha-`)
+	assert.NotContains(t, frags[0].html, `id="inbox-mrs"`)
 
-	resolved, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssueResolved{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
+	removed, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssuePendingRemoved{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)
-	require.Len(t, resolved, 1)
-	assert.Contains(t, resolved[0].html, `id="inbox-issues"`)
+	require.Len(t, removed, 1)
 
-	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "beta")}})
-	require.NoError(t, err)
-	assert.Empty(t, none, "a push is not inbox news")
+	for _, ev := range []domain.Event{domain.PushEvent{Repo: repoName(t, "beta")}, domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}} {
+		none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: ev})
+		require.NoError(t, err)
+		assert.Empty(t, none, "%T is not moderation news", ev)
+	}
 }
 
 // withOwner is a context as the session middleware leaves it for the owner.
@@ -285,7 +296,7 @@ func TestInboxStreamEndsWhenTheSessionEnds(t *testing.T) {
 	require.Equal(t, ": connected", line())
 	line()
 	ev := func(id string) ports.WatchEvent {
-		return ports.WatchEvent{ID: id, Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}}
+		return ports.WatchEvent{ID: id, Event: domain.IssueSubmitted{Repo: repoName(t, "beta")}}
 	}
 	f.push <- ev("b-1")
 	var seen []string
@@ -306,32 +317,25 @@ func TestInboxStreamEndsWhenTheSessionEnds(t *testing.T) {
 	require.Eventually(t, func() bool { return f.closed.Load() == 1 }, 5*time.Second, time.Millisecond, "the watch is closed")
 }
 
-// A repository event refreshes the inbox: issues turned off or a deletion
-// remove its items from the fragments.
+// A repository event refreshes the inbox: a deletion removes its pending
+// issues.
 func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 	t.Parallel()
 	for name, ev := range map[string]domain.Event{
-		"issues turned off": domain.RepoUpdated{Repo: repoName(t, "beta")},
-		"run updated":       domain.RunUpdated{},
-		"repo deleted":      domain.RepoDeleted{Repo: repoName(t, "beta")},
+		"repo updated": domain.RepoUpdated{Repo: repoName(t, "alpha")},
+		"repo deleted": domain.RepoDeleted{Repo: repoName(t, "alpha")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			after := inboxFixture{}
 			svc := mocks.NewInboxService(t)
-			expectInbox(svc, after)
+			expectInbox(svc, inboxFixture{})
 			srv := inboxServer(t, svc)
 			ls := &liveStream{s: srv, view: "inbox"}
 			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 			require.NoError(t, err)
 			require.Len(t, frags, 1)
-			all := ""
-			for _, f := range frags {
-				all += f.html
-			}
-			assert.Contains(t, all, `id="inbox-issues"`)
-			assert.NotContains(t, all, "crash on start", "the issue is gone")
-			assert.NotContains(t, all, "/beta", "the repository is gone from the lists")
+			assert.Contains(t, frags[0].html, `id="inbox-pending"`)
+			assert.Contains(t, frags[0].html, "nothing awaits moderation.")
 		})
 	}
 }
@@ -356,7 +360,7 @@ func inboxChecksServer(t *testing.T, svc ports.InboxService, runs ports.RunServi
 	})
 }
 
-func TestInboxMRRowsShowTheCIIcon(t *testing.T) {
+func TestWorkMRRowsShowTheCIIcon(t *testing.T) {
 	t.Parallel()
 	head := fmt.Sprintf("%040x", 7)
 	repo := repoName(t, "alpha")
@@ -365,87 +369,25 @@ func TestInboxMRRowsShowTheCIIcon(t *testing.T) {
 	runs := mocks.NewRunService(t)
 	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
 		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CICompleted, Conclusion: domain.CISuccess}},
-	}}, nil).Twice()
+	}}, nil).Once()
 	srv := inboxChecksServer(t, svc, runs)
 
-	rec := inboxGet(srv, "/-/inbox", true)
+	rec := inboxGet(srv, workPath, true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
-	assert.Contains(t, rec.Body.String(), `class="ck-sum"`)
-	assert.Contains(t, rec.Body.String(), `href="/alpha/actions"`)
-
-	frags, err := (&liveStream{s: srv, view: "inbox"}).render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
-	require.NoError(t, err)
-	require.Len(t, frags, 1)
-	assert.Contains(t, frags[0].html, `id="inbox-mrs"`)
-	assert.Contains(t, frags[0].html, `class="ck-sum"`)
-	assert.NotContains(t, frags[0].html[strings.Index(frags[0].html, `id="inbox-issues"`):], "ck-sum", "issue rows have no CI icon")
+	body := rec.Body.String()
+	assert.Contains(t, body, `class="ck-sum"`)
+	assert.Contains(t, body, `href="/alpha/actions"`)
+	assert.NotContains(t, body[strings.Index(body, `id="inbox-issues"`):], "ck-sum", "issue rows have no CI icon")
 }
 
-func TestInboxZeroHeadReadsNoChecks(t *testing.T) {
+func TestWorkZeroHeadReadsNoChecks(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	expectInbox(svc, inboxOverviewWithHead(t, ""))
 	runs := mocks.NewRunService(t) // any ListChecks call fails the test
 	srv := inboxChecksServer(t, svc, runs)
 
-	rec := inboxGet(srv, "/-/inbox", true)
+	rec := inboxGet(srv, workPath, true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	assert.NotContains(t, rec.Body.String(), "ck-sum")
-}
-
-// Every tab shows the open work count and its own count, but renders only its
-// own sections, including on live refresh. Plain hrefs make selection work without JavaScript.
-func TestInboxTabs(t *testing.T) {
-	for _, tc := range []struct {
-		query, tab string
-		sections   []string
-	}{
-		{"", "work", []string{"mrs", "issues"}},
-		{"?tab=work", "work", []string{"mrs", "issues"}},
-		{"?tab=unknown", "work", []string{"mrs", "issues"}},
-		{"?tab=deps", "deps", []string{"deps"}},
-		{"?tab=activity", "activity", []string{"runs", "journal"}},
-		{"?tab=moderation", "moderation", []string{"pending"}},
-	} {
-		t.Run(tc.query, func(t *testing.T) {
-			ov := depsOverview(t)
-			ov.Pending = []domain.PendingIssue{testPendingIssue(t), testPendingIssue(t)}
-			ov.RunsEnabled = true
-			ov.Runs = []domain.CIRun{{Repo: repoName(t, "alpha"), ID: 1, Status: domain.CIQueued}}
-			svc := mocks.NewInboxService(t)
-			expectInbox(svc, ov)
-			svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything).Return(sampleJournal(t), nil).Maybe()
-			srv := inboxServer(t, svc)
-			body := inboxGet(srv, inboxPath+tc.query, true).Body.String()
-			assert.Contains(t, body, "Open Issues &amp; Merge Requests (2)")
-			for _, l := range []struct{ tab, label, count string }{
-				{"deps", "Deps Updates", " (3)"}, {"activity", "Activity", " (8)"}, {"moderation", "Awaiting Moderation", " (2)"},
-			} {
-				want := l.label + "</a>"
-				if l.tab == tc.tab {
-					want = l.label + l.count + "</a>"
-				}
-				assert.Contains(t, body, want, "a tab is counted only when it is open")
-			}
-			assert.Contains(t, body, `href="`+inboxHref(tc.tab, 0)+`" aria-current="page"`)
-			for _, section := range []string{"mrs", "issues", "deps", "runs", "journal", "pending"} {
-				want := false
-				for _, selected := range tc.sections {
-					want = want || section == selected
-				}
-				assert.Equal(t, want, strings.Contains(body, `id="inbox-`+section+`"`), section)
-			}
-			assert.NotContains(t, body, `id="inbox-repos"`)
-			assert.NotContains(t, body, `id="inbox-counts"`)
-			assert.NotContains(t, body, `?repo=`)
-			ls := &liveStream{s: srv, view: "inbox", tab: tc.tab}
-			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.JournalUpdated{}})
-			require.NoError(t, err)
-			require.Len(t, frags, 1)
-			assert.Contains(t, frags[0].html, `id="inbox-content"`)
-			for _, section := range []string{"mrs", "issues", "deps", "runs", "journal", "pending"} {
-				assert.Equal(t, strings.Contains(body, `id="inbox-`+section+`"`), strings.Contains(frags[0].html, `id="inbox-`+section+`"`), section)
-			}
-		})
-	}
 }

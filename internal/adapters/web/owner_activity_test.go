@@ -3,10 +3,6 @@
 package web
 
 import (
-	"bufio"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -128,78 +124,6 @@ func TestActivityJournalTruncatedNote(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "only the latest 5 entries are shown.")
 }
 
-// The owner's stream takes the range of the page: an unknown one is the
-// unknown-topic answer (as the page is a 404) and opens no watch; a known one
-// is the range of the journal its fragments render.
-func TestInboxJournalStreamRange(t *testing.T) {
-	t.Parallel()
-	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
-	svc := mocks.NewInboxService(t)
-	expectInbox(svc, inboxFixture{})
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(sampleJournal(t), nil).Once()
-	srv := newTestServer(t, Config{
-		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
-		Heartbeat: time.Hour, Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
-	})
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	owner := map[string]string{"Cookie": CookieName + "=tok"}
-
-	unknown, _ := open(t, ts, "topic=nope&view=inbox", nil)
-	want, _ := io.ReadAll(unknown.Body)
-	bad, _ := open(t, ts, "topic=owner&view=inbox&range=1y", owner)
-	body, _ := io.ReadAll(bad.Body)
-	assert.Equal(t, unknown.StatusCode, bad.StatusCode)
-	assert.Equal(t, string(want), string(body), "the unknown-topic response")
-	assert.Zero(t, f.opened.Load(), "no watch is opened")
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/-/inbox?range=1y", nil)
-	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
-	page, err := ts.Client().Do(req)
-	require.NoError(t, err)
-	_ = page.Body.Close()
-	assert.Equal(t, http.StatusNotFound, page.StatusCode, "the page")
-
-	resp, _ := open(t, ts, "topic=owner&view=inbox&tab=activity&range=7d", owner)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	rd := bufio.NewReader(resp.Body)
-	f.push <- ports.WatchEvent{ID: "b-1", Event: domain.JournalUpdated{Repo: repoName(t, "alpha")}}
-	var journal string
-	for journal == "" {
-		line, err := rd.ReadString('\n')
-		require.NoError(t, err)
-		if strings.HasPrefix(line, "data:") && strings.Contains(line, `id="inbox-journal"`) {
-			journal = line
-		}
-	}
-	assert.Contains(t, journal, `aria-current="page">7 days</a>`, "rendered for the range of the stream")
-}
-
-// The journal signal of a push and a published release refresh the inbox,
-// on the range of the stream; a push itself does not.
-func TestInboxJournalLive(t *testing.T) {
-	t.Parallel()
-	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(sampleJournal(t), nil)
-	srv := journalServer(t, svc)
-	ls := &liveStream{s: srv, view: "inbox", tab: "activity", rng: "7d"}
-	for _, ev := range []domain.Event{
-		domain.JournalUpdated{Repo: repoName(t, "alpha")},
-		domain.ReleasePublished{Release: domain.Release{Repo: repoName(t, "beta")}},
-	} {
-		frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
-		require.NoError(t, err)
-		require.Len(t, frags, 1, "%T", ev)
-		assert.Contains(t, frags[0].html, `id="inbox-journal"`)
-		assert.Contains(t, frags[0].html, "add &lt;search&gt;")
-		assert.Contains(t, frags[0].html, `aria-current="page">7 days</a>`)
-	}
-	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "alpha")}})
-	require.NoError(t, err)
-	assert.Empty(t, none)
-	assert.True(t, liveEvent(ports.WatchEvent{Event: domain.JournalUpdated{}}))
-}
-
 func TestJournalUnreleasedUrgency(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 	svc := mocks.NewInboxService(t)
@@ -220,7 +144,6 @@ func TestJournalUnreleasedUrgency(t *testing.T) {
 	}
 	v := srv.journalView(j, 0)
 	require.Len(t, v.Unreleased, 3)
-	assert.Equal(t, 7, v.unreleasedCount())
 	for i, key := range []string{"due", "soon", "later"} {
 		assert.Equal(t, key, v.Unreleased[i].Key)
 		assert.Equal(t, i != 2, v.Unreleased[i].Open)

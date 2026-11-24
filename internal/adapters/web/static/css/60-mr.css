@@ -518,10 +518,9 @@
   }
   #mr-notice:empty { display: none; }
 
-  /* the owner's inbox: section tabs and only the selected content */
-  .inbox {
+  /* the view of an owner page: its sections stacked, evenly spaced */
+  #view {
     display: flex; flex-direction: column; gap: var(--s4);
-    & > .tabs { width: 100%; max-width: none; margin: 0; padding: 0; border-bottom: 1px solid var(--border); }
   }
 
   /* the inbox activity: a heading with the range toggle, warnings as lines,
