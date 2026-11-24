@@ -144,3 +144,11 @@ func TestInboxLiveViewRendersTheAttention(t *testing.T) {
 	assert.Contains(t, frags[0].html, `id="att-ready-beta-4"`)
 	assert.Contains(t, frags[0].html, `id="owner-nav"`)
 }
+
+func TestTagAge(t *testing.T) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	assert.Equal(t, "tagged today", tagAge(now, now.Add(-3*time.Hour)))
+	assert.Equal(t, "tagged today", tagAge(now, now.Add(time.Minute)), "a clock ahead")
+	assert.Equal(t, "tagged 1d ago", tagAge(now, now.Add(-25*time.Hour)))
+	assert.Equal(t, "tagged 40d ago", tagAge(now, now.Add(-40*24*time.Hour)))
+}

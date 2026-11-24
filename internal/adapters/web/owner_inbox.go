@@ -294,7 +294,7 @@ func (s *Server) attentionRow(now time.Time, it ports.AttentionItem) (AttentionR
 		if t := u.Distance.Tag; t.Name != "" {
 			since = " since " + visibleText(t.Name)
 			if !t.At.IsZero() {
-				row.Note, row.NoteTip = "tagged "+itoa(max(0, int(now.Sub(t.At)/(24*time.Hour))))+"d ago", absolute(t.At)
+				row.Note, row.NoteTip = tagAge(now, t.At), absolute(t.At)
 			}
 		}
 		row.Title, row.Href = n+word+since, repoHref(repo, "commits", u.Branch)
@@ -330,4 +330,13 @@ func inboxIDPart(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// tagAge is the age of a tag in days: "tagged today" under a day.
+func tagAge(now, at time.Time) string {
+	days := int(now.Sub(at) / (24 * time.Hour))
+	if days <= 0 {
+		return "tagged today"
+	}
+	return "tagged " + itoa(days) + "d ago"
 }
