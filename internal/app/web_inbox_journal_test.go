@@ -36,6 +36,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	stream := ownerStream(t, r.harness, token, "activity")
 	mr, err := r.forge.MergeRequests.Create(ctx, domain.Root(), r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
+	assert.Contains(t, fragmentWith(t, stream, `<tr data-kind="mr_opened">`), `id="inbox-journal"`, "a new merge request is on the journal live")
 
 	_, err = r.forge.MergeRequests.Merge(ctx, domain.Owner(), r.name("proj"), mr.Number, ports.MergeParams{Mode: domain.MergeModeMerge, HeadID: mustOID(t, r.headOf("feat/search"))})
 	require.NoError(t, err)

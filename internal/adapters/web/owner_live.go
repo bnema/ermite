@@ -61,7 +61,10 @@ func ownerViewEvent(view string, ev domain.Event) bool {
 		}
 	case "activity":
 		switch ev.(type) {
-		case domain.RunUpdated, domain.JournalUpdated, domain.PushEvent, domain.ReleasePublished:
+		case domain.RunUpdated, domain.JournalUpdated, domain.PushEvent, domain.ReleasePublished,
+			// The journal records these without a JournalUpdated of their own.
+			domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
+			domain.IssueOpened, domain.IssueClosed, domain.IssueResolved:
 			return true
 		}
 	case "deps":
