@@ -125,7 +125,7 @@ func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 			return false
 		}
 	}
-	if _, err := inboxRange(q.Get("range"), inboxTab(q.Get("tab"))); err != nil {
+	if _, err := activityRange(q.Get("range"), inboxTab(q.Get("tab"))); err != nil {
 		return false
 	}
 	return true

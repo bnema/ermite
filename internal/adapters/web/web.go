@@ -220,6 +220,7 @@ func (s *Server) routes() *http.ServeMux {
 	if s.cfg.Inbox != nil {
 		mux.HandleFunc("GET "+inboxPath, s.page(s.inbox))
 		mux.HandleFunc("GET "+workPath, s.page(s.work))
+		mux.HandleFunc("GET "+activityPath, s.page(s.activity))
 		if s.cfg.Deps != nil {
 			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/open", s.action(depsBack, s.depsAction(depsOpen)))
 			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/ignore", s.action(depsBack, s.depsAction(depsIgnore)))

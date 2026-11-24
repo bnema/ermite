@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Activity is the owner's running runs, unreleased repositories and journal.
+templ Activity(l Layout, p InboxPage) {
+	@Shell(l, nil) {
+		<div id="view" data-view="activity">
+			<h1 class="sr" tabindex="-1">Activity</h1>
+			@InboxRuns(p)
+			@InboxJournal(p)
+		</div>
+	}
+}
+
+// InboxRuns stays as an empty fragment when CI is disabled.
+templ InboxRuns(p InboxPage) {
+	<section
+		id="inbox-runs"
+		hidden?={ !p.RunsEnabled }
+		if p.RunsEnabled {
+			aria-labelledby="inbox-runs-h"
+		}
+	>
+		if p.RunsEnabled {
+			<h2 id="inbox-runs-h" class="rule-h"><span>Running</span><span class="count">{ itoa(len(p.Runs)) }</span></h2>
+			if len(p.Runs) == 0 {
+				<p class="lede dim">no runs in progress.</p>
+			} else {
+				<table class="list mrs" aria-label="Running">
+					<tbody data-rows>
+						for _, r := range p.Runs {
+							<tr>
+								<td class="c-st">@CheckIcon(r.Kind, r.State)<span class="dim">{ r.State }</span></td>
+								<td class="c-subject"><a href={ templ.SafeURL(r.Href) }>{ r.Workflow }{ " " }{ r.Number }</a> <a class="mute" href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a> <span class="dim">{ r.Ref }{ " " }{ r.Event }</span></td>
+								<td class="c-when nowrap dim">
+									if r.WhenAt != "" {
+										<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		}
+	</section>
+}
+
+// InboxJournal is the activity of the range, newest first: the repositories
+// whose default branch is ahead of their nearest tag, then one row per entry.
+// Plain lines and a plain table, like the other sections.
+templ InboxJournal(p InboxPage) {
+	{{ j := p.Journal }}
+	<section id="inbox-journal" class="journal" aria-labelledby="inbox-journal-h">
+		<div class="journal-head">
+			<h2 id="inbox-journal-h" class="rule-h"><span>Activity</span><span class="journal-count">{ itoa(len(j.Rows)) }</span></h2>
+			<nav class="journal-range" aria-label="Activity range">
+				for i, r := range j.Ranges {
+					<a
+						href={ templ.SafeURL(r.Href) }
+						data-nav="keep-scroll"
+						if r.Current {
+							aria-current="page"
+						}
+					>{ r.Label }</a>
+					if i < len(j.Ranges)-1 {
+						<span class="mute" aria-hidden="true">·</span>
+					}
+				}
+			</nav>
+		</div>
+		for _, group := range j.Unreleased {
+			<details id={ "unreleased-" + group.Key } class="unreleased-group" data-level={ group.Key } open?={ group.Open }>
+				<summary>{ group.Label } <span class="num">{ itoa(len(group.Rows)) }</span></summary>
+				<ul class="unreleased" aria-label="Unreleased commits">
+					for _, u := range group.Rows {
+						<li>
+							if u.WhenAt != "" {
+								<time class="u-age dim" datetime={ u.WhenAt } title={ u.Title }>{ u.When }</time>
+							} else {
+								<span class="u-age dim">{ u.When }</span>
+							}
+							<span class="u-mark" aria-hidden="true">⚠</span>
+							<a class="u-repo" href={ templ.SafeURL(u.RepoHref) }>{ u.Repo }</a>
+							<span class="mute">—</span>
+							<a class="num" href={ templ.SafeURL(u.CommitsHref) }>{ u.Commits }</a>
+							if u.Tag != "" {
+								<span class="dim">since</span> <a class="u-tag" href={ templ.SafeURL(u.TagHref) }>{ u.Tag }</a>
+							} else {
+								<span class="dim">since the last tag</span>
+							}
+						</li>
+					}
+				</ul>
+			</details>
+		}
+		if len(j.Rows) > 0 {
+			<table class="list journal-list" aria-label="Activity">
+				<thead><tr><th>When</th><th>Repository</th><th>Type</th><th class="c-main">Detail</th><th class="c-who">Actor</th></tr></thead>
+				<tbody>
+					for _, r := range j.Rows {
+						<tr data-kind={ r.Kind }>
+							<td class="c-when nowrap dim">
+								if r.WhenAt != "" {
+									<time datetime={ r.WhenAt } title={ r.Title }>{ r.When }</time>
+								}
+							</td>
+							<td class="c-repo"><a href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a></td>
+							<td class="c-kind"><span class="j-kind">{ r.Label }</span></td>
+							<td class="c-main">
+								if r.Href != "" {
+									<a href={ templ.SafeURL(r.Href) }><span class="j-ref">{ r.Ref }</span> { r.Text }</a>
+								} else {
+									<span class="j-ref">{ r.Ref }</span> { r.Text }
+								}
+								if r.Note != "" {
+									<span class="mute num">· { r.Note }</span>
+								}
+							</td>
+							<td class="c-who mute">{ r.Actor }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			if j.Truncated {
+				<p class="mute journal-more">only the latest { itoa(len(j.Rows)) } entries are shown.</p>
+			}
+		} else {
+			<p class="lede dim">no activity in the last { j.RangeLabel }.</p>
+		}
+	</section>
+}

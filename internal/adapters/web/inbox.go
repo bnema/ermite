@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -112,83 +110,6 @@ type InboxPage struct {
 	Traffic *InboxTrafficView
 }
 
-// JournalView is the activity section of the inbox: the range toggle, the
-// repositories ahead of their nearest tag, then the entries newest first.
-type JournalView struct {
-	Ranges     []InboxNavLink
-	RangeLabel string // "24 hours" or "7 days", for the empty state
-	Unreleased []UnreleasedGroup
-	Rows       []JournalRow
-	// Truncated tells that the window held more than the rows shown.
-	Truncated bool
-}
-
-type UnreleasedGroup struct {
-	Key, Label string
-	Rows       []UnreleasedRow
-	Open       bool
-}
-
-func (j JournalView) unreleasedCount() int {
-	n := 0
-	for _, g := range j.Unreleased {
-		n += len(g.Rows)
-	}
-	return n
-}
-
-// UnreleasedRow is a repository whose default branch is ahead of its nearest
-// tag.
-type UnreleasedRow struct {
-	Repo, RepoHref string
-	// Commits is "4 commits" or "500+ commits", CommitsHref the history of
-	// the default branch.
-	Commits, CommitsHref string
-	Tag, TagHref         string
-	When, WhenAt, Title  string
-}
-
-// JournalRow is one entry of the activity journal.
-type JournalRow struct {
-	When, WhenAt, Title string
-	Repo, RepoHref      string
-	// Kind is the data-kind of the row, Label the word of the Type column.
-	Kind, Label string
-	// Ref is "!4", "#7", a tag or a branch; Text the title or the commit
-	// subject. Href links the row when there is a page for it.
-	Ref, Text, Href string
-	// Note follows the text: "3 commits" for a push.
-	Note  string
-	Actor string
-}
-
-// journalRanges are the windows of the activity section, by ?range=.
-var journalRanges = []struct {
-	param, label, long string
-	window             time.Duration
-}{
-	{"24h", "24 h", "24 hours", 24 * time.Hour},
-	{"7d", "7 days", "7 days", 7 * 24 * time.Hour},
-}
-
-// inboxRange reads the tab-specific window: 24h/7d normally, 24h/30d for
-// traffic. It returns the index in that tab's ranges; unknown ranges are missing.
-func inboxRange(raw string, tab ...string) (int, error) {
-	ranges := journalRanges
-	if len(tab) > 0 && tab[0] == "traffic" {
-		ranges = trafficRanges
-	}
-	if raw == "" {
-		return 0, nil
-	}
-	for i, r := range ranges {
-		if r.param == raw {
-			return i, nil
-		}
-	}
-	return 0, errNotFound
-}
-
 // inboxQuery is the query of the inbox for a tab and a range; the default
 // range is left out.
 func inboxQuery(tab string, rng int) string {
@@ -204,131 +125,6 @@ func inboxQuery(tab string, rng int) string {
 		q.Set("range", ranges[rng].param)
 	}
 	return q.Encode()
-}
-
-// journalView builds the activity section.
-func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
-	now := s.cfg.Now()
-	v := JournalView{RangeLabel: journalRanges[rng].long, Truncated: j.Truncated}
-	for i, r := range journalRanges {
-		href := inboxPath
-		if q := inboxQuery("activity", i); q != "" {
-			href += "?" + q
-		}
-		v.Ranges = append(v.Ranges, InboxNavLink{Label: r.label, Href: href + "#inbox-journal", Current: i == rng})
-	}
-	groups := []UnreleasedGroup{
-		{Key: "due", Label: "Release due", Open: true},
-		{Key: "soon", Label: "Soon", Open: true},
-		{Key: "later", Label: "Nothing urgent"},
-	}
-	unreleased := append([]ports.UnreleasedRepo(nil), j.Unreleased...)
-	sort.Slice(unreleased, func(i, k int) bool {
-		a, b := unreleased[i], unreleased[k]
-		at, bt := a.Distance.Tag.At, b.Distance.Tag.At
-		ak := a.Distance.Tag.Name != "" && !at.IsZero()
-		bk := b.Distance.Tag.Name != "" && !bt.IsZero()
-		if ak != bk {
-			return ak
-		}
-		if ak && !at.Equal(bt) {
-			return at.Before(bt)
-		}
-		if a.Distance.Commits != b.Distance.Commits {
-			return a.Distance.Commits > b.Distance.Commits
-		}
-		return a.Repo.String() < b.Repo.String()
-	})
-	for _, u := range unreleased {
-		repo := u.Repo.String()
-		n := itoa(u.Distance.Commits)
-		if u.Distance.More {
-			n += "+"
-		}
-		word := " commits"
-		if u.Distance.Commits == 1 && !u.Distance.More {
-			word = " commit"
-		}
-		row := UnreleasedRow{
-			Repo: repo, RepoHref: repoHref(repo),
-			Commits: n + word, CommitsHref: repoHref(repo, "commits", u.Branch),
-		}
-		if t := u.Distance.Tag; t.Name != "" {
-			row.Tag, row.TagHref = visibleText(t.Name), repoHref(repo, "tree", t.Name)
-			_, row.WhenAt = whenOf(now, t.At)
-			if !t.At.IsZero() {
-				row.Title = absolute(t.At)
-				row.When = itoa(max(0, int(now.Sub(t.At)/(24*time.Hour)))) + "d"
-			}
-		}
-		if row.When == "" {
-			row.When = "—"
-		}
-		for i := range groups {
-			if groups[i].Key == string(domain.ReleaseUrgency(u.Distance, now)) {
-				groups[i].Rows = append(groups[i].Rows, row)
-				break
-			}
-		}
-	}
-	for _, g := range groups {
-		if len(g.Rows) > 0 {
-			v.Unreleased = append(v.Unreleased, g)
-		}
-	}
-	for _, e := range j.Entries {
-		v.Rows = append(v.Rows, journalRow(now, e))
-	}
-	return v
-}
-
-// journalRow is the row of an entry: the texts fit to display, a link to the
-// merge request, the issue, the release, the tag or the commit.
-func journalRow(now time.Time, e domain.JournalEntry) JournalRow {
-	repo := e.Repo.String()
-	row := JournalRow{
-		Repo: repo, RepoHref: repoHref(repo), Kind: string(e.Kind),
-		Text: visibleText(e.Title), Actor: visibleText(e.Actor), Title: absolute(e.At),
-	}
-	row.When, row.WhenAt = whenOf(now, e.At)
-	number := strconv.FormatInt(e.Number, 10)
-	switch e.Kind {
-	case domain.JournalMergeRequestOpened, domain.JournalMergeRequestMerged, domain.JournalMergeRequestClosed:
-		row.Ref, row.Href = "!"+number, mrHref(repo, e.Number)
-		row.Label = map[domain.JournalKind]string{
-			domain.JournalMergeRequestOpened: "opened", domain.JournalMergeRequestMerged: "merged", domain.JournalMergeRequestClosed: "closed",
-		}[e.Kind]
-	case domain.JournalIssueOpened, domain.JournalIssueClosed:
-		row.Ref, row.Href, row.Label = "#"+number, issueHref(repo, e.Number), "issue opened"
-		if e.Kind == domain.JournalIssueClosed {
-			row.Label = "issue closed"
-		}
-	case domain.JournalReleasePublished:
-		row.Label, row.Ref, row.Href = "release", visibleText(e.Ref), releaseHref(repo, e.Ref)
-	case domain.JournalTagCreated:
-		row.Label, row.Ref, row.Href = "tag", visibleText(e.Ref), repoHref(repo, "tree", e.Ref)
-	case domain.JournalTagDeleted:
-		row.Label, row.Ref = "tag deleted", visibleText(e.Ref)
-	case domain.JournalDefaultBranchPush:
-		row.Label, row.Ref, row.Text = "push", visibleText(e.Ref), visibleText(e.Summary)
-		if !e.Commit.IsZero() {
-			row.Href = repoHref(repo, "commit", e.Commit.String())
-		}
-		n := itoa(e.Commits)
-		if e.More {
-			n += "+"
-		}
-		switch {
-		case e.Commits == 0:
-		case e.Commits == 1 && !e.More:
-			row.Note = "1 commit"
-		default:
-			row.Note = n + " commits"
-		}
-	default:
-		row.Label = string(e.Kind)
-	}
-	return row
 }
 
 // inboxTab normalizes unknown or absent tabs to open work.
@@ -413,18 +209,7 @@ func (s *Server) inboxPage(ctx context.Context, d inboxReads, tab string, rng in
 	if at := d.deps.CheckedAt; !at.IsZero() {
 		p.DepsChecked, p.DepsCheckedAt = at.UTC().Format("2006-01-02 15:04"), rfc3339(at)
 	}
-	for _, run := range d.runs.Runs {
-		r := InboxRunRow{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}
-		if run.Status == domain.CIInProgress {
-			r.State = "in progress"
-		}
-		ts := run.StartedAt
-		if ts.IsZero() {
-			ts = run.CreatedAt
-		}
-		r.When, r.WhenAt = whenOf(now, ts)
-		p.Runs = append(p.Runs, r)
-	}
+	p.Runs = s.runRows(d.runs.Runs, now)
 	for _, pi := range d.pending {
 		p.Pending = append(p.Pending, s.pendingRow(now, pi))
 	}
@@ -588,7 +373,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 		return nil, 0, errNotFound
 	}
 	tab := inboxTab(r.URL.Query().Get("tab"))
-	rng, err := inboxRange(r.URL.Query().Get("range"), tab)
+	rng, err := activityRange(r.URL.Query().Get("range"), tab)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -631,7 +416,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 		return nil, nil
 	}
 	tab := inboxTab(l.tab)
-	rng, _ := inboxRange(l.rng, tab) // checked when the stream was opened
+	rng, _ := activityRange(l.rng, tab) // checked when the stream was opened
 	p, err := l.s.inboxData(ctx, tab, rng, depsQuery{sort: depsSortParam(l.sort), filter: depsFilterParam(l.filter)})
 	if err != nil {
 		return nil, err

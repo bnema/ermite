@@ -120,7 +120,7 @@ func TestInboxTrafficRanges(t *testing.T) {
 		{"activity", "24h", true}, {"activity", "7d", true}, {"activity", "30d", false},
 		{"traffic", "", true}, {"traffic", "24h", true}, {"traffic", "30d", true}, {"traffic", "7d", false},
 	} {
-		_, err := inboxRange(tc.raw, tc.tab)
+		_, err := activityRange(tc.raw, tc.tab)
 		assert.Equal(t, tc.valid, err == nil, "tab=%s range=%s", tc.tab, tc.raw)
 	}
 }

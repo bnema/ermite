@@ -49,11 +49,11 @@ func sampleJournal(t *testing.T) ports.InboxJournal {
 	}
 }
 
-func TestInboxJournalTable(t *testing.T) {
+func TestActivityJournalTable(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Journal(mock.Anything, mock.Anything, 24*time.Hour).Return(sampleJournal(t), nil)
-	rec := inboxGet(journalServer(t, svc), "/-/inbox?tab=activity", true)
+	rec := inboxGet(journalServer(t, svc), activityPath, true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
 	sec := body[strings.Index(body, `id="inbox-journal"`):]
@@ -90,42 +90,41 @@ func TestInboxJournalTable(t *testing.T) {
 	assert.NotContains(t, sec, "card")
 }
 
-func TestInboxJournalRangeToggleKeepsTheActivityTab(t *testing.T) {
+func TestActivityRangeToggle(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(ports.InboxJournal{}, nil)
-	rec := inboxGet(journalServer(t, svc), "/-/inbox?tab=activity&range=7d", true)
+	rec := inboxGet(journalServer(t, svc), activityPath+"?range=7d", true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
-	assert.Contains(t, body, `<a href="/-/inbox?tab=activity#inbox-journal">24 h</a>`)
-	assert.Contains(t, body, `<a href="/-/inbox?range=7d&amp;tab=activity#inbox-journal" aria-current="page">7 days</a>`)
-	assert.Contains(t, body, `href="/-/inbox?range=7d&amp;tab=activity"`, "the tab keeps the range")
+	assert.Contains(t, body, `<a href="/-/activity" data-nav="keep-scroll">24 h</a>`)
+	assert.Contains(t, body, `<a href="/-/activity?range=7d" data-nav="keep-scroll" aria-current="page">7 days</a>`)
 	assert.Contains(t, body, "no activity in the last 7 days.")
 	assert.NotContains(t, body, `class="unreleased"`)
 	assert.NotContains(t, body, `journal-list`)
 }
 
-func TestInboxJournalEmptyAndBadRange(t *testing.T) {
+func TestActivityEmptyAndBadRange(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Journal(mock.Anything, mock.Anything, 24*time.Hour).Return(ports.InboxJournal{}, nil).Once()
 	srv := journalServer(t, svc)
-	rec := inboxGet(srv, "/-/inbox?tab=activity", true)
+	rec := inboxGet(srv, activityPath, true)
 	require.Equal(t, 200, rec.Code)
 	assert.Contains(t, rec.Body.String(), "no activity in the last 24 hours.")
-	assert.Contains(t, rec.Body.String(), `<a href="/-/inbox?tab=activity#inbox-journal" aria-current="page">24 h</a>`)
+	assert.Contains(t, rec.Body.String(), `<a href="/-/activity" data-nav="keep-scroll" aria-current="page">24 h</a>`)
 
-	assert.Equal(t, 404, inboxGet(srv, "/-/inbox?range=1y", true).Code)
-	assert.Equal(t, 404, inboxGet(srv, "/-/inbox?range=7d", false).Code, "still the owner's alone")
+	assert.Equal(t, 404, inboxGet(srv, activityPath+"?range=1y", true).Code)
+	assert.Equal(t, 404, inboxGet(srv, activityPath+"?range=7d", false).Code, "still the owner's alone")
 }
 
-func TestInboxJournalTruncatedNote(t *testing.T) {
+func TestActivityJournalTruncatedNote(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	j := sampleJournal(t)
 	j.Truncated = true
 	svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything).Return(j, nil)
-	rec := inboxGet(journalServer(t, svc), "/-/inbox?tab=activity", true)
+	rec := inboxGet(journalServer(t, svc), activityPath, true)
 	assert.Contains(t, rec.Body.String(), "only the latest 5 entries are shown.")
 }
 
@@ -232,4 +231,56 @@ func TestJournalUnreleasedUrgency(t *testing.T) {
 	}
 	assert.Equal(t, []string{"oldest", "alpha", "beta", "zeta", "unknown"}, names)
 	assert.Equal(t, "unknown", j.Unreleased[0].Repo.String(), "input order is preserved")
+}
+
+// activityServer serves /-/activity with an inbox that answers only what
+// each test expects: Runs, Journal and Counts once each.
+func activityServer(t *testing.T) (*Server, *mocks.InboxService) {
+	t.Helper()
+	svc := mocks.NewInboxService(t)
+	return newTestServer(t, Config{
+		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
+		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
+	}), svc
+}
+
+func TestActivityPageForTheOwner(t *testing.T) {
+	t.Parallel()
+	srv, svc := activityServer(t)
+	svc.EXPECT().Runs(mock.Anything, mock.Anything).Return(ports.InboxRuns{Enabled: true, Runs: []domain.CIRun{{Repo: repoName(t, "alpha"), ID: 1, Status: domain.CIQueued}}}, nil).Once()
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, 24*time.Hour).Return(sampleJournal(t), nil).Once()
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{Work: 2}, nil).Once()
+
+	rec := inboxGet(srv, activityPath, true)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.Contains(t, body, "<title>Activity · ")
+	assert.Contains(t, body, `<div id="view" data-view="activity"><h1 class="sr" tabindex="-1">Activity</h1>`)
+	assert.Contains(t, body, `href="/-/activity" data-nav data-key="g a" aria-label="Activity" aria-current="page"`)
+	assert.Contains(t, body, `aria-labelledby="inbox-runs-h"`)
+	assert.Contains(t, body, `id="inbox-journal"`)
+	assert.NotContains(t, body, `class="crumbs"`)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+}
+
+func TestActivityHidesRunsWithoutCI(t *testing.T) {
+	t.Parallel()
+	srv, svc := activityServer(t)
+	svc.EXPECT().Runs(mock.Anything, mock.Anything).Return(ports.InboxRuns{}, nil).Once()
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything).Return(ports.InboxJournal{}, nil).Once()
+	svc.EXPECT().Counts(mock.Anything, mock.Anything).Return(ports.OwnerCounts{}, nil).Once()
+
+	body := inboxGet(srv, activityPath, true).Body.String()
+	assert.Contains(t, body, `<section id="inbox-runs" hidden>`)
+	assert.NotContains(t, body, "Running")
+}
+
+func TestActivityPageIsMissingForEveryoneElse(t *testing.T) {
+	t.Parallel()
+	srv, _ := activityServer(t) // never asked
+	missing := inboxGet(srv, "/-/nothing-here", false)
+	anon := inboxGet(srv, activityPath, false)
+	assert.Equal(t, 404, anon.Code)
+	assert.Equal(t, missing.Body.String(), anon.Body.String())
+	assert.NotContains(t, anon.Body.String(), "owner-nav")
 }
