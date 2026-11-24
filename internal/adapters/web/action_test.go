@@ -110,7 +110,7 @@ func TestPresentationFailuresPreserveSuccessfulAction(t *testing.T) {
 					s = depsServer(t, inbox, deps)
 					h = s.depsAction(depsOpen)
 					path = "/alpha/deps"
-					back = "/-/inbox?tab=deps"
+					back = "/-/deps"
 				}
 			case "CI":
 				runs := mocks.NewRunService(t)
@@ -153,7 +153,7 @@ func TestActionFailureAndGateBackLinks(t *testing.T) {
 		"/demo/merge-requests/3/comments/7/edit": "/demo/merge-requests/3",
 		"/demo/actions/runs/8/rerun-failed":      "/demo/actions/runs/8",
 		"/-/inbox/pending/demo/abc/ban":          "/-/inbox?tab=moderation",
-		"/-/inbox/deps/demo/open":                "/-/inbox?tab=deps",
+		"/-/deps/demo/open":                      "/-/deps",
 	} {
 		t.Run(path, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, path, nil)

@@ -177,38 +177,7 @@ func (s *Server) inboxPage(ctx context.Context, d inboxReads, tab string, rng in
 	p := InboxPage{MergeRequests: len(d.work.MergeRequests), Issues: len(d.work.Issues), PendingCount: len(d.pending), Tab: tab}
 	p.Running, p.RunsEnabled = len(d.runs.Runs), d.runs.Enabled
 	p.DepsCount, p.DepsEnabled = len(d.deps.Deps), s.cfg.Deps != nil
-	var all []InboxDepsRow
-	for _, d := range d.deps.Deps {
-		row := s.depsRow(d, "")
-		all = append(all, row)
-		p.DepsUpdates += row.Count
-	}
-	p.DepsBatches = len(all)
-	p.Deps = s.depsRepos(d.deps.Deps, dq)
-	p.DepsFilters = depsFilters(all, dq, rng)
-	p.DepsQueue = depsQueueText(d.deps.Queue)
-	sort := dq.sort
-	for _, o := range []struct{ param, label string }{{"", "most updates"}, {depsSortName, "name"}} {
-		href := inboxHref("deps", rng)
-		if o.param != "" {
-			sep := "?"
-			if strings.Contains(href, "?") {
-				sep = "&"
-			}
-			href += sep + "sort=" + o.param
-		}
-		if dq.filter != "" {
-			sep := "?"
-			if strings.Contains(href, "?") {
-				sep = "&"
-			}
-			href += sep + "filter=" + dq.filter
-		}
-		p.DepsSorts = append(p.DepsSorts, InboxNavLink{Label: o.label, Href: href + "#inbox-deps", Current: o.param == sort})
-	}
-	if at := d.deps.CheckedAt; !at.IsZero() {
-		p.DepsChecked, p.DepsCheckedAt = at.UTC().Format("2006-01-02 15:04"), rfc3339(at)
-	}
+	s.fillDeps(&p, d.deps, dq)
 	p.Runs = s.runRows(d.runs.Runs, now)
 	for _, pi := range d.pending {
 		p.Pending = append(p.Pending, s.pendingRow(now, pi))

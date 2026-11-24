@@ -36,6 +36,9 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) bool {
 		if strings.HasPrefix(r.URL.Path, inboxPath+"/") {
 			back, what = inboxPath, "a moderation action"
 		}
+		if strings.HasPrefix(r.URL.Path, depsPath+"/") {
+			back, what = depsPath, "a dependency action"
+		}
 		if strings.Contains(r.URL.Path, "/issues") {
 			back, what = issuesBase(r.PathValue("repo")), "an issue"
 		}

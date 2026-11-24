@@ -222,12 +222,13 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET "+workPath, s.page(s.work))
 		mux.HandleFunc("GET "+activityPath, s.page(s.activity))
 		if s.cfg.Deps != nil {
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/open", s.action(depsBack, s.depsAction(depsOpen)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/ignore", s.action(depsBack, s.depsAction(depsIgnore)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/snooze", s.action(depsBack, s.depsAction(depsSnooze)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/recheck", s.action(depsBack, s.depsAction(depsRecheck)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/auto", s.action(depsBack, s.depsAction(depsAuto)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/split", s.action(depsBack, s.depsAction(depsSplit)))
+			mux.HandleFunc("GET "+depsPath, s.page(s.deps))
+			mux.HandleFunc("POST "+depsPath+"/{repo}/open", s.action(depsBack, s.depsAction(depsOpen)))
+			mux.HandleFunc("POST "+depsPath+"/{repo}/ignore", s.action(depsBack, s.depsAction(depsIgnore)))
+			mux.HandleFunc("POST "+depsPath+"/{repo}/snooze", s.action(depsBack, s.depsAction(depsSnooze)))
+			mux.HandleFunc("POST "+depsPath+"/{repo}/recheck", s.action(depsBack, s.depsAction(depsRecheck)))
+			mux.HandleFunc("POST "+depsPath+"/{repo}/auto", s.action(depsBack, s.depsAction(depsAuto)))
+			mux.HandleFunc("POST "+depsPath+"/{repo}/split", s.action(depsBack, s.depsAction(depsSplit)))
 		}
 		if s.cfg.Moderation != nil {
 			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.action(pendingBack, s.pendingApprove))

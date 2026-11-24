@@ -11,11 +11,15 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/a-h/templ"
 	"golang.org/x/mod/semver"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
+
+// depsPath is Bernard's table of dependency updates.
+const depsPath = "/-/deps"
 
 // InboxDepsUpdate is one line of the sub-table of a repository. Ecosystem only
 // feeds the hidden fields of the forms: the page never shows it.
@@ -373,7 +377,7 @@ func (s *Server) depsRow(in ports.InboxDeps, query string) InboxDepsRow {
 
 func depsRepoID(repo string) string { return "deps-" + inboxIDPart(repo) }
 
-func depsBase(repo string) string { return inboxPath + "/deps/" + url.PathEscape(repo) + "/" }
+func depsBase(repo string) string { return depsPath + "/" + url.PathEscape(repo) + "/" }
 
 // depsRepos groups the batches of the overview by repository, keeps those the
 // filter shows, and orders them: by name, or the repositories with a failure
@@ -442,7 +446,7 @@ func (s *Server) depsRepos(deps []ports.InboxDeps, q depsQuery) []InboxDepsRepo 
 }
 
 // depsFilters are the chips above the table, with the batches each shows.
-func depsFilters(rows []InboxDepsRow, q depsQuery, rng int) []InboxDepsFilter {
+func depsFilters(rows []InboxDepsRow, q depsQuery) []InboxDepsFilter {
 	var out []InboxDepsFilter
 	for _, f := range []struct{ param, label string }{{"", "All"}, {depsFilterFailures, "Failures"}, {depsFilterMajors, "Majors"}, {depsFilterMRs, "MRs"}} {
 		v := depsQuery{sort: q.sort, filter: f.param}
@@ -452,11 +456,7 @@ func depsFilters(rows []InboxDepsRow, q depsQuery, rng int) []InboxDepsFilter {
 				n++
 			}
 		}
-		href := inboxHref("deps", rng)
-		if e := v.encode(); e != "" {
-			href += "&" + e
-		}
-		out = append(out, InboxDepsFilter{Label: f.label, Href: href + "#inbox-deps", Count: n, Current: f.param == q.filter})
+		out = append(out, InboxDepsFilter{Label: f.label, Href: depsHref(v), Count: n, Current: f.param == q.filter})
 	}
 	return out
 }
@@ -497,7 +497,7 @@ func depsFlag(r *http.Request, field string) (bool, error) {
 	return false, fmt.Errorf("%w: %s must be 1 or 0", domain.ErrInvalid, field)
 }
 
-// depsAction is POST /-/inbox/deps/<repo>/open, ignore, snooze, recheck, auto
+// depsAction is POST /-/deps/<repo>/open, ignore, snooze, recheck, auto
 // or split.
 func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request) (ActionResult, error) {
 	return func(ctx context.Context, r *http.Request) (ActionResult, error) {
@@ -546,12 +546,56 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 	}
 }
 
-func depsBack(r *http.Request) string {
-	back := inboxHref("deps", 0)
-	if e := depsQueryOf(r).encode(); e != "" {
-		back += "&" + e
+// depsBack is the page an action returns to, with its sort and filter.
+func depsBack(r *http.Request) string { return depsHref(depsQueryOf(r)) }
+
+// depsHref is the page of the table with the sort and filter of q.
+func depsHref(q depsQuery) string {
+	if e := q.encode(); e != "" {
+		return depsPath + "?" + e
 	}
-	return back
+	return depsPath
+}
+
+// deps is GET /-/deps?sort=&filter=: Bernard's table.
+func (s *Server) deps(ctx context.Context, r *http.Request) (templ.Component, int, error) {
+	if !SignedIn(ctx) {
+		return nil, 0, errNotFound
+	}
+	v, err := s.cfg.Inbox.Deps(ctx, principal(ctx))
+	if err != nil {
+		return nil, 0, err
+	}
+	var p InboxPage
+	s.fillDeps(&p, v, depsQueryOf(r))
+	l := s.base()
+	l.Title = "Dependencies · " + s.instance
+	l.OwnerNav = s.ownerNav(ctx, "deps")
+	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
+	// No live updates yet: the owner stream accepts view=deps later.
+	return Deps(l, p), http.StatusOK, nil
+}
+
+// fillDeps sets the table of p from what Inbox.Deps read.
+func (s *Server) fillDeps(p *InboxPage, v ports.InboxDepsView, dq depsQuery) {
+	p.DepsCount, p.DepsEnabled = len(v.Deps), s.cfg.Deps != nil
+	var all []InboxDepsRow
+	for _, d := range v.Deps {
+		row := s.depsRow(d, "")
+		all = append(all, row)
+		p.DepsUpdates += row.Count
+	}
+	p.DepsBatches = len(all)
+	p.Deps = s.depsRepos(v.Deps, dq)
+	p.DepsFilters = depsFilters(all, dq)
+	p.DepsQueue = depsQueueText(v.Queue)
+	for _, o := range []struct{ param, label string }{{"", "most updates"}, {depsSortName, "name"}} {
+		href := depsHref(depsQuery{sort: o.param, filter: dq.filter})
+		p.DepsSorts = append(p.DepsSorts, InboxNavLink{Label: o.label, Href: href, Current: o.param == dq.sort})
+	}
+	if at := v.CheckedAt; !at.IsZero() {
+		p.DepsChecked, p.DepsCheckedAt = at.UTC().Format("2006-01-02 15:04"), rfc3339(at)
+	}
 }
 
 // depsResult re-renders the whole table: an action can change the header,
@@ -568,7 +612,8 @@ func (s *Server) depsResult(ctx context.Context, r *http.Request) (ActionResult,
 		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	repo := r.PathValue("repo")
-	p := s.inboxPage(ctx, inboxReads{deps: deps}, "deps", 0, depsQueryOf(r))
+	var p InboxPage
+	s.fillDeps(&p, deps, depsQueryOf(r))
 	for i := range p.Deps {
 		if p.Deps[i].Repo == repo {
 			p.Deps[i].Open = true

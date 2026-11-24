@@ -68,7 +68,7 @@ func actionBack(r *http.Request) string {
 	if strings.HasPrefix(path, inboxPath+"/pending/") {
 		return pendingBack(r)
 	}
-	if strings.HasPrefix(path, inboxPath+"/deps/") {
+	if strings.HasPrefix(path, depsPath+"/") {
 		return depsBack(r)
 	}
 	if strings.HasPrefix(path, passkeysPath+"/") {
