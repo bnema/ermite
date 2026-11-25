@@ -15,7 +15,7 @@ require (
 	bnema.dev/ermite-actions v0.2.1
 	bnema.dev/ermite-api v0.29.0
 	bnema.dev/ermite-git v0.1.1
-	bnema.dev/ermite-kv v0.1.2
+	bnema.dev/ermite-kv v0.2.0
 	bnema.dev/kvconf v0.2.0
 	bnema.dev/zerowrap v1.5.0
 	connectrpc.com/connect/v2 v2.0.2
