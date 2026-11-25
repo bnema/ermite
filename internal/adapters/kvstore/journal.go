@@ -159,7 +159,7 @@ func (j *Journal) ListSince(ctx context.Context, since time.Time, before string,
 	}
 	type slot struct {
 		key     []byte
-		val     []byte // nil once decoded
+		item    kv.Item // keeps the value valid until it is decoded
 		entry   domain.JournalEntry
 		decoded bool
 	}
@@ -175,7 +175,7 @@ func (j *Journal) ListSince(ctx context.Context, since time.Time, before string,
 		if want != "" && (len(key) <= journalRepoAt || string(key[journalRepoAt:]) != want) {
 			continue
 		}
-		s := slot{key: key, val: item.Value}
+		s := slot{key: key, item: item}
 		if keep != nil {
 			e, err := decodeJournalKey(key, item.Value)
 			if err != nil {
@@ -199,7 +199,7 @@ func (j *Journal) ListSince(ctx context.Context, since time.Time, before string,
 	for i := range len(ring) {
 		s := ring[(next-1-i+2*len(ring))%len(ring)]
 		if !s.decoded {
-			e, err := decodeJournalKey(s.key, s.val)
+			e, err := decodeJournalKey(s.key, s.item.Value)
 			if err != nil {
 				return ports.JournalList{}, fmt.Errorf("decode %s: %w", s.key, err)
 			}

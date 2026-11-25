@@ -3,6 +3,7 @@
 package kvstore
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -68,5 +69,5 @@ func (s *Store) RawOIDCKey(ctx context.Context, kid string) ([]byte, bool) {
 	if !ok {
 		return nil, false
 	}
-	return item.Value, true
+	return bytes.Clone(item.Value), true
 }
