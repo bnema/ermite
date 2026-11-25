@@ -668,7 +668,10 @@ type TreeFileLister interface {
 // earlier hits recorded, but never one bucket of a hit without the other.
 // Daily and Hourly return oldest-first buckets. Summaries returns rows ordered
 // by repository name, summing daily uniques and merging daily referrers.
-// Prune counts deleted buckets, retaining starts exactly at the cutoff.
+// Prune counts deleted buckets, retaining starts exactly at the cutoff, and
+// drops the unique sets of buckets that ended at least 1 hour earlier.
+// Visitors are deduplicated only until then: a later hit for such a bucket
+// counts its visitor again.
 type TrafficStore interface {
 	Record(ctx context.Context, batch []domain.TrafficHit) error
 	Daily(ctx context.Context, repo domain.RepoName, from, to time.Time) ([]domain.TrafficBucket, error)

@@ -141,10 +141,12 @@ recorder:
   visitor of a bucket, for views (`v`) or clones (`c`), at most 10,000 per
   bucket; beyond, the bucket is marked partial.
 
-A pruner deletes expired buckets every hour; deleting the repository removes
-both prefixes. Hits admitted before the repository's creation time are dropped,
-so a recreated repository never inherits the traffic of the old one. There is
-no schema bump; a build without these keys ignores them.
+A pruner runs every hour: it deletes expired buckets and drops unique markers
+1 hour after their bucket ends (the counts stay in the aggregate). Deleting the
+repository removes both prefixes. Hits admitted before the repository's
+creation time are dropped, so a recreated repository never inherits the traffic
+of the old one. There is no schema bump; a build without these keys ignores
+them.
 
 ## Schema 12: dependency batches
 

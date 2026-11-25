@@ -38,6 +38,14 @@ const (
 )
 
 const trafficUniqueCap = 10000
+
+// trafficUniqueGrace is how long after its bucket ends Prune keeps the unique
+// markers; buffered hits of a closed bucket land well within it.
+const trafficUniqueGrace = time.Hour
+
+// trafficPruneBatch bounds the deletes of one unique-marker prune batch
+// (under 170 bytes each, about 1.7 MB).
+const trafficPruneBatch = 10000
 const trafficReferrerCap = 50
 const trafficReferrerMaxLen = 253
 
@@ -145,14 +153,17 @@ func trafficKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [
 // before any write. Hits are written in order in sub-batches of at most about
 // trafficBatchBudget bytes; each sub-batch is atomic, keeps both buckets of a
 // hit together and guards the repository record it checked, but an error
-// leaves earlier sub-batches recorded.
+// leaves earlier sub-batches recorded. Visitors are deduplicated only until
+// Prune drops a bucket's unique keys (1 hour after it ends); a later hit for
+// that bucket counts its visitor again.
 func (t *Traffic) Record(ctx context.Context, hits []domain.TrafficHit) error {
 	return t.record(ctx, hits, true)
 }
 
 // ImportHistory is Record without the creation-time fence: it keeps hits
 // dated before their repository was created. It is for development fixtures
-// that backfill synthetic history; servers must use Record.
+// that backfill synthetic history; servers must use Record. Like Record, it
+// counts visitors of a bucket whose unique keys were pruned again.
 func (t *Traffic) ImportHistory(ctx context.Context, hits []domain.TrafficHit) error {
 	return t.record(ctx, hits, false)
 }
@@ -316,11 +327,16 @@ func uvarintSize(v int) int {
 	return n
 }
 
-func trafficStart(at time.Time, width string) time.Time {
+// trafficWidthSize is the duration of a bucket of width.
+func trafficWidthSize(width string) time.Duration {
 	if width == trafficDaily {
-		return at.UTC().Truncate(24 * time.Hour)
+		return 24 * time.Hour
 	}
-	return at.UTC().Truncate(time.Hour)
+	return time.Hour
+}
+
+func trafficStart(at time.Time, width string) time.Time {
+	return at.UTC().Truncate(trafficWidthSize(width))
 }
 
 func isBotView(h domain.TrafficHit) bool { return h.Kind == domain.TrafficView && h.Bot }
@@ -536,10 +552,13 @@ func addTrafficCounts(a *domain.TrafficCounts, b domain.TrafficCounts) {
 }
 
 // Prune removes buckets starting strictly before now minus their retention:
-// 90 days for daily buckets and 48 hours for hourly buckets, each with its
-// unique keys in one batch (at most 2 × 10,000 deletes of under 170 bytes,
-// about 3.4 MB). It returns the number of buckets deleted. A version guard
-// skips a bucket updated concurrently; the next Prune retries it.
+// 90 days for daily buckets and 48 hours for hourly buckets. A version guard
+// skips a bucket updated concurrently; the next Prune retries it. It also
+// deletes the unique keys of every bucket that ended at least
+// trafficUniqueGrace before now, in bounded batches; aggregates keep their
+// unique counts. Unique keys left by an interrupted unique prune are deleted
+// with their bucket, in one batch of at most 2 × 10,000 deletes (about 3.4 MB).
+// It returns the number of aggregate buckets deleted.
 func (t *Traffic) Prune(ctx context.Context, now time.Time) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -556,6 +575,9 @@ func (t *Traffic) Prune(ctx context.Context, now time.Time) (int, error) {
 			n, err := t.pruneRange(ctx, snap, repo, width, now.Add(-retention[width]))
 			done += n
 			if err != nil {
+				return done, err
+			}
+			if err := t.pruneUniques(ctx, snap, repo, width, now); err != nil {
 				return done, err
 			}
 		}
@@ -590,4 +612,40 @@ func (t *Traffic) pruneRange(ctx context.Context, snap *kv.Snapshot, repo domain
 		done++
 	}
 	return done, nil
+}
+
+// pruneUniques deletes the unique keys of one repository and width whose
+// bucket ended at least trafficUniqueGrace before now, in batches of at most
+// trafficPruneBatch deletes. A closed bucket past its grace gets no writes, so
+// the deletes need no guard.
+func (t *Traffic) pruneUniques(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName, width string, now time.Time) error {
+	// Starts at or before last qualify. Every key of bucket last starts with
+	// "<last>/", and '0' follows '/', so "<last>0" bounds them all.
+	last := now.Add(-trafficWidthSize(width) - trafficUniqueGrace).Truncate(time.Second)
+	kind := trafficUniqueRepoPrefix(repo) + width + "/"
+	end := kind + last.UTC().Format(trafficTimeLayout) + "0"
+	var b kv.Batch
+	apply := func() error {
+		if b.Len() == 0 {
+			return nil
+		}
+		_, err := t.db.Apply(ctx, &b)
+		b.Reset()
+		return err
+	}
+	for key := range snap.Range(ctx, []byte(kind), []byte(end)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		b.Delete(key)
+		if b.Len() >= trafficPruneBatch {
+			if err := apply(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return apply()
 }

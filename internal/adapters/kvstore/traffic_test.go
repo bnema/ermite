@@ -126,7 +126,9 @@ func TestTrafficPruneAndDelete(t *testing.T) {
 	n, err := tr.Prune(ctx, now)
 	require.NoError(t, err)
 	require.Equal(t, 12, n)
-	require.Equal(t, 18, s.CountKeysForTest(ctx, "traffic/u/"))
+	// Only the buckets starting at now are not past their unique grace: one
+	// daily and one hourly marker per repository.
+	require.Equal(t, 6, s.CountKeysForTest(ctx, "traffic/u/"))
 	require.Equal(t, 18, s.CountKeysForTest(ctx, "traffic/a/"))
 	days, err := tr.Daily(ctx, a, now.Add(-100*24*time.Hour), now.Add(time.Hour))
 	require.NoError(t, err)
@@ -140,7 +142,7 @@ func TestTrafficPruneAndDelete(t *testing.T) {
 	require.Zero(t, s.CountKeysForTest(ctx, "traffic/u/a/"))
 	require.Zero(t, s.CountKeysForTest(ctx, "traffic/a/a/"))
 	for _, repo := range []domain.RepoName{b, c} {
-		require.Equal(t, 6, s.CountKeysForTest(ctx, "traffic/u/"+repo.String()+"/"))
+		require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/u/"+repo.String()+"/"))
 	}
 	require.NoError(t, tr.Record(ctx, []domain.TrafficHit{{Repo: a, Kind: domain.TrafficView, At: now}}))
 	require.NoError(t, s.Create(ctx, domain.Repo{Name: a, CreatedAt: now, Visibility: domain.VisibilityPrivate}))
@@ -163,6 +165,103 @@ func TestTrafficPruneAndDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, days, 1)
 	require.Equal(t, uint64(1), days[0].CloneUniques)
+}
+
+func TestTrafficPruneDropsClosedUniques(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	repo := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: trafficEpoch, Visibility: domain.VisibilityPrivate}))
+	// now is 1h after the end of the day of "old" and of hour 10, and 30 min
+	// after the end of hour 11 (inside its grace); hour 12 is current.
+	now := time.Date(2026, 6, 2, 12, 30, 0, 0, time.UTC)
+	day := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+	boundary := domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: day.Add(-time.Hour), VisitorHash: visitor(1)}
+	var hits []domain.TrafficHit
+	for i, at := range []time.Time{day.Add(10 * time.Hour), day.Add(11 * time.Hour), day.Add(12 * time.Hour)} {
+		hits = append(hits,
+			domain.TrafficHit{Repo: repo, Kind: domain.TrafficView, At: at, VisitorHash: visitor(uint64(10 + i))},
+			domain.TrafficHit{Repo: repo, Kind: domain.TrafficClone, At: at, VisitorHash: visitor(uint64(10 + i))})
+	}
+	require.NoError(t, tr.Record(ctx, append(hits, boundary)))
+	daysBefore, err := tr.Daily(ctx, repo, day.Add(-24*time.Hour), day.Add(24*time.Hour))
+	require.NoError(t, err)
+	hoursBefore, err := tr.Hourly(ctx, repo, day.Add(-24*time.Hour), day.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, daysBefore, 2)
+	require.Len(t, hoursBefore, 4)
+
+	exact := day.Add(10*time.Hour + 2*time.Hour) // hour 10 ends at 11:00, + 1h grace
+	n, err := tr.Prune(ctx, exact)
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/u/proj/h/20260602T100000Z/"))
+	require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/u/proj/h/20260602T110000Z/"))
+	n, err = tr.Prune(ctx, now)
+	require.NoError(t, err)
+	require.Zero(t, n)
+
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/u/proj/d/20260601T000000Z/"))
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/u/proj/h/20260601T230000Z/"))
+	require.Zero(t, s.CountKeysForTest(ctx, "traffic/u/proj/h/20260602T100000Z/"))
+	require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/u/proj/h/20260602T110000Z/"))
+	require.Equal(t, 2, s.CountKeysForTest(ctx, "traffic/u/proj/h/20260602T120000Z/"))
+	require.Equal(t, 6, s.CountKeysForTest(ctx, "traffic/u/proj/d/20260602T000000Z/"))
+	require.Equal(t, 10, s.CountKeysForTest(ctx, "traffic/u/"))
+
+	days, err := tr.Daily(ctx, repo, day.Add(-24*time.Hour), day.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, daysBefore, days)
+	hours, err := tr.Hourly(ctx, repo, day.Add(-24*time.Hour), day.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, hoursBefore, hours)
+	require.Equal(t, uint64(1), hours[1].ViewUniques)
+	require.Equal(t, uint64(1), hours[1].CloneUniques)
+}
+
+func TestTrafficPruneUniquesBoundsAndBatches(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	tr := s.Traffic()
+	repo := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, CreatedAt: trafficEpoch, Visibility: domain.VisibilityPrivate}))
+	day := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	hour := day.Add(5 * time.Hour)
+	// 10,002 markers in one hourly bucket force a flush inside the delete loop.
+	var hits []domain.TrafficHit
+	for i := range 5001 {
+		for _, kind := range []domain.TrafficKind{domain.TrafficView, domain.TrafficClone} {
+			hits = append(hits, domain.TrafficHit{Repo: repo, Kind: kind, At: hour, VisitorHash: visitor(uint64(i))})
+		}
+	}
+	require.NoError(t, tr.Record(ctx, hits))
+	hourPrefix := "traffic/u/proj/h/20260601T050000Z/"
+	dayPrefix := "traffic/u/proj/d/20260601T000000Z/"
+	require.Equal(t, 10002, s.CountKeysForTest(ctx, hourPrefix))
+	before, err := tr.Hourly(ctx, repo, day, day.Add(24*time.Hour))
+	require.NoError(t, err)
+
+	n, err := tr.Prune(ctx, hour.Add(2*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.Zero(t, s.CountKeysForTest(ctx, hourPrefix))
+	after, err := tr.Hourly(ctx, repo, day, day.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+
+	// The day bucket ends at June 2 00:00: kept at 00:59, dropped at 01:00.
+	_, err = tr.Prune(ctx, day.Add(25*time.Hour-time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, 10002, s.CountKeysForTest(ctx, dayPrefix))
+	_, err = tr.Prune(ctx, day.Add(25*time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, s.CountKeysForTest(ctx, dayPrefix))
+	days, err := tr.Daily(ctx, repo, day, day.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, days, 1)
+	require.Equal(t, uint64(5001), days[0].ViewUniques)
+	require.Equal(t, uint64(5001), days[0].CloneUniques)
 }
 
 func TestTrafficConcurrentAndCanceled(t *testing.T) {
