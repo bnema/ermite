@@ -22,6 +22,7 @@ ermite serve
 | Variable | Default | Notes |
 |---|---|---|
 | `ERMITE_ADDR` | `:7341` | listen address |
+| `ERMITE_PPROF_ADDR` | unset (off) | loopback `host:port` (e.g. `127.0.0.1:6060`) serving `/debug/pprof/`; only `localhost` or a loopback IP is accepted |
 | `ERMITE_TRUSTED_PROXIES` | empty | comma-separated CIDRs of your TLS proxy, so login rate limits see the real client (`X-Forwarded-For`). The entry `self` stands for this host's own addresses (see [trusted proxies](#trusted-proxies)) |
 | `ERMITE_OWNER` | `owner` | owner login: web header, passkey name, and `<owner>` in CI (`github.repository`). Same rules as repository names |
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |

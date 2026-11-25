@@ -294,7 +294,7 @@ Passkeys need an https (or localhost) public URL with a host name, not an IP; ot
 
 `serve` is configured by env only:
 - Required: `ERMITE_DATA_DIR`, `ERMITE_PUBLIC_URL`, `ERMITE_ADMIN_TOKEN` (≥32 chars).
-- Common: `ERMITE_ADDR` (`:7341`), `ERMITE_TRUSTED_PROXIES` (CIDRs or self), `ERMITE_OWNER`, `ERMITE_GIT` (git ≥2.45), `ERMITE_GIT_READER` (`cli` if reads look wrong), `ERMITE_SECRETS_KEY`, `ERMITE_LOG_LEVEL`, `ERMITE_LOG_FORMAT`, `ERMITE_COMMITTER_NAME`/`_EMAIL`.
+- Common: `ERMITE_ADDR` (`:7341`), `ERMITE_PPROF_ADDR` (off; loopback `host:port` for `/debug/pprof/`), `ERMITE_TRUSTED_PROXIES` (CIDRs or self), `ERMITE_OWNER`, `ERMITE_GIT` (git ≥2.45), `ERMITE_GIT_READER` (`cli` if reads look wrong), `ERMITE_SECRETS_KEY`, `ERMITE_LOG_LEVEL`, `ERMITE_LOG_FORMAT`, `ERMITE_COMMITTER_NAME`/`_EMAIL`.
 - Families: `ERMITE_CI_*`, `ERMITE_DEPS_*`, `ERMITE_S3_*`, `ERMITE_RELEASE_*`.
 
 Full list: `docs/configuration.md` in the ermite repo.

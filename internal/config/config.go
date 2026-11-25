@@ -28,6 +28,7 @@ import (
 const (
 	EnvVideoHosts     = "ERMITE_VIDEO_HOSTS"
 	EnvAddr           = "ERMITE_ADDR"
+	EnvPprofAddr      = "ERMITE_PPROF_ADDR"
 	EnvDataDir        = "ERMITE_DATA_DIR"
 	EnvPublicURL      = "ERMITE_PUBLIC_URL"
 	EnvAdminToken     = "ERMITE_ADMIN_TOKEN"
@@ -153,6 +154,9 @@ type Config struct {
 	VideoHosts []string
 	// Addr is the listen address, "host:port".
 	Addr string
+	// PprofAddr is the loopback "host:port" of the pprof listener; empty
+	// disables it.
+	PprofAddr string
 	// DataDir is the absolute, clean data root.
 	DataDir string
 	// PublicURL is the base URL without a trailing slash.
@@ -258,6 +262,12 @@ func Load(get func(string) string) (Config, error) {
 		c.Addr = DefaultAddr
 	} else if err := validateAddr(c.Addr); err != nil {
 		bad(EnvAddr, "%v", err)
+	}
+
+	if c.PprofAddr = get(EnvPprofAddr); c.PprofAddr != "" {
+		if err := validateLoopbackAddr(c.PprofAddr); err != nil {
+			bad(EnvPprofAddr, "%v", err)
+		}
 	}
 
 	switch dir := get(EnvDataDir); {
@@ -725,6 +735,25 @@ func validateAddr(addr string) error {
 		return fmt.Errorf("port must be a number from 1 to 65535 (got %q)", port)
 	}
 	return nil
+}
+
+// validateLoopbackAddr accepts a host:port whose host is localhost or a
+// loopback IP literal.
+func validateLoopbackAddr(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("must be host:port, such as %q (%v)", "127.0.0.1:6060", err)
+	}
+	if err := validateAddr(addr); err != nil {
+		return err
+	}
+	if host == "localhost" {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("host must be localhost or a loopback IP such as 127.0.0.1 (got %q)", host)
 }
 
 // parseURL accepts an http(s) URL with a host and no credentials, query or

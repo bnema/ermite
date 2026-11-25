@@ -602,7 +602,34 @@ func (f *forge) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", f.cfg.Addr, err)
 	}
-	return f.Serve(ctx, ln)
+	if f.cfg.PprofAddr == "" {
+		return f.Serve(ctx, ln)
+	}
+	pln, err := net.Listen("tcp", f.cfg.PprofAddr)
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("pprof: listen on %s: %w", f.cfg.PprofAddr, err)
+	}
+	if a, ok := pln.Addr().(*net.TCPAddr); !ok || !a.IP.IsLoopback() {
+		_ = pln.Close()
+		_ = ln.Close()
+		return fmt.Errorf("pprof: %s is not a loopback address", pln.Addr())
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Info().Str("addr", pln.Addr().String()).Msg("pprof listening")
+	ctx, cancel := context.WithCancel(ctx)
+	pprofErr := make(chan error, 1)
+	go func() {
+		err := servePprof(ctx, pln)
+		if err != nil {
+			err = fmt.Errorf("pprof: %w", err)
+			log.Error().Err(err).Msg("pprof server stopped")
+		}
+		pprofErr <- err
+	}()
+	err = f.Serve(ctx, ln)
+	cancel()
+	return errors.Join(err, <-pprofErr)
 }
 
 // Serve serves HTTP on ln and the hook socket until ctx ends. The hook socket

@@ -465,3 +465,43 @@ func TestConfigDepsAutoOpenAtBlankFallsBack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, config.DefaultDepsAutoOpenAt, c.DepsAutoOpenAt)
 }
+
+func TestLoadPprofAddr(t *testing.T) {
+	ok := []struct{ in, want string }{
+		{"\x00unset", ""},
+		{"127.0.0.1:6060", "127.0.0.1:6060"},
+		{"127.0.0.2:6060", "127.0.0.2:6060"},
+		{"[::1]:6060", "[::1]:6060"},
+		{"localhost:6060", "localhost:6060"},
+		{"[::ffff:127.0.0.1]:6060", "[::ffff:127.0.0.1]:6060"},
+	}
+	for _, tt := range ok {
+		t.Run("ok "+tt.in, func(t *testing.T) {
+			c, err := config.Load(lookup(valid(map[string]string{config.EnvPprofAddr: tt.in})))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, c.PprofAddr)
+		})
+	}
+	bad := []struct{ in, msg string }{
+		{":6060", "loopback"},
+		{"0.0.0.0:6060", "loopback"},
+		{"192.0.2.1:6060", "loopback"},
+		{"example.com:6060", "loopback"},
+		{"127.0.0.1:0", "port"},
+		{"127.0.0.1:http", "port"},
+		{"6060", "127.0.0.1:6060"},
+		{"[::1%lo]:6060", "loopback"},
+		{"LOCALHOST:6060", "loopback"},
+		{" 127.0.0.1:6060", "loopback"},
+	}
+	for _, tt := range bad {
+		t.Run("bad "+tt.in, func(t *testing.T) {
+			_, err := config.Load(lookup(valid(map[string]string{config.EnvPprofAddr: tt.in})))
+			var ce *config.Error
+			require.True(t, errors.As(err, &ce), "%v", err)
+			require.Len(t, ce.Problems, 1, err.Error())
+			assert.True(t, strings.HasPrefix(ce.Problems[0], config.EnvPprofAddr+":"), ce.Problems[0])
+			assert.Contains(t, ce.Problems[0], tt.msg)
+		})
+	}
+}
