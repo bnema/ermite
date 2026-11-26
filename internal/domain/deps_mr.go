@@ -68,53 +68,70 @@ func DepsRepro(ups []DepUpdate, details []CIDepsUpdate) []string {
 		}
 		switch g.eco {
 		case EcosystemGoMod:
-			for _, u := range us {
-				name := u.Name
-				if u.NewName != "" {
-					lines = append(lines, fmt.Sprintf("# rewrite imports %s -> %s", oneLine(u.Name), oneLine(u.NewName)))
-					name = u.NewName
-				}
-				lines = append(lines, "go get "+shellQuote(name+"@"+u.Version))
-			}
-			lines = append(lines, "go mod tidy")
+			lines = append(lines, goModRepro(us)...)
 		case EcosystemNPM:
-			manager := "npm"
-			args, pinned := make([]string, len(us)), make([]bool, len(us))
-			for j, u := range us {
-				spec := u.Version
-				if i := slices.IndexFunc(details, func(d CIDepsUpdate) bool { return d.Ref == u.DepRef }); i >= 0 {
-					if _, ok := npmReproCommands[details[i].Manager]; ok {
-						manager = details[i].Manager
-					}
-					if r := details[i].Range; r != "" {
-						// An exact version, bare or =X.Y.Z (saved bare, same meaning).
-						spec = r
-						if exact := strings.TrimPrefix(r, "="); exact != "" && exact[0] >= '0' && exact[0] <= '9' {
-							spec, pinned[j] = exact, true
-						}
-					}
-				}
-				args[j] = shellQuote(u.Name + "@" + spec)
-			}
-			// npm turns an exact version into ^version unless told to save it as
-			// written; the other managers keep it.
-			var ranged, exact []string
-			for j, a := range args {
-				if manager == "npm" && pinned[j] {
-					exact = append(exact, a)
-				} else {
-					ranged = append(ranged, a)
-				}
-			}
-			if len(ranged) != 0 {
-				lines = append(lines, npmReproCommands[manager]+" "+strings.Join(ranged, " "))
-			}
-			if len(exact) != 0 {
-				lines = append(lines, npmReproCommands[manager]+" --save-exact "+strings.Join(exact, " "))
-			}
+			lines = append(lines, npmRepro(us, details)...)
 		}
 	}
 	return lines
+}
+
+// goModRepro is the go get lines of one module's updates, then go mod tidy.
+func goModRepro(us []DepUpdate) []string {
+	var lines []string
+	for _, u := range us {
+		name := u.Name
+		if u.NewName != "" {
+			lines = append(lines, fmt.Sprintf("# rewrite imports %s -> %s", oneLine(u.Name), oneLine(u.NewName)))
+			name = u.NewName
+		}
+		lines = append(lines, "go get "+shellQuote(name+"@"+u.Version))
+	}
+	return append(lines, "go mod tidy")
+}
+
+// npmRepro is the command of one npm directory's updates: the manager and
+// range of each from details when there, else npm and the bare version. npm
+// turns an exact version into ^version unless told to save it as written, so
+// its exact pins get a line of their own; the other managers keep them.
+func npmRepro(us []DepUpdate, details []CIDepsUpdate) []string {
+	manager := "npm"
+	args, pinned := make([]string, len(us)), make([]bool, len(us))
+	for j, u := range us {
+		spec := u.Version
+		if i := slices.IndexFunc(details, func(d CIDepsUpdate) bool { return d.Ref == u.DepRef }); i >= 0 {
+			if _, ok := npmReproCommands[details[i].Manager]; ok {
+				manager = details[i].Manager
+			}
+			spec, pinned[j] = npmReproSpec(cmp.Or(details[i].Range, spec), details[i].Range != "")
+		}
+		args[j] = shellQuote(u.Name + "@" + spec)
+	}
+	var ranged, exact []string
+	for j, arg := range args {
+		if manager == "npm" && pinned[j] {
+			exact = append(exact, arg)
+		} else {
+			ranged = append(ranged, arg)
+		}
+	}
+	var lines []string
+	if len(ranged) != 0 {
+		lines = append(lines, npmReproCommands[manager]+" "+strings.Join(ranged, " "))
+	}
+	if len(exact) != 0 {
+		lines = append(lines, npmReproCommands[manager]+" --save-exact "+strings.Join(exact, " "))
+	}
+	return lines
+}
+
+// npmReproSpec reports whether a range from the job is an exact version, bare
+// or =X.Y.Z (returned bare: same meaning).
+func npmReproSpec(r string, fromJob bool) (string, bool) {
+	if exact := strings.TrimPrefix(r, "="); fromJob && exact != "" && exact[0] >= '0' && exact[0] <= '9' {
+		return exact, true
+	}
+	return r, false
 }
 
 // shellQuote is s as one POSIX shell word: single-quoted, each ' written as
