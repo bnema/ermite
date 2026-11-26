@@ -68,7 +68,8 @@ func keepDepsError(s string) string {
 
 // failRun sets the record to Failed with a bounded reason when it is still
 // applying that run. The log is on the run, which the record keeps linking.
-func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64, reason string) {
+// details, the run's job when known, pick the commands of Repro.
+func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64, reason string, details []domain.CIDepsUpdate) {
 	defer b.repoLock(repo)()
 	var failed *domain.DepBatch
 	rec, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), repo, func(d *domain.RepoDeps) (bool, error) {
@@ -78,7 +79,7 @@ func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64
 			return false, nil // the record left this run: the owner closed the merge request, say
 		}
 		failed = batch
-		batch.State, batch.Error, batch.Repro, batch.RunUpdates = domain.DepsFailed, keepDepsError(reason), domain.DepsRepro(batch.RunUpdates), nil
+		batch.State, batch.Error, batch.Repro, batch.RunUpdates = domain.DepsFailed, keepDepsError(reason), domain.DepsRepro(batch.RunUpdates, details), nil
 		return true, nil
 	})
 	if err != nil {
@@ -174,21 +175,21 @@ func (b *Bernard) reconcileRuns(ctx context.Context, grace time.Duration) {
 				continue
 			}
 			if b.cfg.Runs == nil || batch.RunID == 0 {
-				b.failRun(ctx, r.Repo, batch.RunID, "the run no longer exists")
+				b.failRun(ctx, r.Repo, batch.RunID, "the run no longer exists", nil)
 				continue
 			}
 			run, err := b.cfg.Runs.GetDepsRun(ctx, r.Repo, batch.RunID)
 			switch {
 			case errors.Is(err, domain.ErrNotFound):
-				b.failRun(ctx, r.Repo, batch.RunID, "the run no longer exists")
+				b.failRun(ctx, r.Repo, batch.RunID, "the run no longer exists", nil)
 			case err != nil:
 				ctxLog(ctx).Error().Err(err).Str("repo", r.Repo.String()).Int64("run_id", batch.RunID).Msg("bernard: read the run to reconcile")
 			case run.Status == domain.CICompleted && b.cfg.Clock.Now().Sub(run.CompletedAt) < grace:
 				// The observer is probably applying it.
 			case run.Status == domain.CICompleted && run.Conclusion == domain.CISuccess:
-				b.failRun(ctx, r.Repo, batch.RunID, "the result of the run was not applied")
+				b.failRun(ctx, r.Repo, batch.RunID, "the result of the run was not applied", nil)
 			case run.Status == domain.CICompleted:
-				b.failRun(ctx, r.Repo, batch.RunID, fmt.Sprintf("the run ended: %s", run.Conclusion))
+				b.failRun(ctx, r.Repo, batch.RunID, fmt.Sprintf("the run ended: %s", run.Conclusion), nil)
 			}
 		}
 	}
@@ -215,20 +216,24 @@ func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain
 	if applyingBatch(&rec, run.ID) == nil {
 		return // superseded
 	}
+	var details []domain.CIDepsUpdate
+	if job.Deps != nil {
+		details = job.Deps.Details
+	}
 	switch {
 	case report != nil && report.Error != "":
-		b.failRun(ctx, run.Repo, run.ID, report.Error)
+		b.failRun(ctx, run.Repo, run.ID, report.Error, details)
 	case job.Conclusion != domain.CISuccess:
 		reason := fmt.Sprintf("the run ended: %s", job.Conclusion)
 		if msg := keepDepsError(job.Error); msg != "" {
 			reason += ": " + msg
 		}
-		b.failRun(ctx, run.Repo, run.ID, reason)
+		b.failRun(ctx, run.Repo, run.ID, reason, details)
 	case report == nil:
-		b.failRun(ctx, run.Repo, run.ID, "the runner sent no report")
+		b.failRun(ctx, run.Repo, run.ID, "the runner sent no report", details)
 	default:
 		if err := b.applyRunnerReport(ctx, rec, run, job, *report); err != nil {
-			b.failRun(ctx, run.Repo, run.ID, err.Error())
+			b.failRun(ctx, run.Repo, run.ID, err.Error(), details)
 		}
 	}
 }

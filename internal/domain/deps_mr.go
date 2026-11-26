@@ -19,13 +19,23 @@ func BotDraftTitle(b DepBatch) string {
 	return botDraftPrefix + BotSubject(b)
 }
 
+// npmReproCommands maps a package manager to the command that sets
+// dependency versions in place, keeping each in its section.
+var npmReproCommands = map[string]string{
+	"npm":  "npm install --ignore-scripts",
+	"pnpm": "pnpm add --ignore-scripts",
+	"yarn": "yarn add --ignore-scripts",
+	"bun":  "bun add --ignore-scripts",
+}
+
 // DepsRepro returns the shell lines that redo ups by hand, grouped by
 // ecosystem then directory, in a deterministic order, from the repository
 // root (each group after the first goes back to it). Every argument is
 // single-quoted for a POSIX shell. Actions updates are applied by the server
-// and yield no command. The npm lines are written for npm even though the
-// runner picks the package manager from the lockfile.
-func DepsRepro(ups []DepUpdate) []string {
+// and yield no command. An npm update found in details (the run's job) uses
+// its root's package manager and the range the runner writes; otherwise npm
+// and the bare version.
+func DepsRepro(ups []DepUpdate, details []CIDepsUpdate) []string {
 	type group struct {
 		eco DepsEcosystem
 		dir string
@@ -67,11 +77,24 @@ func DepsRepro(ups []DepUpdate) []string {
 			}
 			lines = append(lines, "go mod tidy")
 		case EcosystemNPM:
+			command := npmReproCommands["npm"]
 			args := make([]string, len(us))
 			for j, u := range us {
-				args[j] = shellQuote(u.Name + "@" + u.Version)
+				spec := u.Version
+				for _, d := range details {
+					if d.Ref == u.DepRef {
+						if c, ok := npmReproCommands[d.Manager]; ok {
+							command = c
+						}
+						if d.Range != "" {
+							spec = d.Range
+						}
+						break
+					}
+				}
+				args[j] = shellQuote(u.Name + "@" + spec)
 			}
-			lines = append(lines, "npm install --ignore-scripts "+strings.Join(args, " "))
+			lines = append(lines, command+" "+strings.Join(args, " "))
 		}
 	}
 	return lines

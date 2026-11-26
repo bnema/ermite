@@ -54,7 +54,7 @@ func TestBernardBatchFailureAndMRCloseAreIsolated(t *testing.T) {
 			}).Once()
 			b := Bernard{ctx: t.Context(), cfg: BernardConfig{Store: store, Bus: bus, Clock: clock}}
 			if operation == "failed run" {
-				b.failRun(t.Context(), repo, 11, "failed major")
+				b.failRun(t.Context(), repo, 11, "failed major", nil)
 				require.Equal(t, domain.DepsFailed, rec.Batches[1].State)
 				require.Equal(t, "failed major", rec.Batches[1].Error)
 				require.Equal(t, int64(11), rec.Batches[1].RunID)

@@ -573,7 +573,7 @@ func (b *Bernard) fail(ctx context.Context, name domain.RepoName, key domain.Dep
 		}
 		d.Batches[i].State, d.Batches[i].Error = domain.DepsFailed, msg
 		if !d.Batches[i].Head.IsZero() { // a draft is open: say how to redo it
-			d.Batches[i].Repro = domain.DepsRepro(d.Batches[i].Updates)
+			d.Batches[i].Repro = domain.DepsRepro(d.Batches[i].Updates, nil) // no job yet: npm commands
 		}
 		return true, nil
 	})

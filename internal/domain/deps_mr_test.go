@@ -30,27 +30,38 @@ func TestDepsRepro(t *testing.T) {
 		return DepUpdate{DepRef: DepRef{Ecosystem: EcosystemNPM, Directory: dir, Name: name, Version: v}}
 	}
 	act := DepUpdate{DepRef: DepRef{Ecosystem: EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"}}
+	job := func(u DepUpdate, manager, rng string) CIDepsUpdate {
+		return CIDepsUpdate{Ref: u.DepRef, Manager: manager, Range: rng}
+	}
+	react, pad := np("web", "react", "19.0.0"), np("web", "left-pad", "1.3.0")
 	tests := []struct {
-		name string
-		ups  []DepUpdate
-		want []string
+		name    string
+		ups     []DepUpdate
+		details []CIDepsUpdate
+		want    []string
 	}{
-		{"empty", nil, nil},
-		{"actions only", []DepUpdate{act}, nil},
-		{"gomod root", []DepUpdate{gm("", "b.io/x", "v1.2.0", ""), gm("", "a.io/y", "v0.3.0", "")},
+		{"empty", nil, nil, nil},
+		{"actions only", []DepUpdate{act}, nil, nil},
+		{"gomod root", []DepUpdate{gm("", "b.io/x", "v1.2.0", ""), gm("", "a.io/y", "v0.3.0", "")}, nil,
 			[]string{"go get 'a.io/y@v0.3.0'", "go get 'b.io/x@v1.2.0'", "go mod tidy"}},
-		{"gomod path major", []DepUpdate{gm("tools", "a.io/y", "v2.0.0", "a.io/y/v2")},
+		{"gomod path major", []DepUpdate{gm("tools", "a.io/y", "v2.0.0", "a.io/y/v2")}, nil,
 			[]string{"cd -- 'tools'", "# rewrite imports a.io/y -> a.io/y/v2", "go get 'a.io/y/v2@v2.0.0'", "go mod tidy"}},
-		{"mixed", []DepUpdate{np("web", "react", "19.0.0"), act, gm("", "a.io/y", "v0.3.0", ""), np("web", "left-pad", "1.3.0")},
+		{"mixed", []DepUpdate{np("web", "react", "19.0.0"), act, gm("", "a.io/y", "v0.3.0", ""), np("web", "left-pad", "1.3.0")}, nil,
 			[]string{"go get 'a.io/y@v0.3.0'", "go mod tidy", "cd \"$(git rev-parse --show-toplevel)\"", "cd -- 'web'", "npm install --ignore-scripts 'left-pad@1.3.0' 'react@19.0.0'"}},
-		{"go in a directory then npm at the root", []DepUpdate{gm("tools", "a.io/y", "v0.3.0", ""), np("", "ms", "2.1.3")},
+		{"go in a directory then npm at the root", []DepUpdate{gm("tools", "a.io/y", "v0.3.0", ""), np("", "ms", "2.1.3")}, nil,
 			[]string{"cd -- 'tools'", "go get 'a.io/y@v0.3.0'", "go mod tidy", "cd \"$(git rev-parse --show-toplevel)\"", "npm install --ignore-scripts 'ms@2.1.3'"}},
-		{"quoted", []DepUpdate{np("it's; rm -rf ~/dé\n", "@a/b", "1.0.0$(x)")},
+		{"quoted", []DepUpdate{np("it's; rm -rf ~/dé\n", "@a/b", "1.0.0$(x)")}, nil,
 			[]string{"cd -- 'it'\\''s; rm -rf ~/dé'", "npm install --ignore-scripts '@a/b@1.0.0$(x)'"}},
+		{"pnpm root with the runner's ranges", []DepUpdate{react, pad}, []CIDepsUpdate{job(pad, "pnpm", "~1.3.0"), job(react, "pnpm", "^19.0.0")},
+			[]string{"cd -- 'web'", "pnpm add --ignore-scripts 'left-pad@~1.3.0' 'react@^19.0.0'"}},
+		{"yarn", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "yarn", "^1.3.0")}, []string{"cd -- 'web'", "yarn add --ignore-scripts 'left-pad@^1.3.0'"}},
+		{"bun", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "bun", "1.3.0")}, []string{"cd -- 'web'", "bun add --ignore-scripts 'left-pad@1.3.0'"}},
+		{"unknown manager falls back to npm", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "evil; rm", "^1.3.0")}, []string{"cd -- 'web'", "npm install --ignore-scripts 'left-pad@^1.3.0'"}},
+		{"detail of another update ignored", []DepUpdate{pad}, []CIDepsUpdate{job(react, "pnpm", "^19.0.0")}, []string{"cd -- 'web'", "npm install --ignore-scripts 'left-pad@1.3.0'"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := DepsRepro(tt.ups); !slices.Equal(got, tt.want) {
+			if got := DepsRepro(tt.ups, tt.details); !slices.Equal(got, tt.want) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})

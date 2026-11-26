@@ -77,6 +77,14 @@ func testBernardPNPM(t *testing.T, lock string) {
 	require.NoError(t, r.b.CheckDepsReport(context.Background(), run, ciJob, report))
 	report.Files[0].Content = []byte(strings.Replace(updated, "do not run", "evil", 1))
 	require.ErrorIs(t, r.b.CheckDepsReport(context.Background(), run, ciJob, report), domain.ErrInvalid)
+	// A failed job writes the reproduce command for pnpm, with the range the runner writes.
+	run.Status, run.Conclusion = domain.CICompleted, domain.CIFailure
+	ciJob.Conclusion = domain.CIFailure
+	r.b.DepsJobEnded(context.Background(), run, ciJob, &ports.DepsReport{Error: "pnpm failed"})
+	snap := r.snapshot()
+	failed := snap.Base()
+	require.Equal(t, domain.DepsFailed, failed.State)
+	require.Equal(t, []string{"cd -- 'packages/app'", "pnpm add --ignore-scripts 'react@^18.1.0'"}, failed.Repro)
 }
 
 // A broken package.json is skipped with a warning; Go updates are still proposed.
