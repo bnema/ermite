@@ -30,7 +30,7 @@ func testBernardPNPM(t *testing.T, lock string) {
 	r.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(e domain.Event) bool { _, ok := e.(domain.DependencyUpdatesFound); return ok })).Return()
 	reg := mocks.NewDepsRegistry(t)
 	r.registry = reg
-	files := map[string]string{"package.json": `{"packageManager":"pnpm@9.15.0","engines":{"node":">=20"}}`, "pnpm-workspace.yaml": "packages:\n - 'packages/*'\n", "pnpm-lock.yaml": lock, "packages/app/package.json": `{ "dependencies": {"react": "^18.0.0"}, "scripts":{"postinstall":"do not run"}}`}
+	files := map[string]string{"package.json": `{"packageManager":"pnpm@9.15.0","engines":{"node":">=24"}}`, "pnpm-workspace.yaml": "packages:\n - 'packages/*'\n", "pnpm-lock.yaml": lock, "packages/app/package.json": `{ "dependencies": {"react": "^18.0.0"}, "scripts":{"postinstall":"do not run"}}`}
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil).Maybe()
 	r.reader.EXPECT().ResolveRevision(mock.Anything, r.repo, domain.Revision{}).Return(domain.ResolvedRevision{CommitID: oid("a")}, nil)
 	r.reader.EXPECT().ListPaths(mock.Anything, r.repo, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).RunAndReturn(func(context.Context, domain.RepoName, domain.Revision, int, int) (domain.PathList, error) {
@@ -64,7 +64,7 @@ func testBernardPNPM(t *testing.T, lock string) {
 	_, err = r.b.OpenNow(context.Background(), domain.Owner(), r.repo, "", checked.Base().Refs())
 	require.NoError(t, err)
 	require.Equal(t, []string{"deps", "deps.npm"}, job.Requires)
-	require.Equal(t, "20", job.NodeVersion)
+	require.Equal(t, "24", job.NodeVersion)
 	require.Empty(t, job.GoVersion)
 	require.Equal(t, "pnpm", job.Details[0].Manager)
 	require.Equal(t, "9.15.0", job.Details[0].ManagerVersion)
@@ -84,7 +84,7 @@ func testBernardPNPM(t *testing.T, lock string) {
 	snap := r.snapshot()
 	failed := snap.Base()
 	require.Equal(t, domain.DepsFailed, failed.State)
-	require.Equal(t, []string{"cd -- 'packages/app'", "pnpm add --ignore-scripts 'react@^18.1.0'"}, failed.Repro)
+	require.Equal(t, []string{"cd -- 'packages/app'", "pnpm add --ignore-scripts --ignore-workspace-root-check 'react@^18.1.0'"}, failed.Repro)
 }
 
 // A broken package.json is skipped with a warning; Go updates are still proposed.

@@ -2,11 +2,12 @@
 package deps
 
 import (
-	"bnema.dev/ermite/internal/domain"
-	"cmp"
-	"github.com/stretchr/testify/require"
+	"path"
 	"strings"
 	"testing"
+
+	"bnema.dev/ermite/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func npmFiles(t *testing.T, in map[string]string) map[domain.TreePath][]byte {
@@ -67,11 +68,11 @@ func TestNPMEditSpec(t *testing.T) {
 }
 func TestNPMRoots(t *testing.T) {
 	for _, workspaces := range []string{`["packages/*","nested/**"]`, `{"packages":["packages/*","nested/**"]}`} {
-		files := npmFiles(t, map[string]string{"package.json": `{"workspaces":` + workspaces + `,"packageManager":"pnpm@9.15.0","engines":{"node":">=20"}}`, "packages/a/package.json": `{}`, "nested/root/package.json": `{"workspaces":["children/*"],"packageManager":"yarn@1.22.22"}`, "nested/root/children/a/package.json": `{}`, "other/package.json": `{}`})
+		files := npmFiles(t, map[string]string{"package.json": `{"workspaces":` + workspaces + `,"packageManager":"pnpm@9.15.0","engines":{"node":">=24"}}`, "packages/a/package.json": `{}`, "nested/root/package.json": `{"workspaces":["children/*"],"packageManager":"yarn@1.22.22"}`, "nested/root/children/a/package.json": `{}`, "other/package.json": `{}`})
 		roots := npmRootsOf(t, files, "packages/a", "nested/root/children/a", "other")
 		require.Equal(t, "", roots["packages/a"].Directory)
 		require.Equal(t, "pnpm", roots["packages/a"].Manager)
-		require.Equal(t, "20", roots["packages/a"].NodeVersion)
+		require.Equal(t, "24", roots["packages/a"].NodeVersion)
 		require.Equal(t, "nested/root", roots["nested/root/children/a"].Directory)
 		require.Equal(t, "other", roots["other"].Directory)
 	}
@@ -94,35 +95,43 @@ func TestNPMManagersAndNode(t *testing.T) {
 			require.Equal(t, tc.version, root.Version)
 		})
 	}
-	for spec, want := range map[string]string{">=16": "18", "^20": "20", "~21": "21", "23.x": "23", "24.0.0": "24", "26": "26", "v22.11.0": "22", ">= 20": "20", "^20.17.0 || >=22.9.0": "22", ">=20 <25": "20", ">=100": "26", "lts/*": "26", "bad": "26", "": "26"} {
-		require.Equal(t, want, npmNode(nil, npmRoot{Manager: "npm"}, npmManifest{Engines: struct {
-			Node string `json:"node"`
-		}{spec}}), spec)
+	for spec, want := range map[string]string{">=16": "22", "^24": "24", "~25": "25", "23.x": "23", "24.0.0": "24", "26": "26", "v24.11.0": "24", ">= 24": "24", "^20.17.0 || >=23.9.0": "23", ">=24 <25": "24", ">=100": "26", "lts/*": "26", "bad": "26", "": "26"} {
+		var m npmManifest
+		m.Engines.Node = spec
+		require.Equal(t, want, npmNode(nil, npmRoot{}, m), spec)
 	}
 	for _, tc := range []struct {
-		name, manifest, manager, version, want string
-		files                                  map[string]string
+		name, dir, manifest, want string
+		files                     map[string]string
 	}{
 		{name: "nvmrc", manifest: `{"engines":{"node":">=18"}}`, files: map[string]string{".nvmrc": "v24.1.0\n"}, want: "24"},
-		{name: "node-version before nvmrc", manifest: `{}`, files: map[string]string{".node-version": "26\n", ".nvmrc": "20"}, want: "26"},
-		{name: "nvmrc alias falls through", manifest: `{"engines":{"node":"^20"}}`, files: map[string]string{".nvmrc": "lts/*"}, want: "20"},
-		{name: "devEngines object first", manifest: `{"devEngines":{"runtime":{"name":"node","version":">=25"}}}`, files: map[string]string{".nvmrc": "20"}, want: "25"},
+		{name: "nvmrc comment, BOM and blank line", manifest: `{}`, files: map[string]string{".nvmrc": "\uFEFF# pinned\n\n25\n"}, want: "25"},
+		{name: "node-version before nvmrc", manifest: `{}`, files: map[string]string{".node-version": "26\n", ".nvmrc": "24"}, want: "26"},
+		{name: "nearest file first", dir: "web", manifest: `{}`, files: map[string]string{"web/.nvmrc": "25", ".node-version": "24"}, want: "25"},
+		{name: "repository root file for a nested root", dir: "web", manifest: `{"engines":{"node":"^24"}}`, files: map[string]string{".nvmrc": "25"}, want: "25"},
+		{name: "nvmrc alias falls through", manifest: `{"engines":{"node":"^24"}}`, files: map[string]string{".nvmrc": "lts/*"}, want: "24"},
+		{name: "devEngines object first", manifest: `{"devEngines":{"runtime":{"name":"node","version":">=25"}}}`, files: map[string]string{".nvmrc": "24"}, want: "25"},
 		{name: "devEngines list", manifest: `{"devEngines":{"runtime":[{"name":"bun","version":"1"},{"name":"node","version":"^24"}]}}`, want: "24"},
-		{name: "devEngines odd shape ignored", manifest: `{"devEngines":{"runtime":"node"},"engines":{"node":"20"}}`, want: "20"},
-		{name: "pnpm 11 needs 22", manifest: `{"engines":{"node":">=18"}}`, manager: "pnpm", version: "11.0.0", want: "22"},
-		{name: "pnpm 12 keeps the declared Node", manifest: `{"engines":{"node":">=20"}}`, manager: "pnpm", version: "12.15.0", want: "20"},
-		{name: "npm 11 needs 20", manifest: `{"engines":{"node":"18"}}`, manager: "npm", version: "11.0.0", want: "20"},
-		{name: "npm 12 needs 22", manifest: `{"engines":{"node":"18"}}`, manager: "npm", version: "12.2.3", want: "22"},
+		{name: "devEngines odd shape ignored", manifest: `{"devEngines":{"runtime":"node"},"engines":{"node":"24"}}`, want: "24"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, err := parseNPMManifest([]byte(tc.manifest))
 			require.NoError(t, err)
-			require.Equal(t, tc.want, npmNode(npmFiles(t, tc.files), npmRoot{Manager: cmp.Or(tc.manager, "npm"), Version: tc.version}, m))
+			require.Equal(t, tc.want, npmNode(npmFiles(t, tc.files), npmRoot{Directory: tc.dir}, m))
 		})
 	}
 	// The Node files sit at the workspace root, which npmRootOf resolves.
 	roots := npmRootsOf(t, npmFiles(t, map[string]string{"package.json": `{"workspaces":["app"]}`, ".nvmrc": "24", "app/package.json": `{}`}), "app")
 	require.Equal(t, "24", roots["app"].NodeVersion)
+	// Inputs asks for the version files of the update directory and its ancestors.
+	var inputs []string
+	for _, in := range (NPM{}).Inputs([]domain.DepUpdate{{DepRef: domain.DepRef{Ecosystem: domain.EcosystemNPM, Directory: "app"}}}, nil) {
+		if base := path.Base(in.Path.String()); base == ".nvmrc" || base == ".node-version" {
+			require.True(t, in.Optional && in.Header, in.Path.String())
+			inputs = append(inputs, in.Path.String())
+		}
+	}
+	require.ElementsMatch(t, []string{"app/.nvmrc", "app/.node-version", ".nvmrc", ".node-version"}, inputs)
 	root, err := npmManager(npmFiles(t, map[string]string{"package-lock.json": "{}"}), "", npmManifest{PackageManager: "npm@10.1.0"})
 	require.NoError(t, err)
 	require.Equal(t, "npm", root.Manager)

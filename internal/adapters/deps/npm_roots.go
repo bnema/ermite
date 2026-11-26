@@ -68,11 +68,12 @@ var npmNodeOperatorRE = regexp.MustCompile(`(>=|\^|~)\s+`)
 var pnpmLockVersionRE = regexp.MustCompile(`(?m)^lockfileVersion:[ \t]*['"]?([0-9]+)(?:\.[0-9]+)?['"]?[ \t]*$`)
 var yarnMetadataRE = regexp.MustCompile(`(?m)^__metadata:`)
 
-// Node majors of a job: the oldest one run, and the one used when the root
-// declares none.
+// Node majors of a job: the oldest one run (corepack's own minimum, which
+// also covers what npm 11+ and pnpm 11 need), and the one used when the root
+// declares none (the current LTS).
 const (
-	npmNodeMin     = 18
-	npmNodeDefault = 26 // the current LTS
+	npmNodeMin     = 22
+	npmNodeDefault = 26
 )
 
 // npmNodeMajor returns the Node major a version or range asks for: the lower
@@ -124,42 +125,38 @@ func npmDevEnginesNode(raw json.RawMessage) string {
 	return ""
 }
 
-// npmManagerNode is the oldest Node major the manager version starts on (its
-// own engines.node: pnpm 12 needs only Node 18); npmNodeMin when it has no
-// higher need.
-func npmManagerNode(manager, version string) int {
-	major, _ := strconv.Atoi(strings.SplitN(version, ".", 2)[0])
-	switch {
-	case manager == "npm" && major >= 12, manager == "pnpm" && major == 11:
-		return 22
-	case manager == "npm" && major == 11:
-		return 20
-	}
-	return npmNodeMin
-}
-
 // npmNode picks the Node major of a root: the first understood of
-// devEngines.runtime, .node-version, .nvmrc and engines.node, else
-// npmNodeDefault; raised to what its manager needs and to npmNodeMin.
+// devEngines.runtime, the nearest .node-version or .nvmrc (the root, then its
+// ancestors, as version managers search), and engines.node; else
+// npmNodeDefault. It is at least npmNodeMin.
 func npmNode(files map[domain.TreePath][]byte, root npmRoot, m npmManifest) string {
+	specs := []string{npmDevEnginesNode(m.DevEngines)}
+	for _, dir := range npmAncestors(root.Directory) {
+		for _, name := range []string{".node-version", ".nvmrc"} {
+			if b := npmFile(files, dir, name); b != nil {
+				specs = append(specs, npmVersionLine(b))
+			}
+		}
+	}
 	n := npmNodeDefault
-	for _, spec := range []string{
-		npmDevEnginesNode(m.DevEngines),
-		npmFirstLine(npmFile(files, root.Directory, ".node-version")),
-		npmFirstLine(npmFile(files, root.Directory, ".nvmrc")),
-		m.Engines.Node,
-	} {
+	for _, spec := range append(specs, m.Engines.Node) {
 		if major, ok := npmNodeMajor(spec); ok {
 			n = major
 			break
 		}
 	}
-	return strconv.Itoa(max(n, npmNodeMin, npmManagerNode(root.Manager, root.Version)))
+	return strconv.Itoa(max(n, npmNodeMin))
 }
 
-func npmFirstLine(b []byte) string {
-	line, _, _ := strings.Cut(string(b), "\n")
-	return strings.TrimSpace(line)
+// npmVersionLine is the first line of a version file that is neither blank
+// nor a # comment.
+func npmVersionLine(b []byte) string {
+	for line := range strings.Lines(strings.TrimPrefix(string(b), "\uFEFF")) {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			return line
+		}
+	}
+	return ""
 }
 
 func npmFile(files map[domain.TreePath][]byte, dir, name string) []byte {
