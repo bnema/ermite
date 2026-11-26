@@ -3,6 +3,7 @@ package deps
 
 import (
 	"bnema.dev/ermite/internal/domain"
+	"cmp"
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
@@ -93,9 +94,35 @@ func TestNPMManagersAndNode(t *testing.T) {
 			require.Equal(t, tc.version, root.Version)
 		})
 	}
-	for spec, want := range map[string]string{">=16": "18", "^20": "20", "~21": "21", "23.x": "23", "24.0.0": "24", ">=99": "24", "bad": "22", "": "22"} {
-		require.Equal(t, want, npmNode(spec), spec)
+	for spec, want := range map[string]string{">=16": "18", "^20": "20", "~21": "21", "23.x": "23", "24.0.0": "24", "26": "26", "v22.11.0": "22", ">= 20": "20", "^20.17.0 || >=22.9.0": "22", ">=20 <25": "20", ">=100": "26", "lts/*": "26", "bad": "26", "": "26"} {
+		require.Equal(t, want, npmNode(nil, npmRoot{Manager: "npm"}, npmManifest{Engines: struct {
+			Node string `json:"node"`
+		}{spec}}), spec)
 	}
+	for _, tc := range []struct {
+		name, manifest, manager, version, want string
+		files                                  map[string]string
+	}{
+		{name: "nvmrc", manifest: `{"engines":{"node":">=18"}}`, files: map[string]string{".nvmrc": "v24.1.0\n"}, want: "24"},
+		{name: "node-version before nvmrc", manifest: `{}`, files: map[string]string{".node-version": "26\n", ".nvmrc": "20"}, want: "26"},
+		{name: "nvmrc alias falls through", manifest: `{"engines":{"node":"^20"}}`, files: map[string]string{".nvmrc": "lts/*"}, want: "20"},
+		{name: "devEngines object first", manifest: `{"devEngines":{"runtime":{"name":"node","version":">=25"}}}`, files: map[string]string{".nvmrc": "20"}, want: "25"},
+		{name: "devEngines list", manifest: `{"devEngines":{"runtime":[{"name":"bun","version":"1"},{"name":"node","version":"^24"}]}}`, want: "24"},
+		{name: "devEngines odd shape ignored", manifest: `{"devEngines":{"runtime":"node"},"engines":{"node":"20"}}`, want: "20"},
+		{name: "pnpm 11 needs 22", manifest: `{"engines":{"node":">=18"}}`, manager: "pnpm", version: "11.0.0", want: "22"},
+		{name: "pnpm 12 keeps the declared Node", manifest: `{"engines":{"node":">=20"}}`, manager: "pnpm", version: "12.15.0", want: "20"},
+		{name: "npm 11 needs 20", manifest: `{"engines":{"node":"18"}}`, manager: "npm", version: "11.0.0", want: "20"},
+		{name: "npm 12 needs 22", manifest: `{"engines":{"node":"18"}}`, manager: "npm", version: "12.2.3", want: "22"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := parseNPMManifest([]byte(tc.manifest))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, npmNode(npmFiles(t, tc.files), npmRoot{Manager: cmp.Or(tc.manager, "npm"), Version: tc.version}, m))
+		})
+	}
+	// The Node files sit at the workspace root, which npmRootOf resolves.
+	roots := npmRootsOf(t, npmFiles(t, map[string]string{"package.json": `{"workspaces":["app"]}`, ".nvmrc": "24", "app/package.json": `{}`}), "app")
+	require.Equal(t, "24", roots["app"].NodeVersion)
 	root, err := npmManager(npmFiles(t, map[string]string{"package-lock.json": "{}"}), "", npmManifest{PackageManager: "npm@10.1.0"})
 	require.NoError(t, err)
 	require.Equal(t, "npm", root.Manager)

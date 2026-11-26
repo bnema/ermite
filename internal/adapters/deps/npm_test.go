@@ -59,7 +59,7 @@ func TestNPMValidate(t *testing.T) {
 	}
 	details, node, err := (NPM{}).RunnerDetails(before, []domain.DepUpdate{u})
 	require.NoError(t, err)
-	require.Equal(t, "22", node)
+	require.Equal(t, "26", node)
 	require.Equal(t, "^1.1.0", details[0].Range)
 	require.Equal(t, "pnpm", details[0].Manager)
 	require.Equal(t, "", details[0].Root)

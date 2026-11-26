@@ -23,6 +23,9 @@ type npmManifest struct {
 	Engines         struct {
 		Node string `json:"node"`
 	} `json:"engines"`
+	// DevEngines is read leniently (npmDevEnginesNode): an unexpected shape
+	// only drops the Node hint, not the manifest.
+	DevEngines json.RawMessage `json:"devEngines"`
 }
 
 // parseNPMManifest decodes a package.json, refusing invalid JSON, duplicate
@@ -58,22 +61,105 @@ var npmLockOrder = []string{"bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.loc
 var npmLockManager = map[string]string{"bun.lock": "bun", "bun.lockb": "bun", "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "npm-shrinkwrap.json": "npm", "package-lock.json": "npm"}
 
 var npmPackageManagerRE = regexp.MustCompile(`^(npm|pnpm|yarn|bun)@([0-9]+\.[0-9]+\.[0-9]+(?:\+sha(?:1|224|256|512)\.[0-9a-f]+)?)$`)
-var npmNodeRE = regexp.MustCompile(`^(?:>=|\^|~)?([0-9]+)(?:\.x|\.[0-9]+(?:\.[0-9]+)?)?$`)
+var npmNodeRE = regexp.MustCompile(`^(?:>=|\^|~)?v?([0-9]+)(?:\.x|\.[0-9]+(?:\.[0-9]+)?)?$`)
+var npmNodeOperatorRE = regexp.MustCompile(`(>=|\^|~)\s+`)
 
 // Lockfile versions sit at the top of the file: a header is enough.
 var pnpmLockVersionRE = regexp.MustCompile(`(?m)^lockfileVersion:[ \t]*['"]?([0-9]+)(?:\.[0-9]+)?['"]?[ \t]*$`)
 var yarnMetadataRE = regexp.MustCompile(`(?m)^__metadata:`)
 
-func npmNode(spec string) string {
-	m := npmNodeRE.FindStringSubmatch(strings.TrimSpace(spec))
-	if m == nil {
-		return "22"
+// Node majors of a job: the oldest one run, and the one used when the root
+// declares none.
+const (
+	npmNodeMin     = 18
+	npmNodeDefault = 26 // the current LTS
+)
+
+// npmNodeMajor returns the Node major a version or range asks for: the lower
+// bound of its first comparator, the highest one across || alternatives.
+// Aliases (lts/*, node) and anything else are not understood.
+func npmNodeMajor(spec string) (int, bool) {
+	best := 0
+	for _, alt := range strings.Split(spec, "||") {
+		fields := strings.Fields(npmNodeOperatorRE.ReplaceAllString(alt, "$1"))
+		if len(fields) == 0 {
+			return 0, false
+		}
+		m := npmNodeRE.FindStringSubmatch(fields[0])
+		if m == nil {
+			return 0, false
+		}
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n > 99 { // runner images take a two-digit major
+			return 0, false
+		}
+		best = max(best, n)
 	}
-	n, err := strconv.Atoi(m[1])
-	if err != nil {
-		return "22"
+	return best, best > 0
+}
+
+// npmDevEnginesNode returns the version of the node entry of a devEngines
+// runtime, a single object or a list.
+func npmDevEnginesNode(raw json.RawMessage) string {
+	type runtime struct{ Name, Version string }
+	var d struct {
+		Runtime json.RawMessage `json:"runtime"`
 	}
-	return strconv.Itoa(min(max(n, 18), 24))
+	if json.Unmarshal(raw, &d) != nil || len(d.Runtime) == 0 {
+		return ""
+	}
+	var list []runtime
+	var one runtime
+	if json.Unmarshal(d.Runtime, &list) != nil {
+		if json.Unmarshal(d.Runtime, &one) != nil {
+			return ""
+		}
+		list = []runtime{one}
+	}
+	for _, r := range list {
+		if r.Name == "node" {
+			return r.Version
+		}
+	}
+	return ""
+}
+
+// npmManagerNode is the oldest Node major the manager version starts on (its
+// own engines.node: pnpm 12 needs only Node 18); npmNodeMin when it has no
+// higher need.
+func npmManagerNode(manager, version string) int {
+	major, _ := strconv.Atoi(strings.SplitN(version, ".", 2)[0])
+	switch {
+	case manager == "npm" && major >= 12, manager == "pnpm" && major == 11:
+		return 22
+	case manager == "npm" && major == 11:
+		return 20
+	}
+	return npmNodeMin
+}
+
+// npmNode picks the Node major of a root: the first understood of
+// devEngines.runtime, .node-version, .nvmrc and engines.node, else
+// npmNodeDefault; raised to what its manager needs and to npmNodeMin.
+func npmNode(files map[domain.TreePath][]byte, root npmRoot, m npmManifest) string {
+	n := npmNodeDefault
+	for _, spec := range []string{
+		npmDevEnginesNode(m.DevEngines),
+		npmFirstLine(npmFile(files, root.Directory, ".node-version")),
+		npmFirstLine(npmFile(files, root.Directory, ".nvmrc")),
+		m.Engines.Node,
+	} {
+		if major, ok := npmNodeMajor(spec); ok {
+			n = major
+			break
+		}
+	}
+	return strconv.Itoa(max(n, npmNodeMin, npmManagerNode(root.Manager, root.Version)))
+}
+
+func npmFirstLine(b []byte) string {
+	line, _, _ := strings.Cut(string(b), "\n")
+	return strings.TrimSpace(line)
 }
 
 func npmFile(files map[domain.TreePath][]byte, dir, name string) []byte {
@@ -92,7 +178,7 @@ func npmFile(files map[domain.TreePath][]byte, dir, name string) []byte {
 var errYarnBerry = fmt.Errorf("%w: Yarn Berry dependency updates are not supported", domain.ErrInvalid)
 
 func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (npmRoot, error) {
-	root := npmRoot{Directory: dir, Manager: "npm", NodeVersion: npmNode(m.Engines.Node)}
+	root := npmRoot{Directory: dir, Manager: "npm"}
 	var pm []string
 	if m.PackageManager != "" {
 		pm = npmPackageManagerRE.FindStringSubmatch(m.PackageManager)
@@ -145,6 +231,7 @@ func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (np
 	if npmFile(files, dir, ".yarnrc.yml") != nil && (root.Manager == "yarn" || root.Lockfile == "") {
 		return root, errYarnBerry
 	}
+	root.NodeVersion = npmNode(files, root, m)
 	if root.Manager == "yarn" {
 		return root, checkYarnVersion(root.Version)
 	}

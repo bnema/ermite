@@ -123,7 +123,7 @@ func (NPM) Manifests(paths domain.PathList) []ports.DepsInput {
 }
 
 // Inputs reads the package.json of each update directory and, in it and its
-// ancestors, the files that decide its workspace root and manager.
+// ancestors, the files that decide its workspace root, manager and Node.
 func (NPM) Inputs(ups []domain.DepUpdate, _ []domain.TreePath) []ports.DepsInput {
 	var out []ports.DepsInput
 	add := func(p string, in ports.DepsInput) {
@@ -143,6 +143,8 @@ func (NPM) Inputs(ups []domain.DepUpdate, _ []domain.TreePath) []ports.DepsInput
 			}
 			add(path.Join(d, "pnpm-workspace.yaml"), ports.DepsInput{Optional: true})
 			add(path.Join(d, ".yarnrc.yml"), ports.DepsInput{Optional: true, Header: true})
+			add(path.Join(d, ".nvmrc"), ports.DepsInput{Optional: true, Header: true})
+			add(path.Join(d, ".node-version"), ports.DepsInput{Optional: true, Header: true})
 			for _, lock := range npmLockOrder {
 				add(path.Join(d, lock), ports.DepsInput{Optional: true, Header: true})
 			}
