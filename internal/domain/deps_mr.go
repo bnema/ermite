@@ -20,11 +20,12 @@ func BotDraftTitle(b DepBatch) string {
 }
 
 // npmReproCommands maps a package manager to the command that sets
-// dependency versions in place, keeping each in its section.
+// dependency versions in place, keeping each in its section; pnpm and Yarn
+// otherwise refuse to add to a workspace root.
 var npmReproCommands = map[string]string{
 	"npm":  "npm install --ignore-scripts",
-	"pnpm": "pnpm add --ignore-scripts",
-	"yarn": "yarn add --ignore-scripts",
+	"pnpm": "pnpm add --ignore-scripts --ignore-workspace-root-check",
+	"yarn": "yarn add --ignore-scripts --ignore-workspace-root-check",
 	"bun":  "bun add --ignore-scripts",
 }
 
@@ -77,24 +78,36 @@ func DepsRepro(ups []DepUpdate, details []CIDepsUpdate) []string {
 			}
 			lines = append(lines, "go mod tidy")
 		case EcosystemNPM:
-			command := npmReproCommands["npm"]
-			args := make([]string, len(us))
+			manager := "npm"
+			args, pinned := make([]string, len(us)), make([]bool, len(us))
 			for j, u := range us {
 				spec := u.Version
-				for _, d := range details {
-					if d.Ref == u.DepRef {
-						if c, ok := npmReproCommands[d.Manager]; ok {
-							command = c
-						}
-						if d.Range != "" {
-							spec = d.Range
-						}
-						break
+				if i := slices.IndexFunc(details, func(d CIDepsUpdate) bool { return d.Ref == u.DepRef }); i >= 0 {
+					if _, ok := npmReproCommands[details[i].Manager]; ok {
+						manager = details[i].Manager
+					}
+					if r := details[i].Range; r != "" {
+						spec, pinned[j] = r, r[0] >= '0' && r[0] <= '9' // no operator: an exact version
 					}
 				}
 				args[j] = shellQuote(u.Name + "@" + spec)
 			}
-			lines = append(lines, command+" "+strings.Join(args, " "))
+			// npm turns an exact version into ^version unless told to save it as
+			// written; the other managers keep it.
+			var ranged, exact []string
+			for j, a := range args {
+				if manager == "npm" && pinned[j] {
+					exact = append(exact, a)
+				} else {
+					ranged = append(ranged, a)
+				}
+			}
+			if len(ranged) != 0 {
+				lines = append(lines, npmReproCommands[manager]+" "+strings.Join(ranged, " "))
+			}
+			if len(exact) != 0 {
+				lines = append(lines, npmReproCommands[manager]+" --save-exact "+strings.Join(exact, " "))
+			}
 		}
 	}
 	return lines
