@@ -177,7 +177,8 @@ func (r *Releases) resolveTarget(ctx context.Context, repo domain.RepoName, targ
 }
 
 // bind resolves the release tag. A draft of a missing tag keeps the requested
-// target, checked only when given (check); publishing creates the tag there.
+// target, checked only when given (check); publishing creates the tag there,
+// under the same checks as a push of that tag by p.
 func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Release, target string, check bool) error {
 	oid, err := r.resolve(ctx, rel.Repo, "refs/tags/"+rel.Tag)
 	if errors.Is(err, domain.ErrNotFound) {
@@ -200,11 +201,16 @@ func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Rel
 		if err != nil {
 			return err
 		}
+		// The commit is in the repository already: nothing is in quarantine.
+		update := []domain.RefUpdate{{Ref: "refs/tags/" + rel.Tag, Old: domain.ZeroOID, New: oid.String()}}
+		if err := r.pushes.Check(ctx, p, rel.Repo, update, ports.PushObjects{}); err != nil {
+			return err
+		}
 		err = r.tags.CreateTag(ctx, rel.Repo, rel.Tag, oid)
 		if errors.Is(err, domain.ErrAlreadyExists) {
 			oid, err = r.resolve(ctx, rel.Repo, "refs/tags/"+rel.Tag)
 		} else if err == nil {
-			err = r.pushes.Record(ctx, p, rel.Repo, []domain.RefUpdate{{Ref: "refs/tags/" + rel.Tag, Old: domain.ZeroOID, New: oid.String()}})
+			err = r.pushes.Record(ctx, p, rel.Repo, update)
 		}
 	}
 	if err != nil {

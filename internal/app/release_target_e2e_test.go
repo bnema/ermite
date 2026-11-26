@@ -44,3 +44,19 @@ func TestReleaseUnknownTargetIsInvalid(t *testing.T) {
 	assert.Equal(t, 422, resp.StatusCode, string(body))
 	assert.Contains(t, string(body), `"field":"target_commitish"`)
 }
+
+// A release that creates its tag goes through the push checks of that tag,
+// which record who pushed it, as a git push does: CI trusts runs on the tag
+// from that record.
+func TestReleaseTagRecordsItsPusher(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.seed("proj", domain.VisibilityPublic, "README.md")
+	hc := &http.Client{Transport: bearerTransport{secret: adminToken, next: http.DefaultTransport}}
+	rel := ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(hc, h.url("/-/api"), connecthttp.WithReadMaxBytes(0))))
+	got, err := rel.CreateRelease(h.ctx, &pb.CreateReleaseRequest{Repo: "proj", Tag: "v1", TargetCommitish: "main"})
+	require.NoError(t, err)
+	tip, err := h.forge.store.CI().GetRefTip(h.ctx, h.name("proj"), "refs/tags/v1")
+	require.NoError(t, err)
+	assert.Equal(t, got.GetRelease().GetTargetCommitish(), tip.Sha)
+	assert.True(t, tip.Trusted)
+}

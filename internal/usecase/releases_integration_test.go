@@ -184,10 +184,25 @@ func TestReleaseMissingTag(t *testing.T) {
 	require.NoError(t, err)
 	r.reader.EXPECT().ResolveRevision(r.ctx, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
 	r.tags.EXPECT().CreateTag(r.ctx, r.repo, "new", oid).Return(nil).Once()
+	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(nil).Once()
 	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}).Return(nil).Once()
 	rel, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "new", TargetCommitish: "main"})
 	require.NoError(t, err)
 	require.Equal(t, oidA, rel.TargetCommitish)
+}
+
+// A tag the push rules refuse is not created: the release fails with the refusal.
+func TestReleaseTagRefusedByPushRules(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	r.resolve(t, "new", domain.ErrNotFound)
+	r.resolveRev(t, "main", oidA, nil)
+	refusal := fmt.Errorf("%w: refs/tags/new is outside the branches this token may push", domain.ErrRejected)
+	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(refusal).Once()
+	_, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "new", TargetCommitish: "main"})
+	require.ErrorIs(t, err, domain.ErrRejected)
+	all, err := r.store.Releases().ListReleases(r.ctx, r.repo)
+	require.NoError(t, err)
+	require.Empty(t, all, "no release without its tag")
 }
 
 func TestReleaseLatestPinsAndPrereleases(t *testing.T) {
@@ -319,6 +334,7 @@ func TestReleaseUpdateTargetCreatesMissingTag(t *testing.T) {
 	require.NoError(t, err)
 	r.reader.EXPECT().ResolveRevision(r.ctx, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
 	r.tags.EXPECT().CreateTag(r.ctx, r.repo, "missing", oid).Return(nil).Once()
+	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/missing", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(nil).Once()
 	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/missing", Old: domain.ZeroOID, New: oidA}}).Return(nil).Once()
 	main := "main"
 	rel, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no, TargetCommitish: &main})
@@ -407,6 +423,7 @@ func (r *releaseRig) expectTag(t *testing.T, tag, id string) {
 	oid, err := domain.ParseObjectID(id)
 	require.NoError(t, err)
 	r.tags.EXPECT().CreateTag(r.ctx, r.repo, tag, oid).Return(nil).Once()
+	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: id}}, ports.PushObjects{}).Return(nil).Once()
 	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: id}}).Return(nil).Once()
 }
 

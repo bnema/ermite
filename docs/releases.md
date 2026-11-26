@@ -19,6 +19,8 @@ Use `edit --publish` to publish a draft, `--no-prerelease` to clear that flag.
 An existing tag never moves; `--target` creates a missing tag. A draft can name
 a missing tag and keeps the requested `--target`; publishing creates the tag
 there, resolving a branch at publish time, unless `--target` is given again.
+A created tag goes through the same checks as a push of that tag by the
+caller, and is refused when that push would be.
 `edit --target ''` clears it, and changing a draft's `--tag` drops it.
 Deleting a tag turns its release into a draft, clears its target and keeps its
 assets; recreating the tag does not republish it. Deleting a release does not

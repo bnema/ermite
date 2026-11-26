@@ -211,6 +211,8 @@ func (h *Handler) failRelease(ctx context.Context, w http.ResponseWriter, p doma
 			msg = "Resource not accessible by integration"
 		}
 		releaseMessage(w, 403, msg)
+	case errors.Is(err, domain.ErrRejected): // a tag the push rules refuse
+		releaseMessage(w, 403, err.Error())
 	case errors.Is(err, domain.ErrResourceExhausted):
 		if strings.Contains(err.Error(), "too many uploads in progress") {
 			w.Header().Set("Retry-After", retryAfter)
