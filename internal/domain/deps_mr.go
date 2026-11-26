@@ -87,7 +87,11 @@ func DepsRepro(ups []DepUpdate, details []CIDepsUpdate) []string {
 						manager = details[i].Manager
 					}
 					if r := details[i].Range; r != "" {
-						spec, pinned[j] = r, r[0] >= '0' && r[0] <= '9' // no operator: an exact version
+						// An exact version, bare or =X.Y.Z (saved bare, same meaning).
+						spec = r
+						if exact := strings.TrimPrefix(r, "="); exact != "" && exact[0] >= '0' && exact[0] <= '9' {
+							spec, pinned[j] = exact, true
+						}
 					}
 				}
 				args[j] = shellQuote(u.Name + "@" + spec)

@@ -69,8 +69,9 @@ var pnpmLockVersionRE = regexp.MustCompile(`(?m)^lockfileVersion:[ \t]*['"]?([0-
 var yarnMetadataRE = regexp.MustCompile(`(?m)^__metadata:`)
 
 // Node majors of a job: the oldest one run (corepack's own minimum, which
-// also covers what npm 11+ and pnpm 11 need), and the one used when the root
-// declares none (the current LTS).
+// also covers what npm 11+ and pnpm 11 need; plain npm roots get it too, as
+// older majors are past end of life), and the one used when the root declares
+// none (the current LTS).
 const (
 	npmNodeMin     = 22
 	npmNodeDefault = 26
@@ -132,10 +133,14 @@ func npmDevEnginesNode(raw json.RawMessage) string {
 func npmNode(files map[domain.TreePath][]byte, root npmRoot, m npmManifest) string {
 	specs := []string{npmDevEnginesNode(m.DevEngines)}
 	for _, dir := range npmAncestors(root.Directory) {
+		found := false
 		for _, name := range []string{".node-version", ".nvmrc"} {
 			if b := npmFile(files, dir, name); b != nil {
-				specs = append(specs, npmVersionLine(b))
+				specs, found = append(specs, npmVersionLine(b)), true
 			}
+		}
+		if found {
+			break // the nearest directory with a version file wins, as for nvm
 		}
 	}
 	n := npmNodeDefault

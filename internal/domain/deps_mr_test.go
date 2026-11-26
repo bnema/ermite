@@ -56,6 +56,7 @@ func TestDepsRepro(t *testing.T) {
 			[]string{"cd -- 'web'", "pnpm add --ignore-scripts --ignore-workspace-root-check 'left-pad@1.3.0' 'react@^19.0.0'"}},
 		{"npm saves an exact version as written", []DepUpdate{react, pad}, []CIDepsUpdate{job(pad, "npm", "1.3.0"), job(react, "npm", "^19.0.0")},
 			[]string{"cd -- 'web'", "npm install --ignore-scripts 'react@^19.0.0'", "npm install --ignore-scripts --save-exact 'left-pad@1.3.0'"}},
+		{"npm saves =version bare and exact", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "npm", "=1.3.0")}, []string{"cd -- 'web'", "npm install --ignore-scripts --save-exact 'left-pad@1.3.0'"}},
 		{"yarn", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "yarn", "^1.3.0")}, []string{"cd -- 'web'", "yarn add --ignore-scripts --ignore-workspace-root-check 'left-pad@^1.3.0'"}},
 		{"bun", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "bun", "1.3.0")}, []string{"cd -- 'web'", "bun add --ignore-scripts 'left-pad@1.3.0'"}},
 		{"unknown manager falls back to npm", []DepUpdate{pad}, []CIDepsUpdate{job(pad, "evil; rm", "^1.3.0")}, []string{"cd -- 'web'", "npm install --ignore-scripts 'left-pad@^1.3.0'"}},

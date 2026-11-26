@@ -108,6 +108,7 @@ func TestNPMManagersAndNode(t *testing.T) {
 		{name: "nvmrc comment, BOM and blank line", manifest: `{}`, files: map[string]string{".nvmrc": "\uFEFF# pinned\n\n25\n"}, want: "25"},
 		{name: "node-version before nvmrc", manifest: `{}`, files: map[string]string{".node-version": "26\n", ".nvmrc": "24"}, want: "26"},
 		{name: "nearest file first", dir: "web", manifest: `{}`, files: map[string]string{"web/.nvmrc": "25", ".node-version": "24"}, want: "25"},
+		{name: "nearest file stops the search even when not understood", dir: "web", manifest: `{"engines":{"node":"^24"}}`, files: map[string]string{"web/.nvmrc": "lts/*", ".nvmrc": "25"}, want: "24"},
 		{name: "repository root file for a nested root", dir: "web", manifest: `{"engines":{"node":"^24"}}`, files: map[string]string{".nvmrc": "25"}, want: "25"},
 		{name: "nvmrc alias falls through", manifest: `{"engines":{"node":"^24"}}`, files: map[string]string{".nvmrc": "lts/*"}, want: "24"},
 		{name: "devEngines object first", manifest: `{"devEngines":{"runtime":{"name":"node","version":">=25"}}}`, files: map[string]string{".nvmrc": "24"}, want: "25"},
