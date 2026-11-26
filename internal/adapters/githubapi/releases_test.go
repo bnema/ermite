@@ -226,6 +226,7 @@ func TestReleaseErrors(t *testing.T) {
 		{"anonymous write", "release-list", domain.Anonymous(), domain.ErrUnauthenticated, 401, `{"message":"Bad credentials"}`},
 		{"job read only", "release-list", job, domain.ErrForbidden, 403, `{"message":"Resource not accessible by integration"}`},
 		{"stored token", "release-list", domain.Root(), domain.ErrForbidden, 403, `{"message":"Forbidden"}`},
+		{"tag refused by the push rules", "release-list", job, fmt.Errorf("%w: refusing to allow a GitHub App to create or update workflow", domain.ErrRejected), 403, `{"message":"rejected: refusing to allow a GitHub App to create or update workflow"}`},
 		{"duplicate release", "release-list", domain.Root(), domain.ErrAlreadyExists, 422, `{"message":"Validation Failed","errors":[{"resource":"Release","code":"already_exists","field":"tag_name"}]}`},
 		{"duplicate upload", "release-upload", domain.Root(), domain.ErrAlreadyExists, 422, `{"message":"Validation Failed","errors":[{"resource":"ReleaseAsset","code":"already_exists","field":"name"}],"documentation_url":"https://docs.github.com/rest/releases/assets#upload-a-release-asset"}`},
 		{"invalid field", "release-list", domain.Root(), fmt.Errorf("%w: make_latest", domain.ErrInvalid), 422, `{"message":"Validation Failed","errors":[{"resource":"Release","code":"invalid","field":"make_latest"}]}`},

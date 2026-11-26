@@ -26,7 +26,7 @@ type releaseRig struct {
 	blobs  ports.BlobStore
 	reader *mocks.RepoReader
 	tags   *mocks.ReleaseTagWriter
-	pushes *mocks.PushHookService
+	pushes *mocks.ReleaseTagPushes
 	clock  *mocks.Clock
 	events <-chan domain.Event
 	svc    *usecase.Releases
@@ -44,7 +44,7 @@ func newReleaseRig(t *testing.T, limits ports.ReleaseLimits) *releaseRig {
 	clock.EXPECT().Now().Return(now).Maybe()
 	reader := mocks.NewRepoReader(t)
 	tags := mocks.NewReleaseTagWriter(t)
-	pushes := mocks.NewPushHookService(t)
+	pushes := mocks.NewReleaseTagPushes(t)
 	bus := eventbus.NewWithBuffer(1024)
 	b := blobdisk.New(t.TempDir())
 	r := &releaseRig{ctx: ctx, repo: n, store: store, blobs: b, reader: reader, tags: tags, pushes: pushes, clock: clock, events: bus.Subscribe(ctx)}
@@ -184,25 +184,37 @@ func TestReleaseMissingTag(t *testing.T) {
 	require.NoError(t, err)
 	r.reader.EXPECT().ResolveRevision(r.ctx, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
 	r.tags.EXPECT().CreateTag(r.ctx, r.repo, "new", oid).Return(nil).Once()
-	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(nil).Once()
+	r.pushes.EXPECT().CheckRefRules(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(nil).Once()
 	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}).Return(nil).Once()
 	rel, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "new", TargetCommitish: "main"})
 	require.NoError(t, err)
 	require.Equal(t, oidA, rel.TargetCommitish)
 }
 
-// A tag the push rules refuse is not created: the release fails with the refusal.
+// A tag the push rules refuse (here a job token's workflow rule) is not
+// created, on create and on publishing a draft: the release is not stored, the
+// draft stays one.
 func TestReleaseTagRefusedByPushRules(t *testing.T) {
 	r := newReleaseRig(t, ports.ReleaseLimits{})
-	r.resolve(t, "new", domain.ErrNotFound)
+	refusal := fmt.Errorf("%w: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission", domain.ErrRejected)
 	r.resolveRev(t, "main", oidA, nil)
-	refusal := fmt.Errorf("%w: refs/tags/new is outside the branches this token may push", domain.ErrRejected)
-	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/new", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(refusal).Once()
+	for _, tag := range []string{"new", "drafted"} {
+		r.resolve(t, tag, domain.ErrNotFound)
+		r.pushes.EXPECT().CheckRefRules(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(refusal).Once()
+	}
 	_, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "new", TargetCommitish: "main"})
 	require.ErrorIs(t, err, domain.ErrRejected)
+
+	draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "drafted", Draft: true})
+	require.NoError(t, err)
+	no, main := false, "main"
+	_, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no, TargetCommitish: &main})
+	require.ErrorIs(t, err, domain.ErrRejected)
+
 	all, err := r.store.Releases().ListReleases(r.ctx, r.repo)
 	require.NoError(t, err)
-	require.Empty(t, all, "no release without its tag")
+	require.Len(t, all, 1, "no release without its tag")
+	require.True(t, all[0].Draft, "the draft stays one")
 }
 
 func TestReleaseLatestPinsAndPrereleases(t *testing.T) {
@@ -334,7 +346,7 @@ func TestReleaseUpdateTargetCreatesMissingTag(t *testing.T) {
 	require.NoError(t, err)
 	r.reader.EXPECT().ResolveRevision(r.ctx, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
 	r.tags.EXPECT().CreateTag(r.ctx, r.repo, "missing", oid).Return(nil).Once()
-	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/missing", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(nil).Once()
+	r.pushes.EXPECT().CheckRefRules(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/missing", Old: domain.ZeroOID, New: oidA}}, ports.PushObjects{}).Return(nil).Once()
 	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/missing", Old: domain.ZeroOID, New: oidA}}).Return(nil).Once()
 	main := "main"
 	rel, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no, TargetCommitish: &main})
@@ -423,7 +435,7 @@ func (r *releaseRig) expectTag(t *testing.T, tag, id string) {
 	oid, err := domain.ParseObjectID(id)
 	require.NoError(t, err)
 	r.tags.EXPECT().CreateTag(r.ctx, r.repo, tag, oid).Return(nil).Once()
-	r.pushes.EXPECT().Check(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: id}}, ports.PushObjects{}).Return(nil).Once()
+	r.pushes.EXPECT().CheckRefRules(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: id}}, ports.PushObjects{}).Return(nil).Once()
 	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/" + tag, Old: domain.ZeroOID, New: id}}).Return(nil).Once()
 }
 

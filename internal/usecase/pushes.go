@@ -38,8 +38,9 @@ type Pushes struct {
 }
 
 var (
-	_ ports.PushService     = (*Pushes)(nil)
-	_ ports.PushHookService = (*Pushes)(nil)
+	_ ports.PushService      = (*Pushes)(nil)
+	_ ports.PushHookService  = (*Pushes)(nil)
+	_ ports.ReleaseTagPushes = (*Pushes)(nil)
 )
 
 // NewPushes builds the push use cases. Every argument is required: auth
@@ -209,6 +210,13 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 	if repo.Archived {
 		return fmt.Errorf("%w: %w", domain.ErrRejected, domain.ErrArchived)
 	}
+	return u.CheckRefRules(ctx, p, name, updates, objects)
+}
+
+// CheckRefRules is the part of Check past access: the rules on the refs and
+// the record of who pushes them. Releases call it alone for the tag they
+// create, as their own rules decided the caller's access.
+func (u *Pushes) CheckRefRules(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error {
 	for _, up := range updates {
 		// refs/pull/* belong to ermite (the head and the test merge of the merge
 		// requests): nobody pushes there, whatever the token, the workflow

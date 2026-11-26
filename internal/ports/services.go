@@ -345,6 +345,18 @@ type PushHookService interface {
 	Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
 }
 
+// ReleaseTagPushes is what releases ask of the push use cases when they create
+// a missing tag, the caller's access already decided by the release rules.
+// *usecase.Pushes implements it.
+type ReleaseTagPushes interface {
+	// CheckRefRules applies the ref rules of a push (refs/pull/*, branch
+	// prefixes, the job-token workflow rule) and records who moves the refs,
+	// before Git moves them; an error matching domain.ErrRejected refuses it.
+	CheckRefRules(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects PushObjects) error
+	// Record handles an accepted push.
+	Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
+}
+
 // MaintenanceScheduler queues repository maintenance. *usecase.Maintainer
 // implements it.
 type MaintenanceScheduler interface {

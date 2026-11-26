@@ -21,7 +21,7 @@ func TestArchivedReleaseWrites(t *testing.T) {
 		t.Run(p.Label(), func(t *testing.T) {
 			meta := mocks.NewRepoMetaStore(t)
 			meta.EXPECT().Get(mock.Anything, n).Return(domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Archived: true}, nil)
-			svc := usecase.NewReleases(mocks.NewReleaseStore(t), mocks.NewBlobStore(t), meta, mocks.NewRepoReader(t), mocks.NewReleaseTagWriter(t), mocks.NewPushHookService(t), mocks.NewEventBus(t), fixedClock{}, ports.ReleaseLimits{})
+			svc := usecase.NewReleases(mocks.NewReleaseStore(t), mocks.NewBlobStore(t), meta, mocks.NewRepoReader(t), mocks.NewReleaseTagWriter(t), mocks.NewReleaseTagPushes(t), mocks.NewEventBus(t), fixedClock{}, ports.ReleaseLimits{})
 			_, err := svc.CreateRelease(t.Context(), p, n, ports.CreateReleaseParams{})
 			require.ErrorIs(t, err, domain.ErrArchived)
 			_, err = svc.UpdateRelease(t.Context(), p, n, 1, ports.UpdateReleaseParams{})

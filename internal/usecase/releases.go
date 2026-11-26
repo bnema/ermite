@@ -23,7 +23,7 @@ type Releases struct {
 	repos   ports.RepoMetaStore
 	reader  ports.RepoReader
 	tags    ports.ReleaseTagWriter
-	pushes  ports.PushHookService
+	pushes  ports.ReleaseTagPushes
 	bus     ports.EventBus
 	clock   ports.Clock
 	limits  ports.ReleaseLimits
@@ -40,7 +40,7 @@ var _ ports.ReleaseSweeper = (*Releases)(nil)
 
 // NewReleases constructs the release service. Zero limits select the defaults.
 // pushes must be the shared Pushes instance, so created tags notify every hook.
-func NewReleases(store ports.ReleaseStore, blobs ports.BlobStore, repos ports.RepoMetaStore, reader ports.RepoReader, tags ports.ReleaseTagWriter, pushes ports.PushHookService, bus ports.EventBus, clock ports.Clock, limits ports.ReleaseLimits) *Releases {
+func NewReleases(store ports.ReleaseStore, blobs ports.BlobStore, repos ports.RepoMetaStore, reader ports.RepoReader, tags ports.ReleaseTagWriter, pushes ports.ReleaseTagPushes, bus ports.EventBus, clock ports.Clock, limits ports.ReleaseLimits) *Releases {
 	if limits.AssetMax == 0 {
 		limits.AssetMax = domain.DefaultReleaseAssetMax
 	}
@@ -178,7 +178,8 @@ func (r *Releases) resolveTarget(ctx context.Context, repo domain.RepoName, targ
 
 // bind resolves the release tag. A draft of a missing tag keeps the requested
 // target, checked only when given (check); publishing creates the tag there,
-// under the same checks as a push of that tag by p.
+// under the ref rules of a push of that tag by p (access is the release
+// rules': release:write needs no repo:write).
 func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Release, target string, check bool) error {
 	oid, err := r.resolve(ctx, rel.Repo, "refs/tags/"+rel.Tag)
 	if errors.Is(err, domain.ErrNotFound) {
@@ -195,7 +196,7 @@ func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Rel
 			return fmt.Errorf("%w: tag %q does not exist; give target_commitish to create it", domain.ErrPreconditionFailed, rel.Tag)
 		}
 		if r.pushes == nil {
-			return fmt.Errorf("%w: release tag notifications are not configured", domain.ErrUnavailable)
+			return fmt.Errorf("%w: release tag creation is not configured", domain.ErrUnavailable)
 		}
 		oid, err = r.resolveTarget(ctx, rel.Repo, target)
 		if err != nil {
@@ -203,7 +204,7 @@ func (r *Releases) bind(ctx context.Context, p domain.Principal, rel *domain.Rel
 		}
 		// The commit is in the repository already: nothing is in quarantine.
 		update := []domain.RefUpdate{{Ref: "refs/tags/" + rel.Tag, Old: domain.ZeroOID, New: oid.String()}}
-		if err := r.pushes.Check(ctx, p, rel.Repo, update, ports.PushObjects{}); err != nil {
+		if err := r.pushes.CheckRefRules(ctx, p, rel.Repo, update, ports.PushObjects{}); err != nil {
 			return err
 		}
 		err = r.tags.CreateTag(ctx, rel.Repo, rel.Tag, oid)

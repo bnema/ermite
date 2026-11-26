@@ -59,4 +59,14 @@ func TestReleaseTagRecordsItsPusher(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, got.GetRelease().GetTargetCommitish(), tip.Sha)
 	assert.True(t, tip.Trusted)
+
+	// release:write is enough to create the tag: the release rules decide access.
+	publisher := h.token([]domain.Scope{domain.ScopeRepoRead, domain.ScopeReleaseWrite})
+	pc := &http.Client{Transport: bearerTransport{secret: publisher, next: http.DefaultTransport}}
+	prel := ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(pc, h.url("/-/api"), connecthttp.WithReadMaxBytes(0))))
+	got, err = prel.CreateRelease(h.ctx, &pb.CreateReleaseRequest{Repo: "proj", Tag: "v2", TargetCommitish: "main"})
+	require.NoError(t, err)
+	tip, err = h.forge.store.CI().GetRefTip(h.ctx, h.name("proj"), "refs/tags/v2")
+	require.NoError(t, err)
+	assert.Equal(t, got.GetRelease().GetTargetCommitish(), tip.Sha)
 }
