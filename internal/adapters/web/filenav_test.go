@@ -36,7 +36,10 @@ func navBrowse(t *testing.T, dirs map[string]navDir) *mocks.BrowseService {
 	browse := mocks.NewBrowseService(t)
 	tip := objectID(t, mainTip)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repoName(t, "r"), mock.Anything).Return(ports.RefPage{
-		Refs: []domain.Ref{{Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch, ID: tip, CommitID: tip}},
+		Refs: []domain.Ref{
+			{Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch, ID: tip, CommitID: tip},
+			{Name: "refs/heads/feature/x", ShortName: "feature/x", Kind: domain.RefKindBranch, ID: tip, CommitID: tip},
+		},
 	}, nil).Maybe()
 	browse.EXPECT().GetTree(mock.Anything, mock.Anything, repoName(t, "r"), mock.Anything, mock.Anything, false).RunAndReturn(
 		func(_ context.Context, _ domain.Principal, _ domain.RepoName, _ domain.Revision, p domain.TreePath, _ bool) (domain.Tree, error) {
@@ -66,7 +69,13 @@ func fileEntry(p string) domain.TreeEntry {
 // serveNav answers url with the server of dirs.
 func serveNav(t *testing.T, dirs map[string]navDir, url string) string {
 	t.Helper()
-	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: navBrowse(t, dirs)})
+	return serveWith(t, navBrowse(t, dirs), url)
+}
+
+// serveWith answers url, a page that must succeed, with browse.
+func serveWith(t *testing.T, browse *mocks.BrowseService, url string) string {
+	t.Helper()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -89,7 +98,9 @@ func TestBlobFileNavOpensAncestors(t *testing.T) {
 		"src":     {entries: []domain.TreeEntry{dirEntry("src/lib"), fileEntry("src/app.html")}},
 		"src/lib": {entries: []domain.TreeEntry{fileEntry("src/lib/x.ts"), fileEntry("src/lib/y.ts")}},
 	}
-	rail := railOf(t, serveNav(t, dirs, "/r/blob/main/src/lib/x.ts"))
+	browse := navBrowse(t, dirs)
+	rail := railOf(t, serveWith(t, browse, "/r/blob/main/src/lib/x.ts"))
+	browse.AssertNumberOfCalls(t, "GetTree", 3) // the root, src, src/lib: one listing each
 	assert.Contains(t, rail, `<section aria-labelledby="r-files-nav"><h2 id="r-files-nav">Files</h2><ul class="fnav">`)
 	assert.Contains(t, rail, `<li data-kind="dir" data-path="src"><details open data-src="/r/tree/main/src?nav"><summary title="src/">src/</summary><ul class="fnav">`)
 	assert.Contains(t, rail, `<details open data-src="/r/tree/main/src/lib?nav"><summary title="lib/">lib/</summary>`)
@@ -147,7 +158,10 @@ func TestFileNavScriptOnlyOnTheFilePage(t *testing.T) {
 	script := srv.assets.urls.FileNav
 	require.NotEmpty(t, script)
 	assert.Contains(t, serveNav(t, dirs, "/r/blob/main/README.md"), `<script src="`+script+`" defer>`)
-	assert.NotContains(t, renderToString(t, Shell(Layout{HasRail: true}, summaryRail(SummaryPage{}))), "filenav")
+	// A page with a rail and the real assets, but no file tree.
+	other := renderToString(t, Shell(Layout{HasRail: true, Assets: srv.assets.urls}, summaryRail(SummaryPage{})))
+	assert.Contains(t, other, srv.assets.urls.Rail, "the assets are in the page")
+	assert.NotContains(t, other, script)
 }
 
 // manyFiles is n files of dir, named f000, f001, ….
@@ -217,4 +231,78 @@ func TestBlobClosesTheFileBeforeTheNav(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), `aria-current="page">a.txt</a>`)
 	assert.Equal(t, int32(1), closed.Load(), "closed once")
+}
+
+// Without a listing the file page still answers: no file tree, no script;
+// a Markdown file keeps its outline as the only section of the rail.
+func TestBlobWithoutNav(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: navBrowse(t, nil)})
+	script := srv.assets.urls.FileNav
+	for _, tc := range []struct {
+		url  string
+		rail bool
+	}{{"/r/blob/main/a.txt", false}, {"/r/blob/main/README.md", true}} {
+		t.Run(tc.url, func(t *testing.T) {
+			t.Parallel()
+			body := serveNav(t, nil, tc.url)
+			assert.NotContains(t, body, "r-files-nav")
+			assert.NotContains(t, body, script)
+			assert.Equal(t, tc.rail, strings.Contains(body, `<aside class="rail"`))
+			if tc.rail {
+				assert.Contains(t, railOf(t, body), `id="r-outline"`)
+			}
+		})
+	}
+}
+
+// Names keep the escaping of the tree page: a URL-escaped path, quotes
+// escaped in attributes, invisible characters shown as markers.
+func TestFileNavNamesAreEscaped(t *testing.T) {
+	t.Parallel()
+	odd, bidi := "d/a\"b%c?d.txt", "d/x\u202Eevil\x01.txt"
+	dirs := map[string]navDir{
+		"":  {entries: []domain.TreeEntry{dirEntry("d")}},
+		"d": {entries: []domain.TreeEntry{fileEntry(odd), fileEntry(bidi)}},
+	}
+	rail := railOf(t, serveNav(t, dirs, "/r/blob/main/d/a%22b%25c%3Fd.txt"))
+	assert.Contains(t, rail, `<li data-kind="file" data-path="d/a%22b%25c%3Fd.txt"><a href="/r/blob/main/d/a%22b%25c%3Fd.txt" title="a&#34;b%c?d.txt" aria-current="page">a&#34;b%c?d.txt</a></li>`)
+	assert.Contains(t, rail, `<li data-kind="file" data-path="d/x%E2%80%AEevil%01.txt"><a href="/r/blob/main/d/x%E2%80%AEevil%01.txt" title="x&lt;U+202E&gt;evil&lt;U+0001&gt;.txt">x&lt;U+202E&gt;evil&lt;U+0001&gt;.txt</a></li>`)
+	assert.NotContains(t, rail, "\u202E")
+	assert.NotContains(t, rail, "\x01")
+}
+
+// A ref with a slash names the ref in every link, whole.
+func TestFileNavRefWithSlash(t *testing.T) {
+	t.Parallel()
+	dirs := map[string]navDir{
+		"":    {entries: []domain.TreeEntry{dirEntry("src"), dirEntry("docs")}},
+		"src": {entries: []domain.TreeEntry{fileEntry("src/a.go")}},
+	}
+	rail := railOf(t, serveNav(t, dirs, "/r/blob/feature/x/src/a.go"))
+	assert.Contains(t, rail, `<details open data-src="/r/tree/feature/x/src?nav">`)
+	assert.Contains(t, rail, `<details data-src="/r/tree/feature/x/docs?nav">`)
+	assert.Contains(t, rail, `<a href="/r/blob/feature/x/src/a.go" title="a.go" aria-current="page">a.go</a>`)
+	body := serveNav(t, dirs, "/r/tree/feature/x/src?nav")
+	assert.Contains(t, body, `<a href="/r/blob/feature/x/src/a.go" title="a.go">a.go</a>`)
+}
+
+// The entries of a private repository are as missing to an anonymous caller
+// as the repository: ?nav answers the 404 page, without listing anything.
+func TestTreeNavPrivateRepoIsMissing(t *testing.T) {
+	t.Parallel()
+	repos := mocks.NewRepoService(t)
+	// Only the owner sees the repository; the request is anonymous.
+	repos.EXPECT().Get(mock.Anything, domain.Anonymous(), repoName(t, "secret")).RunAndReturn(
+		func(_ context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
+			if !p.IsRoot() {
+				return domain.Repo{}, domain.ErrNotFound
+			}
+			return domain.Repo{Name: name, Visibility: domain.VisibilityPrivate}, nil
+		}).Once()
+	srv := newTestServer(t, Config{Repos: repos, Browse: mocks.NewBrowseService(t)})
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/secret/tree/main/src?nav", nil))
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "fnav")
 }
