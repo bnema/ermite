@@ -184,17 +184,19 @@
     & #mr-signing code { overflow-wrap: anywhere; }
   }
 
-  /* the rail of a merge request follows the review: it sticks under the
-     header, one screen high, and scrolls on its own to its verdicts. The list of files keeps its own scroll, under a height, so
-     that the blocks below it stay in reach. Only on a two-column layout. */
+  /* the rail of a merge request follows the review, and the one of a file
+     page its file tree (.fnav): it sticks under the header, one screen high,
+     and scrolls on its own. The list of files keeps its own scroll, under a
+     height, so that the blocks below it stay in reach. Only on a two-column
+     layout. */
   @media (width > 720px) {
-    .rail:has(.r-files) {
+    .rail:has(:is(.r-files, .fnav)) {
       position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
       max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
       overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
     }
     /* the blocks keep their height: the rail scrolls, it does not squeeze them */
-    .rail:has(.r-files) > * { flex: none; }
+    .rail:has(:is(.r-files, .fnav)) > * { flex: none; }
   }
   .rail .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .r-files {

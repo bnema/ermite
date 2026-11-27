@@ -40,6 +40,9 @@ templ Shell(l Layout, rail templ.Component) {
 			if l.Lazy {
 				<script src={ l.Assets.Lazy } defer></script>
 			}
+			if l.FileNav && l.HasRail && rail != nil {
+				<script src={ l.Assets.FileNav } defer></script>
+			}
 			if l.MR {
 				<script src={ l.Assets.MR } defer></script>
 			}

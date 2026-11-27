@@ -32,7 +32,7 @@ templ FileNavItem(it NavItem) {
 		switch it.Kind {
 			case kindDir:
 				<details open?={ it.Open } data-src={ it.Src }>
-					<summary>{ it.Name + "/" }</summary>
+					<summary title={ it.Name + "/" }>{ it.Name + "/" }</summary>
 					<ul class="fnav">
 						if it.Open {
 							@FileNavItems(it.Items)
@@ -40,15 +40,17 @@ templ FileNavItem(it NavItem) {
 					</ul>
 				</details>
 			case kindModule:
-				<span title="submodule">{ it.Name }</span>
+				<span title={ it.Name + " (submodule)" }>{ it.Name }</span>
 			default:
 				<a
 					href={ templ.SafeURL(it.Href) }
+					if it.Kind == kindLink {
+						title={ it.Name + " (symbolic link)" }
+					} else {
+						title={ it.Name }
+					}
 					if it.Current {
 						aria-current="page"
-					}
-					if it.Kind == kindLink {
-						title="symbolic link"
 					}
 				>{ it.Name }</a>
 		}

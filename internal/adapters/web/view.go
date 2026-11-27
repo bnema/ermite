@@ -71,6 +71,9 @@ type Layout struct {
 	// Lazy loads the loader of the collapsed and lazy files of a diff
 	// (lazy.js): the commit, compare and merge request pages.
 	Lazy bool
+	// FileNav loads the script of the file tree of the rail of a file page
+	// (filenav.js).
+	FileNav bool
 	// MR loads the script of the merge request page (mr.js).
 	MR bool
 	// IssueForm loads the script of the public issue form (issue-form.js).

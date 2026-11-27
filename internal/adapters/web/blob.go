@@ -202,6 +202,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 		log.Warn().Err(err).Str("repo", d.name()).Msg("list the file tree of the rail")
 	}
 	l.HasRail = p.Nav != nil || len(p.Outline) > 0
+	l.FileNav = p.Nav != nil
 	return Blob(l, p), http.StatusOK, nil
 }
 

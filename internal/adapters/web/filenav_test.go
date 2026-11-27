@@ -88,12 +88,12 @@ func TestBlobFileNavOpensAncestors(t *testing.T) {
 	}
 	rail := railOf(t, serveNav(t, dirs, "/r/blob/main/src/lib/x.ts"))
 	assert.Contains(t, rail, `<section aria-labelledby="r-files-nav"><h2 id="r-files-nav">Files</h2><ul class="fnav">`)
-	assert.Contains(t, rail, `<li data-kind="dir" data-path="src"><details open data-src="/r/tree/main/src?nav"><summary>src/</summary><ul class="fnav">`)
-	assert.Contains(t, rail, `<details open data-src="/r/tree/main/src/lib?nav"><summary>lib/</summary>`)
-	assert.Contains(t, rail, `<details data-src="/r/tree/main/docs?nav"><summary>docs/</summary><ul class="fnav"></ul></details>`, "an unopened directory is empty")
-	assert.Contains(t, rail, `<a href="/r/blob/main/src/lib/x.ts" aria-current="page">x.ts</a>`)
-	assert.Contains(t, rail, `<a href="/r/blob/main/src/lib/y.ts">y.ts</a>`)
-	assert.Contains(t, rail, `<li data-kind="module" data-path="lib"><span title="submodule">lib</span></li>`)
+	assert.Contains(t, rail, `<li data-kind="dir" data-path="src"><details open data-src="/r/tree/main/src?nav"><summary title="src/">src/</summary><ul class="fnav">`)
+	assert.Contains(t, rail, `<details open data-src="/r/tree/main/src/lib?nav"><summary title="lib/">lib/</summary>`)
+	assert.Contains(t, rail, `<details data-src="/r/tree/main/docs?nav"><summary title="docs/">docs/</summary><ul class="fnav"></ul></details>`, "an unopened directory is empty")
+	assert.Contains(t, rail, `<a href="/r/blob/main/src/lib/x.ts" title="x.ts" aria-current="page">x.ts</a>`)
+	assert.Contains(t, rail, `<a href="/r/blob/main/src/lib/y.ts" title="y.ts">y.ts</a>`)
+	assert.Contains(t, rail, `<li data-kind="module" data-path="lib"><span title="lib (submodule)">lib</span></li>`)
 	assert.Equal(t, 1, strings.Count(rail, `aria-current="page"`))
 	assert.NotContains(t, rail, `id="tree-rows"`)
 	assert.NotContains(t, rail, ` style=`)
@@ -104,7 +104,7 @@ func TestBlobFileNavRootFile(t *testing.T) {
 	t.Parallel()
 	dirs := map[string]navDir{"": {entries: []domain.TreeEntry{dirEntry("src"), fileEntry("README.md")}}}
 	rail := railOf(t, serveNav(t, dirs, "/r/blob/main/README.md"))
-	assert.Contains(t, rail, `<a href="/r/blob/main/README.md" aria-current="page">README.md</a>`)
+	assert.Contains(t, rail, `<a href="/r/blob/main/README.md" title="README.md" aria-current="page">README.md</a>`)
 	assert.Contains(t, rail, `<details data-src="/r/tree/main/src?nav">`)
 	assert.NotContains(t, rail, "<details open")
 	// The Markdown outline comes after the file tree.
@@ -120,8 +120,8 @@ func TestBlobFileNavTruncatedKeepsTheWay(t *testing.T) {
 		"src": {entries: []domain.TreeEntry{fileEntry("src/a.txt")}, truncated: true},
 	}
 	rail := railOf(t, serveNav(t, dirs, "/r/blob/main/src/z.txt"))
-	assert.Contains(t, rail, `<details open data-src="/r/tree/main/src?nav"><summary>src/</summary>`, "the missing ancestor is added, open")
-	assert.Contains(t, rail, `<a href="/r/blob/main/src/z.txt" aria-current="page">z.txt</a>`, "the missing file is added, current")
+	assert.Contains(t, rail, `<details open data-src="/r/tree/main/src?nav"><summary title="src/">src/</summary>`, "the missing ancestor is added, open")
+	assert.Contains(t, rail, `<a href="/r/blob/main/src/z.txt" title="z.txt" aria-current="page">z.txt</a>`, "the missing file is added, current")
 	assert.Contains(t, rail, `<li class="fnav-more"><a href="/r/tree/main">more…</a></li>`)
 	assert.Contains(t, rail, `<li class="fnav-more"><a href="/r/tree/main/src">more…</a></li>`)
 }
@@ -130,9 +130,19 @@ func TestTreeNavItems(t *testing.T) {
 	t.Parallel()
 	dirs := map[string]navDir{"src": {entries: []domain.TreeEntry{dirEntry("src/lib"), fileEntry("src/app.html")}, truncated: true}}
 	body := serveNav(t, dirs, "/r/tree/main/src?nav")
-	assert.True(t, strings.HasPrefix(body, `<li data-kind="dir" data-path="src/lib"><details data-src="/r/tree/main/src/lib?nav"><summary>lib/</summary><ul class="fnav"></ul></details></li>`), body)
-	assert.Contains(t, body, `<li data-kind="file" data-path="src/app.html"><a href="/r/blob/main/src/app.html">app.html</a></li>`)
+	assert.True(t, strings.HasPrefix(body, `<li data-kind="dir" data-path="src/lib"><details data-src="/r/tree/main/src/lib?nav"><summary title="lib/">lib/</summary><ul class="fnav"></ul></details></li>`), body)
+	assert.Contains(t, body, `<li data-kind="file" data-path="src/app.html"><a href="/r/blob/main/src/app.html" title="app.html">app.html</a></li>`)
 	assert.Contains(t, body, `<li class="fnav-more"><a href="/r/tree/main/src">more…</a></li>`)
 	assert.NotContains(t, body, "aria-current")
 	assert.NotContains(t, body, "<html")
+}
+
+func TestFileNavScriptOnlyOnTheFilePage(t *testing.T) {
+	t.Parallel()
+	dirs := map[string]navDir{"": {entries: []domain.TreeEntry{fileEntry("README.md")}}}
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: navBrowse(t, dirs)})
+	script := srv.assets.urls.FileNav
+	require.NotEmpty(t, script)
+	assert.Contains(t, serveNav(t, dirs, "/r/blob/main/README.md"), `<script src="`+script+`" defer>`)
+	assert.NotContains(t, renderToString(t, Shell(Layout{HasRail: true}, summaryRail(SummaryPage{}))), "filenav")
 }
