@@ -68,11 +68,17 @@ func (s *Server) openBlob(ctx context.Context, repo domain.RepoName, t target) (
 	return &blobStream{body: body, info: info}, nil
 }
 
-func (b *blobStream) close() { _ = b.body.Close() }
+// close closes the content; a second call does nothing.
+func (b *blobStream) close() {
+	if b.body != nil {
+		_ = b.body.Close()
+		b.body = nil
+	}
+}
 
 // fill reads until buf holds n bytes or the content ends.
 func (b *blobStream) fill(n int) error {
-	if b.eof || len(b.buf) >= n {
+	if b.eof || b.body == nil || len(b.buf) >= n {
 		return nil
 	}
 	// One allocation for the whole content, not the doublings of append.
@@ -158,6 +164,9 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 		}
 		src = b.buf
 	}
+	// What the page shows is read (src is in memory): the stream is released
+	// before the listings and the history below.
+	b.close()
 
 	if src != nil {
 		text := string(src)
@@ -197,7 +206,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
 	if nav, err := s.fileNav(ctx, d, t); err == nil {
 		p.Nav = &nav
-	} else {
+	} else if ctx.Err() == nil {
 		log := zerowrap.FromCtx(ctx)
 		log.Warn().Err(err).Str("repo", d.name()).Msg("list the file tree of the rail")
 	}

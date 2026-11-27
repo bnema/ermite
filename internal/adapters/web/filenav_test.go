@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,4 +183,38 @@ func TestFileNavCapsTheListing(t *testing.T) {
 		assert.Equal(t, navMaxItems, strings.Count(body, `<li data-kind="file"`))
 		assert.True(t, strings.HasSuffix(body, `<li class="fnav-more"><a href="/r/tree/main/big">more…</a></li>`), body[len(body)-200:])
 	})
+}
+
+// closeTracker is a blob body that records its Close.
+type closeTracker struct {
+	io.Reader
+	closed *atomic.Int32
+}
+
+func (c closeTracker) Close() error { c.closed.Add(1); return nil }
+
+// The content of the file is read before the listings of the rail: the blob
+// stream is released first, and closed once.
+func TestBlobClosesTheFileBeforeTheNav(t *testing.T) {
+	t.Parallel()
+	var closed atomic.Int32
+	browse := mocks.NewBrowseService(t)
+	tip := objectID(t, mainTip)
+	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RefPage{
+		Refs: []domain.Ref{{Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch, ID: tip, CommitID: tip}},
+	}, nil).Maybe()
+	browse.EXPECT().OpenBlob(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		domain.BlobInfo{ID: objectID(t, blobID), Size: 5}, closeTracker{strings.NewReader("hello"), &closed}, nil).Once()
+	browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).RunAndReturn(
+		func(context.Context, domain.Principal, domain.RepoName, domain.Revision, domain.TreePath, bool) (domain.Tree, error) {
+			assert.Equal(t, int32(1), closed.Load(), "the file is closed before the listing")
+			return domain.Tree{Entries: []domain.TreeEntry{fileEntry("a.txt")}}, nil
+		}).Once()
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{}, nil).Maybe()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/r/blob/main/a.txt", nil))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `aria-current="page">a.txt</a>`)
+	assert.Equal(t, int32(1), closed.Load(), "closed once")
 }
