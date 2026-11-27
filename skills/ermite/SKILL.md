@@ -28,6 +28,10 @@ git clone https://git.example.com/<repo>.git        # public: no credentials
 git push https://git.example.com/<repo>.git main    # password = token, username ignored
 ```
 
+## GitHub mirror timing
+
+Mirrors do not push on each ermite event. They run on the global cron: `ermite mirror config show` (cron in UTC), and `ermite mirror status` gives each repository's NEXT RUN. On git.bnema.dev the cron is `0 1 * * *` UTC, i.e. 02:00 Paris in winter and 03:00 in summer. Merges, branch pushes and tags on ermite therefore reach GitHub only that night; GitHub workflows triggered by the mirror (e.g. a GitHub release on tag) run then too. Work on ermite during GitHub quiet hours is not visible GitHub activity: do it without asking. Only `ermite mirror sync` (pushes now) or direct GitHub actions count.
+
 Check repository usage with `ermite repo traffic <repo> [--range 24h|30d] --json` (default 30d); referrers always cover 30 days.
 
 Pushing to a missing name creates a private repository (`repo:write`). Names: lowercase `[a-z0-9._-]`, 1-100 chars. Private repos need `repo:read`. A token with `--branch-prefix agent/x/` may push only `refs/heads/agent/x/…`: work there and open a merge request.
