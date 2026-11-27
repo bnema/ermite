@@ -41,19 +41,10 @@ type NavList struct {
 
 // navItem is the item of an entry of a directory.
 func navItem(repo, ref string, e domain.TreeEntry) NavItem {
-	it := NavItem{Kind: kindFile, Name: visibleText(e.Name), Path: escapePath(e.Path)}
-	switch e.Kind {
-	case domain.EntryDirectory:
-		it.Kind = kindDir
-		it.Href = repoHref(repo, "tree", ref, e.Path)
+	it := NavItem{Name: visibleText(e.Name), Path: escapePath(e.Path)}
+	it.Kind, it.Href = entryLink(repo, ref, e)
+	if it.Kind == kindDir {
 		it.Src = it.Href + "?nav"
-	case domain.EntrySymlink:
-		it.Kind = kindLink
-		it.Href = repoHref(repo, "blob", ref, e.Path)
-	case domain.EntrySubmodule:
-		it.Kind = kindModule
-	default:
-		it.Href = repoHref(repo, "blob", ref, e.Path)
 	}
 	return it
 }

@@ -20,6 +20,22 @@ const (
 	kindModule = "module"
 )
 
+// entryLink is the kind of an entry of a directory and the page it links to:
+// the tree page of a directory, the blob page of a file or a link, none ("")
+// for a submodule.
+func entryLink(repo, ref string, e domain.TreeEntry) (kind, href string) {
+	switch e.Kind {
+	case domain.EntryDirectory:
+		return kindDir, repoHref(repo, "tree", ref, e.Path)
+	case domain.EntrySymlink:
+		return kindLink, repoHref(repo, "blob", ref, e.Path)
+	case domain.EntrySubmodule:
+		return kindModule, ""
+	default:
+		return kindFile, repoHref(repo, "blob", ref, e.Path)
+	}
+}
+
 // TreeRow is one entry of a directory.
 type TreeRow struct {
 	Kind string // kindDir, kindFile, kindLink or kindModule
@@ -106,19 +122,16 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 		p.Path = visibleText(t.path) + "/"
 	}
 	for i, e := range entries {
-		row := TreeRow{Kind: kindFile, Path: escapePath(e.Path), Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
-		switch e.Kind {
-		case domain.EntryDirectory:
-			row.Kind, row.Hint, row.Name, row.Size = kindDir, "directory", row.Name+"/", ""
-			row.Href = repoHref(d.name(), "tree", t.name, e.Path)
+		row := TreeRow{Path: escapePath(e.Path), Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
+		row.Kind, row.Href = entryLink(d.name(), t.name, e)
+		switch row.Kind {
+		case kindDir:
+			row.Hint, row.Name, row.Size = "directory", row.Name+"/", ""
 			row.Expand = row.Href + "?rows"
-		case domain.EntrySymlink:
-			row.Kind, row.Hint = kindLink, "symbolic link"
-			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
-		case domain.EntrySubmodule:
-			row.Kind, row.Hint, row.Size = kindModule, "submodule", ""
-		default:
-			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
+		case kindLink:
+			row.Hint = "symbolic link"
+		case kindModule:
+			row.Hint, row.Size = "submodule", ""
 		}
 		if c := e.LastCommit; c != nil {
 			last := commitRow(d.name(), *c, now)
