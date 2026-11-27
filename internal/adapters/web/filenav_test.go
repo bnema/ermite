@@ -4,9 +4,11 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 
@@ -53,11 +55,11 @@ func navBrowse(t *testing.T, dirs map[string]navDir) *mocks.BrowseService {
 }
 
 func dirEntry(p string) domain.TreeEntry {
-	return domain.TreeEntry{Name: p[strings.LastIndex(p, "/")+1:], Path: p, Kind: domain.EntryDirectory}
+	return domain.TreeEntry{Name: path.Base(p), Path: p, Kind: domain.EntryDirectory}
 }
 
 func fileEntry(p string) domain.TreeEntry {
-	return domain.TreeEntry{Name: p[strings.LastIndex(p, "/")+1:], Path: p, Kind: domain.EntryFile}
+	return domain.TreeEntry{Name: path.Base(p), Path: p, Kind: domain.EntryFile}
 }
 
 // serveNav answers url with the server of dirs.
@@ -145,4 +147,39 @@ func TestFileNavScriptOnlyOnTheFilePage(t *testing.T) {
 	require.NotEmpty(t, script)
 	assert.Contains(t, serveNav(t, dirs, "/r/blob/main/README.md"), `<script src="`+script+`" defer>`)
 	assert.NotContains(t, renderToString(t, Shell(Layout{HasRail: true}, summaryRail(SummaryPage{}))), "filenav")
+}
+
+// manyFiles is n files of dir, named f000, f001, ….
+func manyFiles(dir string, n int) []domain.TreeEntry {
+	out := make([]domain.TreeEntry, n)
+	for i := range out {
+		out[i] = fileEntry(path.Join(dir, fmt.Sprintf("f%03d", i)))
+	}
+	return out
+}
+
+func TestFileNavCapsTheListing(t *testing.T) {
+	t.Parallel()
+	dirs := map[string]navDir{
+		"":    {entries: append([]domain.TreeEntry{dirEntry("big")}, manyFiles("", navMaxItems+50)...)},
+		"big": {entries: manyFiles("big", navMaxItems+100)},
+	}
+	t.Run("file page", func(t *testing.T) {
+		t.Parallel()
+		rail := railOf(t, serveNav(t, dirs, "/r/blob/main/big/f350"))
+		// The root holds big/ and navMaxItems-1 files; big/ holds navMaxItems
+		// files and the current file, added past the cap.
+		assert.Equal(t, (navMaxItems-1)+(navMaxItems+1), strings.Count(rail, `<li data-kind="file"`))
+		assert.Contains(t, rail, `<a href="/r/blob/main/big/f350" title="f350" aria-current="page">f350</a>`, "the current file past the cap is kept")
+		assert.Contains(t, rail, `<details open data-src="/r/tree/main/big?nav">`)
+		assert.Contains(t, rail, `<li class="fnav-more"><a href="/r/tree/main">more…</a></li>`)
+		assert.Contains(t, rail, `<li class="fnav-more"><a href="/r/tree/main/big">more…</a></li>`)
+		assert.NotContains(t, rail, `data-path="big/f301"`)
+	})
+	t.Run("nav", func(t *testing.T) {
+		t.Parallel()
+		body := serveNav(t, dirs, "/r/tree/main/big?nav")
+		assert.Equal(t, navMaxItems, strings.Count(body, `<li data-kind="file"`))
+		assert.True(t, strings.HasSuffix(body, `<li class="fnav-more"><a href="/r/tree/main/big">more…</a></li>`), body[len(body)-200:])
+	})
 }

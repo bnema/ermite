@@ -58,21 +58,29 @@ func navItem(repo, ref string, e domain.TreeEntry) NavItem {
 	return it
 }
 
+// navMaxItems bounds the entries of one directory in the file tree: a rail
+// holds a few hundred rows at most; the page of the directory has them all.
+const navMaxItems = 300
+
 // navList lists one directory for the file tree: names and kinds only, no
-// last commit.
+// last commit, at most navMaxItems entries. It answers the entries listed.
 func (s *Server) navList(ctx context.Context, d *repoData, t target, dir string) (NavList, []domain.TreeEntry, error) {
 	res, err := s.getTree(ctx, d.repo.Name, t.rev, dir, false)
 	if err != nil {
 		return NavList{}, nil, err
 	}
+	entries, cut := res.Entries, res.Truncated
+	if len(entries) > navMaxItems {
+		entries, cut = entries[:navMaxItems], true
+	}
 	var l NavList
-	for _, e := range res.Entries {
+	for _, e := range entries {
 		l.Items = append(l.Items, navItem(d.name(), t.name, e))
 	}
-	if res.Truncated {
+	if cut {
 		l.More = repoHref(d.name(), "tree", t.name, dir)
 	}
-	return l, res.Entries, nil
+	return l, entries, nil
 }
 
 // fileNav is the file tree of the rail of the page of the file t.path: the
