@@ -74,7 +74,9 @@ func (p TreePage) Unit() string {
 }
 
 // tree lists a directory of a ref, with the last commit of each entry. With
-// ?rows it answers the entries alone, for a directory opened in place.
+// ?rows it answers the entries alone, for a directory opened in place; with
+// ?nav, the items of the directory in the file tree of a file page, without
+// last commits.
 func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {
@@ -83,6 +85,13 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	t, ok := d.locate(r.PathValue("rest"))
 	if !ok {
 		return nil, 0, errNotFound
+	}
+	if r.URL.Query().Has("nav") {
+		l, _, err := s.navList(ctx, d, t, t.path)
+		if err != nil {
+			return nil, 0, err
+		}
+		return FileNavItems(l), http.StatusOK, nil
 	}
 	res, err := s.getTree(ctx, d.repo.Name, t.rev, t.path, true)
 	if err != nil {

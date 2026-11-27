@@ -38,6 +38,8 @@ type BlobPage struct {
 	// Rendered is a Markdown file as HTML; the source is under a fold.
 	Rendered *Readme
 	Outline  []Heading
+	// Nav is the file tree of the rail; nil when it cannot be listed.
+	Nav *NavList
 	// Image says the file is shown as an image loaded from RawHref.
 	Image    bool
 	Facts    []Fact
@@ -193,7 +195,13 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "blob", t)
 	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
-	l.HasRail = len(p.Outline) > 0
+	if nav, err := s.fileNav(ctx, d, t); err == nil {
+		p.Nav = &nav
+	} else {
+		log := zerowrap.FromCtx(ctx)
+		log.Warn().Err(err).Str("repo", d.name()).Msg("list the file tree of the rail")
+	}
+	l.HasRail = p.Nav != nil || len(p.Outline) > 0
 	return Blob(l, p), http.StatusOK, nil
 }
 

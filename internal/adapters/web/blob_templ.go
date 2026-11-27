@@ -403,7 +403,8 @@ func CodeView(h template.HTML) templ.Component {
 	})
 }
 
-// Markdown keeps its outline rail; file facts and last change live in the title.
+// blobRail is the file tree, then the outline of a Markdown file; file facts
+// and last change live in the title.
 func blobRail(p BlobPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -421,6 +422,12 @@ func blobRail(p BlobPage) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
+		if p.Nav != nil {
+			templ_7745c5c3_Err = FileNav(*p.Nav).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
 		if len(p.Outline) > 0 {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<section aria-labelledby=\"r-outline\"><h2 id=\"r-outline\">On this page</h2>")
 			if templ_7745c5c3_Err != nil {

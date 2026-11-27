@@ -68,8 +68,12 @@ templ CodeView(h template.HTML) {
 	><code hx-ignore>@templ.Raw(string(h))</code></pre>
 }
 
-// Markdown keeps its outline rail; file facts and last change live in the title.
+// blobRail is the file tree, then the outline of a Markdown file; file facts
+// and last change live in the title.
 templ blobRail(p BlobPage) {
+	if p.Nav != nil {
+		@FileNav(*p.Nav)
+	}
 	if len(p.Outline) > 0 {
 		<section aria-labelledby="r-outline">
 			<h2 id="r-outline">On this page</h2>

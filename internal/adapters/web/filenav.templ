@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// FileNav is the file tree of the rail of a file page: nested lists, the
+// directories above the file open, the file marked as the current page.
+templ FileNav(l NavList) {
+	<section aria-labelledby="r-files-nav">
+		<h2 id="r-files-nav">Files</h2>
+		<ul class="fnav">
+			@FileNavItems(l)
+		</ul>
+	</section>
+}
+
+// FileNavItems is the items of one directory, also the answer of a tree page
+// with ?nav. A directory is a <details> whose summary toggles it; an unopened
+// one has an empty list and data-src, the URL of its items. A cut listing
+// ends with a row that leads to the page of the directory.
+templ FileNavItems(l NavList) {
+	for _, it := range l.Items {
+		@FileNavItem(it)
+	}
+	if l.More != "" {
+		<li class="fnav-more"><a href={ templ.SafeURL(l.More) }>more…</a></li>
+	}
+}
+
+// FileNavItem is one entry of the file tree.
+templ FileNavItem(it NavItem) {
+	<li data-kind={ it.Kind } data-path={ it.Path }>
+		switch it.Kind {
+			case kindDir:
+				<details open?={ it.Open } data-src={ it.Src }>
+					<summary>{ it.Name + "/" }</summary>
+					<ul class="fnav">
+						if it.Open {
+							@FileNavItems(it.Items)
+						}
+					</ul>
+				</details>
+			case kindModule:
+				<span title="submodule">{ it.Name }</span>
+			default:
+				<a
+					href={ templ.SafeURL(it.Href) }
+					if it.Current {
+						aria-current="page"
+					}
+					if it.Kind == kindLink {
+						title="symbolic link"
+					}
+				>{ it.Name }</a>
+		}
+	</li>
+}
