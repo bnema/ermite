@@ -102,11 +102,14 @@ func TestWebFilesGolden(t *testing.T) {
 			assert.Contains(t, hdr.Get("Content-Type"), "text/html")
 			assertNoInline(t, body)
 			if strings.HasPrefix(tt.name, "blob-") {
+				// Every file page has the file tree in its rail; Markdown adds its outline.
+				assert.Contains(t, body, `<aside class="rail"`)
+				assert.Contains(t, body, `id="r-files-nav"`)
+				assert.Contains(t, body, `aria-current="page"`)
 				if tt.name == "blob-markdown" {
-					assert.Contains(t, body, `<aside class="rail"`)
 					assert.Contains(t, body, `id="r-outline"`)
 				} else {
-					assert.NotContains(t, body, `<aside class="rail"`)
+					assert.NotContains(t, body, `id="r-outline"`)
 				}
 				assert.Contains(t, body, `class="file-last"`)
 			}
