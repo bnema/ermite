@@ -249,21 +249,8 @@
     & > li[aria-expanded="true"] .t-node {
       background: linear-gradient(var(--guide), var(--guide)) center bottom / 1px calc(50% - 8px) no-repeat;
     }
-    /* the node: a ring for a file, a chevron for a directory (it turns down
-       once open), a diamond for a link, a square for a submodule */
-    & .t-node::after {
-      top: 50%; left: 50%; width: 7px; height: 7px; margin: -4px 0 0 -4px;
-      background: var(--bg-surface); border: 1px solid var(--ink-mute); border-radius: 50%;
-    }
+    /* the node (its shapes are below, shared with the rail) */
     & > li:hover .t-node::after, & > li[data-cursor] .t-node::after { background: var(--bg-raised); border-color: var(--ink-hi); }
-    & > li[data-kind="dir"] .t-node::after {
-      width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 0; border-radius: 0; background: var(--ink-dim);
-      mask: url(icons/chevron.svg) center / contain no-repeat; transform: rotate(-90deg);
-    }
-    & > li[data-kind="dir"][aria-expanded="true"] .t-node::after { transform: none; background: var(--accent); }
-    & > li[data-kind="link"] .t-node::after { border-radius: 1px; transform: rotate(45deg); }
-    & > li[data-kind="module"] .t-node::after { border-radius: 1px; }
-    & > li[aria-busy="true"] .t-node { opacity: .4; }
     & .t-name {
       align-self: center; min-width: 0; padding: 4px var(--s1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-family: var(--mono); font-size: var(--fs); color: var(--ink); text-decoration: none; cursor: pointer;
@@ -280,6 +267,24 @@
     & > li.tree-more .t-name { font-size: var(--fs-s); font-weight: 400; color: var(--ink-dim); text-decoration: underline; }
     & > li.tree-more .t-node::after { display: none; }
   }
+  /* the node of an entry, the same in the tree of the Files page and in the
+     file tree of the rail (.fnav, 87-filenav.css): a ring for a file, a
+     chevron for a directory (it turns down once open), a diamond for a link,
+     a square for a submodule. --node-x is the centre of the node. */
+  /* :where keeps the base as weak as one class and a type, under the shapes */
+  ul.tree .t-node::after, .fnav :where(li > a, li > span, summary)::before {
+    content: ""; position: absolute; top: 50%; left: var(--node-x, 50%);
+    width: 7px; height: 7px; margin: -4px 0 0 -4px;
+    background: var(--bg-surface); border: 1px solid var(--ink-mute); border-radius: 50%;
+  }
+  ul.tree > li[data-kind="dir"] .t-node::after, .fnav summary::before {
+    width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 0; border-radius: 0; background: var(--ink-dim);
+    mask: url(icons/chevron.svg) center / contain no-repeat; transform: rotate(-90deg);
+  }
+  ul.tree > li[data-kind="dir"][aria-expanded="true"] .t-node::after, .fnav details[open] > summary::before { transform: none; background: var(--accent); }
+  ul.tree > li[data-kind="link"] .t-node::after, .fnav li[data-kind="link"] > a::before { border-radius: 1px; transform: rotate(45deg); }
+  ul.tree > li[data-kind="module"] .t-node::after, .fnav li[data-kind="module"] > span::before { border-radius: 1px; }
+  ul.tree > li[aria-busy="true"] .t-node, .fnav details[aria-busy="true"] > summary::before { opacity: .4; }
   @media (max-width: 900px) {
     ul.tree > li { grid-template-columns: minmax(0, 1fr) 64px 80px; }
     ul.tree .t-sub { display: none; }

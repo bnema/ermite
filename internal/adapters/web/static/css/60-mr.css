@@ -184,20 +184,8 @@
     & #mr-signing code { overflow-wrap: anywhere; }
   }
 
-  /* the rail of a merge request follows the review, and the one of a file
-     page its file tree (.fnav): it sticks under the header, one screen high,
-     and scrolls on its own. The list of files keeps its own scroll, under a
-     height, so that the blocks below it stay in reach. Only on a two-column
-     layout. */
-  @media (width > 720px) {
-    .rail:has(:is(.r-files, .fnav)) {
-      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
-      max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
-      overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
-    }
-    /* the blocks keep their height: the rail scrolls, it does not squeeze them */
-    .rail:has(:is(.r-files, .fnav)) > * { flex: none; }
-  }
+  /* the list of files of the rail keeps its own scroll, under a height, so
+     that the blocks below it stay in reach (the rail sticks: 86-rail.css) */
   .rail .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .r-files {
     & > h2 kbd { margin-left: auto; }

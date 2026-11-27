@@ -1,10 +1,9 @@
 @layer components {
   /* the file tree of the rail of a file page (FileNav): nested lists, one
-     level of indent and a guide per directory. The nodes speak the language
-     of the tree page: a ring for a file, a chevron for a directory (it turns
-     down once open), a diamond for a link, a square for a submodule. */
+     level of indent and a guide per directory. The nodes are those of the
+     tree page (30-list.css), centred in the room before the name. */
   .fnav {
-    --fnav-node: 16px;
+    --fnav-node: 16px; --node-x: calc(var(--s1) + var(--fnav-node) / 2);
     font-size: var(--fs-s); line-height: 20px;
     & .fnav { margin: 0 0 0 calc(var(--fnav-node) / 2 + var(--s1)); padding-left: calc(var(--s1) + 1px); border-left: 1px solid var(--border); }
     & li > a, & li > span, & summary {
@@ -16,22 +15,9 @@
     & li > a:focus-visible, & summary:focus-visible { outline-offset: -2px; }
     & summary { list-style: none; font-weight: 700; color: var(--ink-hi); }
     & summary::-webkit-details-marker { display: none; }
-    & li > a::before, & li > span::before, & summary::before {
-      content: ""; position: absolute; top: 50%; left: calc(var(--s1) + var(--fnav-node) / 2 - 4px);
-      width: 7px; height: 7px; margin-top: -4px;
-      background: var(--bg-surface); border: 1px solid var(--ink-mute); border-radius: 50%;
-    }
-    & summary::before {
-      left: var(--s1); width: var(--fnav-node); height: var(--fnav-node); margin-top: calc(var(--fnav-node) / -2);
-      border: 0; border-radius: 0; background: var(--ink-dim);
-      mask: url(icons/chevron.svg) center / contain no-repeat; transform: rotate(-90deg); transition: transform .15s ease;
-    }
-    & details[open] > summary::before { transform: none; background: var(--accent); }
-    & details[aria-busy="true"] > summary::before { opacity: .4; }
-    & li[data-kind="link"] > a::before { border-radius: 1px; transform: rotate(45deg); }
+    & summary::before { transition: transform .15s ease; }
     & li[data-kind="link"] > a { color: var(--ink-dim); }
     & li[data-kind="module"] > span { color: var(--ink-dim); cursor: default; }
-    & li[data-kind="module"] > span::before { border-radius: 1px; }
     & a[aria-current="page"] { font-weight: 700; color: var(--ink-hi); background: var(--bg-raised); box-shadow: inset 2px 0 0 var(--accent); border-radius: 0 var(--r-s) var(--r-s) 0; }
     & a[aria-current="page"]::before { background: var(--accent); border-color: var(--accent); }
     & li.fnav-more > a { font-family: var(--font); color: var(--ink-dim); text-decoration: underline; }

@@ -11,6 +11,18 @@
     & > ul { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
     & > .rail-context { margin-left: auto; }
   }
+  /* a rail with a list of files (the files of a merge request, the file
+     tree of a file page) follows the page: it sticks under the header, one
+     screen high, and scrolls on its own. Only on a two-column layout. */
+  @media (width > 720px) {
+    .rail:has(:is(.r-files, .fnav)) {
+      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
+      max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
+      overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    }
+    /* the blocks keep their height: the rail scrolls, it does not squeeze them */
+    .rail:has(:is(.r-files, .fnav)) > * { flex: none; }
+  }
   /* rail.js drives the panel (rail-js, set by store.js before the first
      paint); without scripts the rail stays a column, or stacks below */
   .rail-js {
